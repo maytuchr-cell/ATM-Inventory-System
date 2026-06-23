@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Parts Master — ATM Inventory</title>
+  <link rel="stylesheet" href="shared/styles.css">
+</head>
+<body>
+  <div class="app-layout">
+    <div id="sidebar-root"></div>
+    <div class="main-content">
+      <div class="topbar">
+        <div>
+          <div class="topbar-title" data-i18n="parts.title">Parts Master</div>
+          <div class="topbar-sub"   data-i18n="parts.sub">Manage all ATM spare parts inventory</div>
+        </div>
+        <div class="topbar-controls">
+          <button class="btn btn-primary" onclick="openModal()">
+            <span>+</span> <span data-i18n="parts.add">Add Part</span>
+          </button>
+        </div>
+      </div>
+
+      <div class="page-body">
+        <div class="card">
+          <div class="filter-bar">
+            <input class="form-input" id="search-input" data-i18n-ph="parts.search"
+              placeholder="Search…" oninput="resetPage();renderTable()">
+            <select class="form-select" id="cat-filter" onchange="resetPage();renderTable()">
+              <option value="" data-i18n="parts.filter.cat">All Categories</option>
+            </select>
+            <select class="form-select" id="status-filter" onchange="resetPage();renderTable()" style="max-width:160px;">
+              <option value=""  data-i18n="lbl.all">All</option>
+              <option value="true"  data-i18n="lbl.active">Active</option>
+              <option value="false" data-i18n="lbl.inactive">Inactive</option>
+            </select>
+            <span id="parts-result-count" style="font-size:12px;color:var(--text-secondary);margin-left:auto;white-space:nowrap;"></span>
+          </div>
+          <div class="tbl-wrap" style="max-height:calc(100vh - 260px);overflow-y:auto;">
+            <table>
+              <thead>
+                <tr>
+                  <th data-i18n="parts.col.partno">Part No.</th>
+                  <th data-i18n="parts.col.name">Part Name</th>
+                  <th data-i18n="parts.col.cat">Category</th>
+                  <th data-i18n="parts.col.stock">Stock</th>
+                  <th data-i18n="parts.col.min">Min</th>
+                  <th data-i18n="parts.col.unit">Unit</th>
+                  <th data-i18n="parts.col.cost">Cost/Unit</th>
+                  <th data-i18n="col.status">Status</th>
+                  <th data-i18n="col.actions">Actions</th>
+                </tr>
+              </thead>
+              <tbody id="parts-tbody">
+                <tr><td colspan="9" class="empty-state" data-i18n="connecting">Connecting…</td></tr>
+              </tbody>
+            </table>
+          </div>
+          <!-- Pagination -->
+          <div id="parts-pagination" style="display:flex;align-items:center;justify-content:space-between;padding:12px 20px;border-top:1px solid var(--border);font-size:13px;"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal -->
+  <div class="modal-overlay hidden" id="modal-overlay">
+    <div class="modal">
+      <div class="modal-header">
+        <div class="modal-title" id="modal-title" data-i18n="parts.add">Add Part</div>
+        <button class="btn btn-secondary btn-sm" onclick="closeModal()">✕</button>
+      </div>
+      <form id="part-form" onsubmit="savePart(event)">
+        <div class="form-grid-2">
+          <div class="form-group">
+            <label class="form-label" data-i18n="parts.lbl.partno">Part Number</label>
+            <input class="form-input" id="f-partno" required data-i18n-ph="parts.ph.partno">
+          </div>
+          <div class="form-group">
+            <label class="form-label" data-i18n="parts.lbl.partname">Part Name</label>
+            <input class="form-input" id="f-partname" required data-i18n-ph="parts.ph.partname">
+          </div>
+          <div class="form-group">
+            <label class="form-label" data-i18n="parts.lbl.ordernum">Order Number</label>
+            <input class="form-input" id="f-ordernum" data-i18n-ph="parts.ph.ordernum">
+          </div>
+          <div class="form-group">
+            <label class="form-label" data-i18n="parts.lbl.unit">Unit</label>
+            <input class="form-input" id="f-unit" data-i18n-ph="parts.ph.unit" value="pcs">
+          </div>
+          <div class="form-group">
+            <label class="form-label" data-i18n="parts.lbl.stock">Stock Quantity</label>
+            <input class="form-input" id="f-stock" type="number" min="0" value="0">
+          </div>
+          <div class="form-group">
+            <label class="form-label" data-i18n="parts.lbl.cat">Category</label>
+            <select class="form-select" id="f-cat">
+              <option value="" data-i18n="parts.ph.cat">— Select category —</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label class="form-label" data-i18n="parts.lbl.min">Min Stock</label>
+            <input class="form-input" id="f-min" type="number" min="0" value="1">
+          </div>
+          <div class="form-group">
+            <label class="form-label" data-i18n="parts.lbl.max">Max Stock</label>
+            <input class="form-input" id="f-max" type="number" min="0" value="100">
+          </div>
+          <div class="form-group">
+            <label class="form-label" data-i18n="parts.lbl.reorder">Reorder Point</label>
+            <input class="form-input" id="f-reorder" type="number" min="0" value="3">
+          </div>
+          <div class="form-group">
+            <label class="form-label" data-i18n="parts.lbl.cost">Cost per Unit</label>
+            <input class="form-input" id="f-cost" type="number" min="0" step="0.01">
+          </div>
+        </div>
+        <div class="form-group">
+          <label class="form-label" data-i18n="parts.lbl.catalogue">Catalogue Ref.</label>
+          <input class="form-input" id="f-cat-ref">
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" onclick="closeModal()" data-i18n="btn.cancel">Cancel</button>
+          <button type="submit" class="btn btn-primary" data-i18n="btn.save">Save</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <script src="shared/translations.js"></script>
+  <script src="shared/toast.js"></script>
+  <script src="shared/api.js"></script>
+  <script src="shared/layout.js"></script>
+  <script src="admin-parts.js?v=2"></script>
+</body>
+</html>

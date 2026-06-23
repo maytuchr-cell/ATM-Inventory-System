@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Vendors — ATM Inventory</title>
+  <link rel="stylesheet" href="shared/styles.css">
+</head>
+<body>
+  <div class="app-layout">
+    <div id="sidebar-root"></div>
+    <div class="main-content">
+      <div class="topbar">
+        <div>
+          <div class="topbar-title" data-i18n="vnd.title">Vendors</div>
+          <div class="topbar-sub"   data-i18n="vnd.sub">Supplier and vendor registry</div>
+        </div>
+        <div class="topbar-controls">
+          <button class="btn btn-primary" onclick="openModal()">
+            <span>+</span> <span data-i18n="vnd.add">Add Vendor</span>
+          </button>
+        </div>
+      </div>
+
+      <div class="page-body">
+        <div class="card">
+          <div class="filter-bar">
+            <select class="form-select" id="type-filter" onchange="renderTable()" style="max-width:200px;">
+              <option value=""      data-i18n="lbl.all">All</option>
+              <option value="GRG"   data-i18n="vnd.type.GRG">GRG</option>
+              <option value="LOCAL" data-i18n="vnd.type.LOCAL">Local</option>
+            </select>
+            <select class="form-select" id="status-filter" onchange="renderTable()" style="max-width:160px;">
+              <option value=""      data-i18n="lbl.all">All</option>
+              <option value="true"  data-i18n="lbl.active">Active</option>
+              <option value="false" data-i18n="lbl.inactive">Inactive</option>
+            </select>
+          </div>
+          <div class="tbl-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th data-i18n="vnd.col.code">Code</th>
+                  <th data-i18n="vnd.col.name">Vendor Name</th>
+                  <th data-i18n="vnd.col.type">Type</th>
+                  <th data-i18n="vnd.col.contact">Contact</th>
+                  <th data-i18n="col.status">Status</th>
+                  <th data-i18n="col.actions">Actions</th>
+                </tr>
+              </thead>
+              <tbody id="vnd-tbody">
+                <tr><td colspan="6" class="empty-state" data-i18n="connecting">Connecting…</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal -->
+  <div class="modal-overlay hidden" id="modal-overlay">
+    <div class="modal" style="max-width:440px;">
+      <div class="modal-header">
+        <div class="modal-title" id="modal-title" data-i18n="vnd.add">Add Vendor</div>
+        <button class="btn btn-secondary btn-sm" onclick="closeModal()">✕</button>
+      </div>
+      <form id="vnd-form" onsubmit="saveVendor(event)">
+        <div class="form-grid-2">
+          <div class="form-group">
+            <label class="form-label" data-i18n="vnd.lbl.name">Vendor Name</label>
+            <input class="form-input" id="f-name" required data-i18n-ph="vnd.ph.name">
+          </div>
+          <div class="form-group">
+            <label class="form-label" data-i18n="vnd.lbl.code">Vendor Code</label>
+            <input class="form-input" id="f-code" required data-i18n-ph="vnd.ph.code">
+          </div>
+        </div>
+        <div class="form-group">
+          <label class="form-label" data-i18n="vnd.lbl.type">Vendor Type</label>
+          <select class="form-select" id="f-type" required>
+            <option value="GRG"   data-i18n="vnd.type.GRG">GRG</option>
+            <option value="LOCAL" data-i18n="vnd.type.LOCAL">Local</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label class="form-label" data-i18n="vnd.lbl.contact">Contact Info</label>
+          <input class="form-input" id="f-contact" data-i18n-ph="vnd.ph.contact">
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" onclick="closeModal()" data-i18n="btn.cancel">Cancel</button>
+          <button type="submit" class="btn btn-primary" data-i18n="btn.save">Save</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <script src="shared/translations.js"></script>
+  <script src="shared/toast.js"></script>
+  <script src="shared/api.js"></script>
+  <script src="shared/layout.js"></script>
+  <script src="admin-vendors.js"></script>
+</body>
+</html>

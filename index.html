@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ระบบจัดการคลังอะไหล่ ATM</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="container">
+        <div class="header-container">
+            <h1>🛠️ ระบบเบิกอะไหล่ ATM (Mockup)</h1>
+        </div>
+
+        <div class="form-card">
+            <h3>➕ สร้างใบเบิกอะไหล่ใหม่</h3>
+            <div class="input-group">
+                <input type="text" id="techName" placeholder="ชื่อช่าง (เช่น Somsak)...">
+                <input type="text" id="partName" placeholder="ชื่ออะไหล่ (เช่น Card Reader)...">
+                <button class="btn-primary" onclick="submitTicket()">ส่งเรื่องเบิกอะไหล่</button>
+            </div>
+        </div>
+
+        <table>
+            <thead>
+                <tr>
+                    <th>รหัส</th>
+                    <th>ชื่อช่าง</th>
+                    <th>อะไหล่ที่เบิก</th>
+                    <th>สถานะ</th>
+                    <th>จัดการ</th> </tr>
+            </thead>
+            <tbody id="ticketTableBody">
+                <tr><td colspan="5" style="text-align: center;">กำลังโหลดข้อมูล...</td></tr>
+            </tbody>
+        </table>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+</html>

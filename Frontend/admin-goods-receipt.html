@@ -1,0 +1,181 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Goods Receipt — ATM Inventory</title>
+  <link rel="stylesheet" href="shared/styles.css">
+  <style>
+    .line-row { display:grid; grid-template-columns:2fr 1fr 1fr 1.2fr 2fr auto; gap:10px; align-items:end; margin-bottom:10px; }
+    .line-row .form-group { margin-bottom:0; }
+    .btn-remove-line { background:var(--red-light); color:var(--red); border:1.5px solid transparent; border-radius:8px; width:38px; height:38px; cursor:pointer; font-size:14px; }
+    .btn-remove-line:hover { background:var(--red); color:#fff; }
+    .lines-wrap { border:1px solid var(--border); border-radius:10px; padding:16px; background:var(--bg-subtle); margin-bottom:16px; }
+  </style>
+</head>
+<body>
+  <div class="app-layout">
+    <div id="sidebar-root"></div>
+    <div class="main-content">
+      <div class="topbar">
+        <div>
+          <div class="topbar-title" data-i18n="gr.title">Goods Receipt</div>
+          <div class="topbar-sub"   data-i18n="gr.sub">Receive spare parts from GRG or local vendors</div>
+        </div>
+      </div>
+
+      <div class="page-body">
+        <!-- New Receipt Form -->
+        <div class="card">
+          <div class="card-body" style="padding:24px;">
+            <div class="section-head" style="display:flex;align-items:center;gap:10px;margin-bottom:20px;">
+              <div class="section-accent" style="width:4px;height:22px;background:var(--orange);border-radius:2px;"></div>
+              <span class="section-title" style="font-size:16px;font-weight:700;" data-i18n="gr.new">New Goods Receipt</span>
+            </div>
+
+            <form id="gr-form" onsubmit="submitReceipt(event)">
+              <div class="form-grid-2">
+                <div class="form-group">
+                  <label class="form-label" data-i18n="gr.source">Source</label>
+                  <select class="form-select" id="f-source" onchange="onSourceChange()" required>
+                    <option value="GRG" data-i18n="gr.source.grg">GRG Procurement</option>
+                    <option value="LocalVendor" data-i18n="gr.source.local">Local Vendor</option>
+                  </select>
+                </div>
+                <div class="form-group" id="vendor-group">
+                  <label class="form-label" data-i18n="gr.vendor">Vendor</label>
+                  <select class="form-select" id="f-vendor"></select>
+                </div>
+                <div class="form-group">
+                  <label class="form-label" id="refdoc-label" data-i18n="gr.refdoc.grg">Forecast / Lot Reference</label>
+                  <input class="form-input" id="f-refdoc" data-i18n-ph="gr.refdoc.ph">
+                </div>
+                <div class="form-group">
+                  <label class="form-label" data-i18n="gr.location">Target Location</label>
+                  <select class="form-select" id="f-location" required></select>
+                </div>
+                <div class="form-group">
+                  <label class="form-label" data-i18n="gr.receivedby">Received By</label>
+                  <input class="form-input" id="f-receivedby" data-i18n-ph="gr.receivedby.ph">
+                </div>
+                <div class="form-group">
+                  <label class="form-label" data-i18n="gr.handlingcost">Handling Cost</label>
+                  <input class="form-input" id="f-handlingcost" type="number" min="0" step="0.01" value="0">
+                </div>
+              </div>
+
+              <label class="form-label" style="margin:8px 0 12px;display:block;" data-i18n="gr.lines">Part Lines</label>
+              <div class="lines-wrap" id="lines-wrap"></div>
+              <button type="button" class="btn btn-secondary" onclick="addLine()" style="margin-bottom:20px;">
+                + <span data-i18n="gr.addline">Add Line</span>
+              </button>
+
+              <div class="modal-footer" style="justify-content:flex-end;display:flex;gap:10px;">
+                <button type="submit" class="btn btn-primary" data-i18n="gr.submit">Submit Receipt</button>
+              </div>
+            </form>
+          </div>
+        </div>
+
+        <!-- Excel / CSV Bulk Import -->
+        <div class="card">
+          <div class="card-body" style="padding:24px;">
+            <div class="section-head" style="display:flex;align-items:center;gap:10px;margin-bottom:16px;">
+              <div class="section-accent" style="width:4px;height:22px;background:var(--orange);border-radius:2px;"></div>
+              <span class="section-title" style="font-size:16px;font-weight:700;">Bulk Import via Excel / CSV</span>
+            </div>
+            <p style="font-size:12px;color:var(--text-secondary);margin-bottom:14px;">
+              รองรับไฟล์ <strong>.xlsx / .xls</strong> (columns: Part Number, D1 Part Description, Serial Number, Quantity, Status)
+              และ <strong>.csv</strong> (columns: PartNo, SerialNo, Qty, Condition). Row แรก = header (ข้ามอัตโนมัติ)
+            </p>
+
+            <!-- Preview table (hidden until file picked) -->
+            <div id="xl-preview-wrap" style="display:none;margin-bottom:16px;">
+              <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;">
+                <strong id="xl-preview-count" style="font-size:13px;color:var(--text-primary);"></strong>
+                <button class="btn btn-secondary btn-sm" onclick="clearPreview()">✕ ล้าง</button>
+              </div>
+              <div style="max-height:260px;overflow-y:auto;border:1px solid var(--border);border-radius:8px;">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>#</th>
+                      <th>Part No.</th>
+                      <th>Part Name</th>
+                      <th>Serial No.</th>
+                      <th>Qty</th>
+                      <th>Condition</th>
+                    </tr>
+                  </thead>
+                  <tbody id="xl-preview-tbody"></tbody>
+                </table>
+              </div>
+            </div>
+
+            <div class="form-grid-2" style="margin-bottom:14px;">
+              <div class="form-group">
+                <label class="form-label">Target Location</label>
+                <select class="form-select" id="csv-location"></select>
+              </div>
+              <div class="form-group">
+                <label class="form-label">Source</label>
+                <select class="form-select" id="csv-source">
+                  <option value="GRG">GRG Procurement</option>
+                  <option value="LocalVendor">Local Vendor</option>
+                </select>
+              </div>
+              <div class="form-group">
+                <label class="form-label">Received By</label>
+                <input class="form-input" id="csv-receivedby" placeholder="ชื่อผู้รับ">
+              </div>
+              <div class="form-group">
+                <label class="form-label">เลือกไฟล์ (.xlsx / .xls / .csv)</label>
+                <input class="form-input" type="file" id="csv-file" accept=".xlsx,.xls,.csv"
+                       onchange="onFileChange(this)">
+              </div>
+            </div>
+            <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;">
+              <button class="btn btn-primary" onclick="importFile()" id="btn-import" disabled>
+                ↑ Import ข้อมูล
+              </button>
+            </div>
+            <div id="csv-result" style="margin-top:12px;font-size:13px;"></div>
+          </div>
+        </div>
+
+        <!-- History -->
+        <div class="card">
+          <div class="section-head" style="display:flex;align-items:center;gap:10px;margin-bottom:20px;padding:24px 24px 0;">
+            <div class="section-accent" style="width:4px;height:22px;background:var(--orange);border-radius:2px;"></div>
+            <span class="section-title" style="font-size:16px;font-weight:700;" data-i18n="gr.history">Receipt History</span>
+          </div>
+          <div class="tbl-wrap" style="padding:0 24px 24px;">
+            <table>
+              <thead>
+                <tr>
+                  <th data-i18n="gr.col.receiptno">Receipt No.</th>
+                  <th data-i18n="gr.col.source">Source</th>
+                  <th data-i18n="gr.col.location">Location</th>
+                  <th data-i18n="gr.col.lines">Parts Received</th>
+                  <th data-i18n="gr.col.date">Date</th>
+                  <th data-i18n="gr.col.by">Received By</th>
+                </tr>
+              </thead>
+              <tbody id="history-tbody">
+                <tr><td colspan="6" class="empty-state" data-i18n="connecting">Connecting…</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
+  <script src="shared/translations.js"></script>
+  <script src="shared/toast.js"></script>
+  <script src="shared/api.js"></script>
+  <script src="shared/layout.js"></script>
+  <script src="admin-goods-receipt.js"></script>
+</body>
+</html>

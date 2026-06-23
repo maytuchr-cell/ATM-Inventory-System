@@ -1,0 +1,563 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Parts Configuration — ATM Inventory</title>
+  <link rel="stylesheet" href="shared/styles.css">
+  <script src="https://code.iconify.design/iconify-icon/2.1.0/iconify-icon.min.js"></script>
+  <style>
+    /* ── Tabs ── */
+    .tab-bar { display:flex; gap:4px; margin-bottom:20px; background:var(--bg-subtle);
+               border-radius:10px; padding:4px; width:fit-content; }
+    .tab-btn { padding:7px 20px; border-radius:7px; font-size:13px; font-weight:600;
+               border:none; cursor:pointer; background:transparent; color:var(--text-secondary);
+               transition:all .18s; font-family:'Inter','Sarabun',sans-serif; }
+    .tab-btn.active { background:var(--bg-card); color:var(--orange);
+                      box-shadow:0 1px 6px rgba(0,0,0,.08); }
+
+    /* ── Part chips ── */
+    .parts-chips { display:flex; flex-wrap:wrap; gap:6px; min-height:24px; }
+    .part-chip { display:inline-flex; align-items:center; gap:5px; background:var(--orange-light);
+                 color:var(--orange); border:1px solid var(--orange); border-radius:20px;
+                 padding:3px 10px; font-size:12px; font-weight:600; }
+    .part-chip .rm { cursor:pointer; font-size:13px; color:var(--orange); background:none;
+                     border:none; padding:0 0 0 2px; line-height:1; }
+    .part-chip .rm:hover { color:var(--red); }
+    .chip-unrestricted { background:var(--green-light); color:#065f46; border-color:#22c55e; }
+
+    /* ── Searchable combobox ── */
+    .combo-wrap { position:relative; }
+    .combo-input { width:100%; padding:9px 12px; border:1.5px solid var(--border); border-radius:8px;
+                   background:var(--bg-input); color:var(--text-primary); font-size:13px;
+                   font-family:'Inter','Sarabun',sans-serif; transition:border-color .15s; }
+    .combo-input:focus { outline:none; border-color:var(--orange); box-shadow:0 0 0 3px var(--orange-ring); }
+    .combo-dropdown { position:absolute; top:calc(100% + 4px); left:0; right:0; z-index:300;
+                      background:var(--bg-card); border:1.5px solid var(--border); border-radius:10px;
+                      box-shadow:0 8px 24px rgba(0,0,0,.12); max-height:220px; overflow-y:auto;
+                      display:none; }
+    .combo-dropdown.open { display:block; }
+    .combo-item { padding:9px 14px; font-size:13px; cursor:pointer; color:var(--text-primary);
+                  border-bottom:1px solid var(--border); transition:background .1s; }
+    .combo-item:last-child { border-bottom:none; }
+    .combo-item:hover, .combo-item.focused { background:var(--orange-light); color:var(--orange); }
+    .combo-empty { padding:10px 14px; font-size:12px; color:var(--text-muted); text-align:center; }
+    .combo-part-no { font-size:11px; color:var(--text-muted); margin-left:6px; }
+
+    /* ── Modals ── */
+    .modal-overlay { display:none; position:fixed; inset:0; background:rgba(0,0,0,.5);
+                     z-index:500; align-items:center; justify-content:center; padding:20px; }
+    .modal-overlay.open { display:flex; }
+    .modal { background:var(--bg-card); border-radius:16px; border:1px solid var(--border);
+             width:100%; max-width:580px; max-height:92vh; overflow-y:auto; padding:28px; }
+    .modal-header { display:flex; align-items:center; justify-content:space-between; margin-bottom:20px; }
+    .modal-title { font-size:17px; font-weight:700; }
+    .modal-close { background:none; border:none; font-size:20px; cursor:pointer; color:var(--text-secondary); }
+    .parts-section { border:1.5px solid var(--border); border-radius:10px; padding:14px; }
+    .add-combo-row { display:flex; gap:8px; margin-top:10px; }
+    .add-combo-row .combo-wrap { flex:1; }
+
+    /* ── Equivalent group cards ── */
+    .group-card { border:1.5px solid var(--border); border-radius:12px; padding:18px 20px;
+                  margin-bottom:12px; background:var(--bg-card); }
+    .group-header { display:flex; justify-content:space-between; align-items:flex-start; gap:12px; }
+    .group-name { font-size:15px; font-weight:700; color:var(--text-primary); }
+    .group-desc { font-size:12px; color:var(--text-secondary); margin-top:2px; }
+    .group-actions { display:flex; gap:6px; flex-shrink:0; }
+    .member-chip { display:inline-flex; align-items:center; gap:5px; padding:4px 10px;
+                   border-radius:20px; background:var(--orange-light); color:var(--orange);
+                   border:1px solid var(--orange); font-size:12px; font-weight:600; }
+    .member-chip .rm { cursor:pointer; opacity:.7; background:none; border:none; padding:0; font-size:13px; }
+    .member-chip .rm:hover { color:var(--red); opacity:1; }
+    .section-divider { font-size:11px; font-weight:700; letter-spacing:.7px; text-transform:uppercase;
+                       color:var(--orange); margin:4px 0 10px; display:block; }
+  </style>
+</head>
+<body>
+<div class="app-layout">
+  <div id="sidebar-root"></div>
+  <div class="main-content">
+    <div class="topbar">
+      <div>
+        <div class="topbar-title" data-i18n="atm.title">ATM Model Compatibility</div>
+        <div class="topbar-sub" data-i18n="atm.sub">Define which parts are compatible with each ATM model</div>
+      </div>
+      <button id="topbarBtn" class="btn btn-primary" onclick="topbarAction()">+ New Model</button>
+    </div>
+
+    <div class="page-body">
+      <!-- Tabs -->
+      <div class="tab-bar">
+        <button class="tab-btn active" id="tab-models" onclick="switchTab('models')">
+          <iconify-icon icon="material-symbols:join" width="15" style="vertical-align:-3px"></iconify-icon> ATM Models
+        </button>
+        <button class="tab-btn" id="tab-equiv" onclick="switchTab('equiv')">
+          <iconify-icon icon="lsicon:switch-filled" width="15" style="vertical-align:-3px"></iconify-icon> Equivalent Groups
+        </button>
+      </div>
+
+      <!-- ── Tab 1: ATM Models ── -->
+      <div id="pane-models">
+        <div class="card">
+          <div class="table-wrap">
+            <table>
+              <thead><tr>
+                <th style="width:12%" data-i18n="atm.col.code">Model Code</th>
+                <th style="width:22%" data-i18n="atm.col.name">Model Name</th>
+                <th style="width:12%" data-i18n="atm.col.maker">Manufacturer</th>
+                <th data-i18n="atm.col.parts">Compatible Parts</th>
+                <th style="width:10%" data-i18n="atm.col.action">Action</th>
+              </tr></thead>
+              <tbody id="modelsBody">
+                <tr><td colspan="5" class="empty-state" data-i18n="connecting">Connecting…</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <!-- ── Tab 2: Equivalent Groups ── -->
+      <div id="pane-equiv" style="display:none">
+        <div id="groupsContainer">
+          <div class="empty-state" data-i18n="connecting">Connecting…</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ── ATM Model Modal ── -->
+<div class="modal-overlay" id="modelModal" onclick="if(event.target===this)closeModelModal()">
+  <div class="modal">
+    <div class="modal-header">
+      <span class="modal-title" id="modelModalTitle">New Model</span>
+      <button class="modal-close" onclick="closeModelModal()">✕</button>
+    </div>
+
+    <div class="form-grid" style="margin-bottom:14px">
+      <div class="form-group">
+        <label class="form-label" data-i18n="atm.lbl.code">Model Code</label>
+        <input id="fCode" class="form-input" placeholder="e.g. GRG-H22N">
+      </div>
+      <div class="form-group">
+        <label class="form-label" data-i18n="atm.lbl.maker">Manufacturer</label>
+        <input id="fMaker" class="form-input" placeholder="e.g. GRG">
+      </div>
+    </div>
+    <div class="form-group" style="margin-bottom:14px">
+      <label class="form-label" data-i18n="atm.lbl.name">Model Name</label>
+      <input id="fName" class="form-input" placeholder="e.g. GRG H22N">
+    </div>
+    <div class="form-group" style="margin-bottom:20px">
+      <label class="form-label" data-i18n="atm.lbl.desc">Description</label>
+      <input id="fDesc" class="form-input" placeholder="Optional">
+    </div>
+
+    <!-- Compatible Parts (edit mode only) -->
+    <div id="compatSection" style="display:none;margin-bottom:20px">
+      <span class="section-divider" data-i18n="atm.lbl.parts">Compatible Parts</span>
+      <div class="parts-section">
+        <div id="compatChips" class="parts-chips" style="margin-bottom:10px"></div>
+        <div class="add-combo-row">
+          <div class="combo-wrap" id="compatComboWrap"></div>
+          <button class="btn btn-primary" style="width:auto;padding:8px 16px;white-space:nowrap" onclick="addCompatPart()" data-i18n="atm.addpart">Add Part</button>
+        </div>
+        <div style="font-size:11px;color:var(--text-muted);margin-top:6px" data-i18n="atm.noparts">No parts assigned — all parts allowed</div>
+      </div>
+    </div>
+
+    <div style="display:flex;gap:10px;justify-content:flex-end">
+      <button class="btn btn-ghost" onclick="closeModelModal()" data-i18n="btn.cancel">Cancel</button>
+      <button class="btn btn-primary" style="width:auto;margin-top:0" onclick="saveModel()" id="modelSaveBtn" data-i18n="btn.save">Save</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── Equivalent Group Modal ── -->
+<div class="modal-overlay" id="groupModal" onclick="if(event.target===this)closeGroupModal()">
+  <div class="modal" style="max-width:440px">
+    <div class="modal-header">
+      <span class="modal-title" id="groupModalTitle">New Group</span>
+      <button class="modal-close" onclick="closeGroupModal()">✕</button>
+    </div>
+    <div class="form-group" style="margin-bottom:14px">
+      <label class="form-label" data-i18n="eg.lbl.name">Group Name *</label>
+      <input class="form-input" id="gName" placeholder="e.g. Display Module Group">
+    </div>
+    <div class="form-group" style="margin-bottom:20px">
+      <label class="form-label" data-i18n="eg.lbl.desc">Description</label>
+      <input class="form-input" id="gDesc" placeholder="Optional">
+    </div>
+    <div style="display:flex;gap:10px;justify-content:flex-end">
+      <button class="btn btn-ghost" onclick="closeGroupModal()" data-i18n="btn.cancel">Cancel</button>
+      <button class="btn btn-primary" style="width:auto;margin-top:0" onclick="saveGroup()" data-i18n="btn.save">Save</button>
+    </div>
+  </div>
+</div>
+
+<script src="shared/translations.js"></script>
+<script src="shared/toast.js"></script>
+<script src="shared/api.js"></script>
+<script src="shared/layout.js"></script>
+<script>
+/* ════════════════════════════════════════════════════════
+   Searchable Combobox component
+   Usage: buildCombo(wrapEl, allParts, placeholder)
+   Returns: { getValue(), clear() }
+════════════════════════════════════════════════════════ */
+function buildCombo(wrapEl, parts, placeholder) {
+  wrapEl.innerHTML = '';
+  const input = document.createElement('input');
+  input.className = 'combo-input';
+  input.placeholder = placeholder || 'Search or select part…';
+  input.autocomplete = 'off';
+
+  const drop = document.createElement('div');
+  drop.className = 'combo-dropdown';
+
+  wrapEl.appendChild(input);
+  wrapEl.appendChild(drop);
+
+  let selected = null;
+  let focusIdx = -1;
+
+  function getItems() {
+    const q = input.value.toLowerCase();
+    return q
+      ? parts.filter(p => p.partName.toLowerCase().includes(q) || p.partNo.toLowerCase().includes(q))
+      : parts;
+  }
+
+  function renderDrop() {
+    const items = getItems();
+    focusIdx = -1;
+    if (!items.length) {
+      drop.innerHTML = `<div class="combo-empty">ไม่พบอะไหล่</div>`;
+    } else {
+      drop.innerHTML = items.map((p, i) =>
+        `<div class="combo-item" data-idx="${i}" data-partno="${p.partNo}">
+           ${p.partName}<span class="combo-part-no">${p.partNo}</span>
+         </div>`
+      ).join('');
+      drop.querySelectorAll('.combo-item').forEach(el => {
+        el.addEventListener('mousedown', e => {
+          e.preventDefault();
+          pick(parts.find(p => p.partNo === el.dataset.partno));
+        });
+      });
+    }
+    drop.classList.add('open');
+  }
+
+  function pick(part) {
+    selected = part;
+    input.value = part ? `${part.partName} (${part.partNo})` : '';
+    drop.classList.remove('open');
+  }
+
+  input.addEventListener('focus', renderDrop);
+  input.addEventListener('input', () => { selected = null; renderDrop(); });
+  input.addEventListener('blur', () => setTimeout(() => drop.classList.remove('open'), 150));
+  input.addEventListener('keydown', e => {
+    const items = drop.querySelectorAll('.combo-item');
+    if (!items.length) return;
+    if (e.key === 'ArrowDown') { focusIdx = Math.min(focusIdx + 1, items.length - 1); }
+    else if (e.key === 'ArrowUp') { focusIdx = Math.max(focusIdx - 1, 0); }
+    else if (e.key === 'Enter') {
+      e.preventDefault();
+      if (focusIdx >= 0) items[focusIdx].dispatchEvent(new Event('mousedown'));
+      return;
+    } else return;
+    items.forEach((el, i) => el.classList.toggle('focused', i === focusIdx));
+    items[focusIdx]?.scrollIntoView({ block: 'nearest' });
+  });
+
+  return {
+    getValue: () => selected?.partNo || null,
+    getSelected: () => selected,
+    clear: () => { selected = null; input.value = ''; drop.classList.remove('open'); }
+  };
+}
+
+/* ════════ State ════════ */
+let allModels  = [];
+let allParts   = [];
+let allGroups  = [];
+let editModelId = null;
+let editModel   = null;
+let editGroupId = null;
+let currentTab  = 'models';
+let compatCombo = null;
+
+function onLangChange() { renderModels(); renderGroups(); }
+
+window.addEventListener('DOMContentLoaded', () => {
+  initLayout();
+  loadAll();
+});
+
+async function loadAll() {
+  try {
+    [allModels, allParts, allGroups] = await Promise.all([
+      api.atmModels.getAll({ isActive: true }),
+      api.parts.getAll({ isActive: true }),
+      api.equivalentGroups.getAll()
+    ]);
+    renderModels();
+    renderGroups();
+  } catch(e) { showToast(e.message || t('error.connect'), 'error'); }
+}
+
+/* ════════ Tabs ════════ */
+function switchTab(tab) {
+  currentTab = tab;
+  document.getElementById('pane-models').style.display = tab === 'models' ? '' : 'none';
+  document.getElementById('pane-equiv').style.display  = tab === 'equiv'  ? '' : 'none';
+  document.getElementById('tab-models').classList.toggle('active', tab === 'models');
+  document.getElementById('tab-equiv').classList.toggle('active',  tab === 'equiv');
+  const btn = document.getElementById('topbarBtn');
+  btn.textContent = tab === 'models' ? '+ New Model' : '+ New Group';
+}
+
+function topbarAction() {
+  if (currentTab === 'models') openCreateModel();
+  else openCreateGroup();
+}
+
+/* ════════ ATM Models ════════ */
+function renderModels() {
+  const tbody = document.getElementById('modelsBody');
+  if (!allModels.length) {
+    tbody.innerHTML = `<tr><td colspan="5" class="empty-state">${t('atm.empty')}</td></tr>`;
+    return;
+  }
+  tbody.innerHTML = allModels.map(m => {
+    const chips = m.compatibleParts.length
+      ? m.compatibleParts.map(p => `<span class="part-chip" title="${p.partNo}">${p.partName || p.partNo}</span>`).join('')
+      : `<span class="part-chip chip-unrestricted">${t('atm.unrestricted')}</span>`;
+    return `<tr>
+      <td><span class="badge" style="background:var(--orange-light);color:var(--orange);font-family:monospace">${m.modelCode}</span></td>
+      <td class="fw-600">${m.modelName}</td>
+      <td>${m.manufacturer || '—'}</td>
+      <td><div class="parts-chips">${chips}</div></td>
+      <td><button class="btn btn-ghost" style="padding:5px 10px;font-size:12px" onclick="openEditModel(${m.id})">✏️ Edit</button></td>
+    </tr>`;
+  }).join('');
+}
+
+function openCreateModel() {
+  editModelId = null; editModel = null;
+  document.getElementById('modelModalTitle').textContent = t('atm.modal.create');
+  document.getElementById('fCode').value = '';
+  document.getElementById('fName').value = '';
+  document.getElementById('fMaker').value = '';
+  document.getElementById('fDesc').value = '';
+  document.getElementById('compatSection').style.display = 'none';
+  document.getElementById('modelModal').classList.add('open');
+}
+
+async function openEditModel(id) {
+  editModelId = id;
+  try {
+    editModel = await api.atmModels.getById(id);
+    document.getElementById('modelModalTitle').textContent = t('atm.modal.edit');
+    document.getElementById('fCode').value  = editModel.modelCode;
+    document.getElementById('fName').value  = editModel.modelName;
+    document.getElementById('fMaker').value = editModel.manufacturer || '';
+    document.getElementById('fDesc').value  = editModel.description  || '';
+    document.getElementById('compatSection').style.display = '';
+    renderCompatChips();
+    rebuildCompatCombo();
+    document.getElementById('modelModal').classList.add('open');
+  } catch(e) { showToast(e.message || t('error.connect'), 'error'); }
+}
+
+function renderCompatChips() {
+  const el = document.getElementById('compatChips');
+  if (!editModel?.compatibleParts.length) {
+    el.innerHTML = `<span style="font-size:12px;color:var(--text-muted)">${t('atm.noparts')}</span>`;
+    return;
+  }
+  el.innerHTML = editModel.compatibleParts.map(p =>
+    `<span class="part-chip">${p.partName || p.partNo}
+      <button class="rm" onclick="removeCompatPart(${p.id})" title="Remove">✕</button>
+    </span>`
+  ).join('');
+}
+
+function rebuildCompatCombo() {
+  const existing = new Set(editModel?.compatibleParts.map(p => p.partNo) || []);
+  const available = allParts.filter(p => !existing.has(p.partNo));
+  const wrap = document.getElementById('compatComboWrap');
+  compatCombo = buildCombo(wrap, available, t('atm.addpart') + '…');
+}
+
+async function addCompatPart() {
+  const partNo = compatCombo?.getValue();
+  if (!partNo) { showToast('กรุณาเลือกอะไหล่', 'error'); return; }
+  try {
+    await api.atmModels.addPart(editModelId, partNo);
+    editModel = await api.atmModels.getById(editModelId);
+    renderCompatChips();
+    rebuildCompatCombo();
+    allModels = await api.atmModels.getAll({ isActive: true });
+    renderModels();
+    showToast('เพิ่มอะไหล่แล้ว', 'success');
+  } catch(e) { showToast(e.message || t('error.connect'), 'error'); }
+}
+
+async function removeCompatPart(partId) {
+  try {
+    await api.atmModels.removePart(editModelId, partId);
+    editModel = await api.atmModels.getById(editModelId);
+    renderCompatChips();
+    rebuildCompatCombo();
+    allModels = await api.atmModels.getAll({ isActive: true });
+    renderModels();
+    showToast('ลบอะไหล่แล้ว', 'success');
+  } catch(e) { showToast(e.message || t('error.connect'), 'error'); }
+}
+
+async function saveModel() {
+  const code  = document.getElementById('fCode').value.trim();
+  const name  = document.getElementById('fName').value.trim();
+  const maker = document.getElementById('fMaker').value.trim();
+  const desc  = document.getElementById('fDesc').value.trim();
+  if (!code || !name) { showToast('Model Code และ Name จำเป็น', 'error'); return; }
+  const btn = document.getElementById('modelSaveBtn');
+  btn.disabled = true;
+  try {
+    if (editModelId) {
+      await api.atmModels.update(editModelId, { modelCode: code, modelName: name, manufacturer: maker || null, description: desc || null });
+      showToast('บันทึกแล้ว', 'success');
+    } else {
+      await api.atmModels.create({ modelCode: code, modelName: name, manufacturer: maker || null, description: desc || null });
+      showToast('สร้างโมเดลแล้ว', 'success');
+    }
+    allModels = await api.atmModels.getAll({ isActive: true });
+    renderModels();
+    closeModelModal();
+  } catch(e) { showToast(e.message || t('error.connect'), 'error'); }
+  finally { btn.disabled = false; }
+}
+
+function closeModelModal() {
+  document.getElementById('modelModal').classList.remove('open');
+}
+
+/* ════════ Equivalent Groups ════════ */
+function renderGroups() {
+  const container = document.getElementById('groupsContainer');
+  if (!allGroups.length) {
+    container.innerHTML = `<div class="empty-state">${t('eg.empty')}</div>`;
+    return;
+  }
+  container.innerHTML = allGroups.map(g => `
+    <div class="group-card" id="gc-${g.id}">
+      <div class="group-header">
+        <div>
+          <div class="group-name">${g.name}</div>
+          ${g.description ? `<div class="group-desc">${g.description}</div>` : ''}
+        </div>
+        <div class="group-actions">
+          <button class="btn btn-ghost" style="padding:5px 10px;font-size:12px" onclick="openEditGroup(${g.id})">✏️ Edit</button>
+          <button class="btn btn-ghost" style="padding:5px 10px;font-size:12px;color:var(--red)" onclick="deleteGroup(${g.id})">🗑 Delete</button>
+        </div>
+      </div>
+      <div class="parts-chips" style="margin-top:12px">
+        ${g.members.map(m => `
+          <span class="member-chip">${m.partNo}${m.partName && m.partName !== m.partNo ? ' — ' + m.partName : ''}
+            <button class="rm" onclick="removeMember(${g.id},${m.id})">✕</button>
+          </span>`).join('')}
+        ${!g.members.length ? `<span style="font-size:12px;color:var(--text-muted)">ยังไม่มีสมาชิก</span>` : ''}
+      </div>
+      <!-- Searchable add-member row -->
+      <div class="add-combo-row" style="margin-top:10px">
+        <div class="combo-wrap" id="gcw-${g.id}"></div>
+        <button class="btn btn-primary" style="width:auto;padding:8px 14px;white-space:nowrap" onclick="addMember(${g.id})">+ Add</button>
+      </div>
+    </div>`).join('');
+
+  // Build a combo for each group card
+  allGroups.forEach(g => {
+    const existing = new Set(g.members.map(m => m.partNo));
+    const available = allParts.filter(p => !existing.has(p.partNo));
+    const wrap = document.getElementById(`gcw-${g.id}`);
+    if (wrap) wrap._combo = buildCombo(wrap, available, 'ค้นหาหรือเลือกอะไหล่…');
+  });
+}
+
+function openCreateGroup() {
+  editGroupId = null;
+  document.getElementById('groupModalTitle').textContent = t('eg.modal.new');
+  document.getElementById('gName').value = '';
+  document.getElementById('gDesc').value = '';
+  document.getElementById('groupModal').classList.add('open');
+}
+
+function openEditGroup(id) {
+  const g = allGroups.find(x => x.id === id);
+  if (!g) return;
+  editGroupId = id;
+  document.getElementById('groupModalTitle').textContent = t('eg.modal.edit');
+  document.getElementById('gName').value = g.name;
+  document.getElementById('gDesc').value = g.description || '';
+  document.getElementById('groupModal').classList.add('open');
+}
+
+function closeGroupModal() {
+  document.getElementById('groupModal').classList.remove('open');
+}
+
+async function saveGroup() {
+  const name = document.getElementById('gName').value.trim();
+  const desc = document.getElementById('gDesc').value.trim();
+  if (!name) { showToast('Group name จำเป็น', 'error'); return; }
+  try {
+    if (editGroupId) {
+      await api.equivalentGroups.update(editGroupId, { name, description: desc || null });
+      showToast('บันทึกแล้ว', 'success');
+    } else {
+      await api.equivalentGroups.create({ name, description: desc || null });
+      showToast('สร้างกลุ่มแล้ว', 'success');
+    }
+    allGroups = await api.equivalentGroups.getAll();
+    renderGroups();
+    closeGroupModal();
+  } catch(e) { showToast(e.message, 'error'); }
+}
+
+async function deleteGroup(id) {
+  if (!confirm('ลบกลุ่มนี้?')) return;
+  try {
+    await api.equivalentGroups.remove(id);
+    showToast('ลบแล้ว', 'success');
+    allGroups = await api.equivalentGroups.getAll();
+    renderGroups();
+  } catch(e) { showToast(e.message, 'error'); }
+}
+
+async function addMember(groupId) {
+  const wrap = document.getElementById(`gcw-${groupId}`);
+  const combo = wrap?._combo;
+  const partNo = combo?.getValue();
+  if (!partNo) { showToast('กรุณาเลือกอะไหล่', 'error'); return; }
+  try {
+    await api.equivalentGroups.addMember(groupId, partNo);
+    showToast(`เพิ่ม ${partNo} แล้ว`, 'success');
+    allGroups = await api.equivalentGroups.getAll();
+    renderGroups();
+  } catch(e) { showToast(e.message, 'error'); }
+}
+
+async function removeMember(groupId, memberId) {
+  try {
+    await api.equivalentGroups.removeMember(groupId, memberId);
+    showToast('ลบสมาชิกแล้ว', 'success');
+    allGroups = await api.equivalentGroups.getAll();
+    renderGroups();
+  } catch(e) { showToast(e.message, 'error'); }
+}
+</script>
+</body>
+</html>

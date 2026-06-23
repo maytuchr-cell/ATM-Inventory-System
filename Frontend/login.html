@@ -1,0 +1,238 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sign In — ATM Inventory</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Sarabun:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+        :root {
+            --bg:           #f5f5f5;
+            --bg-card:      #ffffff;
+            --bg-subtle:    #f3f4f6;
+            --bg-input:     #ffffff;
+            --text-primary: #111827;
+            --text-secondary:#6b7280;
+            --text-muted:   #9ca3af;
+            --border:       #e5e7eb;
+            --orange:       #f97316;
+            --orange-hover: #ea6c00;
+            --orange-light: #fff7ed;
+            --orange-ring:  rgba(249,115,22,0.18);
+            --shadow-card:  0 4px 24px rgba(0,0,0,0.07);
+            --shadow-btn:   0 4px 14px rgba(249,115,22,0.28);
+        }
+        [data-theme="dark"] {
+            --bg:           #111827;
+            --bg-card:      #1f2937;
+            --bg-subtle:    #374151;
+            --bg-input:     #111827;
+            --text-primary: #f9fafb;
+            --text-secondary:#9ca3af;
+            --text-muted:   #6b7280;
+            --border:       #374151;
+            --orange:       #f97316;
+            --orange-hover: #fb923c;
+            --orange-light: rgba(249,115,22,0.08);
+            --orange-ring:  rgba(249,115,22,0.2);
+            --shadow-card:  0 4px 24px rgba(0,0,0,0.4);
+            --shadow-btn:   0 4px 14px rgba(249,115,22,0.22);
+        }
+
+        body {
+            font-family: 'Inter', sans-serif;
+            min-height: 100vh;
+            background: var(--bg);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: background 0.3s, color 0.3s;
+            padding: 24px;
+        }
+
+        /* ── Top-right controls ── */
+        .top-controls {
+            position: fixed; top: 16px; right: 16px;
+            display: flex; gap: 8px; z-index: 999;
+        }
+        .ctrl-btn {
+            height: 38px; padding: 0 14px;
+            border: 1.5px solid var(--border);
+            border-radius: 10px;
+            background: var(--bg-card);
+            color: var(--text-secondary);
+            cursor: pointer;
+            display: flex; align-items: center; gap: 6px;
+            font-family: 'Inter','Sarabun',sans-serif;
+            font-size: 13px; font-weight: 600;
+            transition: all 0.2s;
+            box-shadow: var(--shadow-card);
+        }
+        .ctrl-btn:hover { color: var(--orange); border-color: var(--orange); background: var(--orange-light); }
+
+        /* ── Card ── */
+        .login-card {
+            background: var(--bg-card);
+            border-radius: 20px;
+            box-shadow: var(--shadow-card);
+            border: 1px solid var(--border);
+            width: 100%; max-width: 440px;
+            padding: 48px 40px;
+            transition: background 0.3s, border-color 0.3s;
+        }
+
+        .logo-wrap { display: flex; flex-direction: row; align-items: center; gap: 16px; margin-bottom: 32px; }
+        .logo-icon {
+            width: 120px; height: 120px;
+            border-radius: 20px;
+            display: flex; align-items: center; justify-content: center;
+            flex-shrink: 0; overflow: hidden;
+        }
+        .logo-icon img { width: 100%; height: 100%; object-fit: contain; }
+        .logo-text { text-align: left; }
+        .logo-text h1 { font-size: 22px; font-weight: 700; color: var(--text-primary); letter-spacing: -0.3px; line-height: 1.2; }
+        .logo-text p  { font-size: 13px; color: var(--text-muted); margin-top: 2px; }
+
+        .divider { height: 1px; background: var(--border); margin-bottom: 32px; }
+
+        .section-title { font-size: 22px; font-weight: 700; color: var(--text-primary); letter-spacing: -0.3px; margin-bottom: 6px; }
+        .section-sub   { font-size: 14px; color: var(--text-secondary); margin-bottom: 28px; }
+
+        .form-label {
+            display: block; font-size: 12px; font-weight: 600;
+            color: var(--text-secondary); letter-spacing: 0.5px;
+            text-transform: uppercase; margin-bottom: 8px;
+        }
+        .form-group { margin-bottom: 22px; }
+        .input-wrap { position: relative; }
+        .input-icon {
+            position: absolute; left: 14px; top: 50%;
+            transform: translateY(-50%);
+            color: var(--text-muted); pointer-events: none;
+        }
+        .form-input {
+            width: 100%; padding: 13px 14px 13px 42px;
+            border: 1.5px solid var(--border); border-radius: 10px;
+            background: var(--bg-input); color: var(--text-primary);
+            font-family: 'Inter','Sarabun',sans-serif; font-size: 15px;
+            transition: border-color 0.2s, box-shadow 0.2s, background 0.3s;
+        }
+        .form-input:focus { outline: none; border-color: var(--orange); box-shadow: 0 0 0 4px var(--orange-ring); }
+        .form-input::placeholder { color: var(--text-muted); }
+
+        .btn-signin {
+            width: 100%; padding: 14px;
+            background: var(--orange); color: #fff;
+            border: none; border-radius: 10px;
+            font-family: 'Inter','Sarabun',sans-serif; font-size: 15px; font-weight: 600;
+            cursor: pointer; transition: all 0.2s;
+            display: flex; align-items: center; justify-content: center; gap: 8px;
+            box-shadow: var(--shadow-btn);
+        }
+        .btn-signin:hover { background: var(--orange-hover); transform: translateY(-1px); box-shadow: 0 6px 20px rgba(249,115,22,0.35); }
+        .btn-signin:active { transform: translateY(0); }
+
+        .demo-box {
+            margin-top: 24px; padding: 16px;
+            background: var(--bg-subtle); border-radius: 10px;
+            border: 1px solid var(--border); transition: background 0.3s;
+        }
+        .demo-box-title { font-size: 11px; font-weight: 600; color: var(--text-muted); letter-spacing: 0.6px; text-transform: uppercase; margin-bottom: 10px; }
+        .demo-row { display: flex; align-items: center; gap: 10px; margin-bottom: 7px; }
+        .demo-row:last-child { margin-bottom: 0; }
+        .demo-pill { font-size: 11px; font-weight: 600; padding: 3px 9px; border-radius: 5px; min-width: 50px; text-align: center; }
+        .demo-pill.admin { background: var(--text-primary); color: var(--bg-card); }
+        .demo-pill.tech  { background: var(--orange); color: #fff; }
+        .demo-email { font-size: 13px; color: var(--text-secondary); font-family: 'Inter', monospace; }
+    </style>
+</head>
+<body>
+
+    <div class="top-controls">
+        <button class="ctrl-btn" id="lang-btn" onclick="toggleLang()"><!-- filled by JS --></button>
+        <button class="ctrl-btn" onclick="toggleTheme()" id="theme-btn">
+            <svg id="theme-icon" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"/>
+            </svg>
+        </button>
+    </div>
+
+    <div class="login-card">
+        <div class="logo-wrap">
+            <div class="logo-icon"><img src="assets/logo.png" alt="Logo"></div>
+            <div class="logo-text">
+                <h1>ATM Inventory</h1>
+                <p data-i18n="login.system">Spare Parts Management System</p>
+            </div>
+        </div>
+        <div class="divider"></div>
+
+        <p class="section-title" data-i18n="login.welcome">Welcome back</p>
+        <p class="section-sub"   data-i18n="login.sub">Sign in to access your workspace.</p>
+
+        <form onsubmit="handleLogin(event)">
+            <div class="form-group">
+                <label class="form-label" for="emailInput" data-i18n="login.label">Email Address</label>
+                <div class="input-wrap">
+                    <svg class="input-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"/></svg>
+                    <input type="email" id="emailInput" class="form-input" required
+                        data-i18n-ph="login.ph" placeholder="you@atm.com" autofocus>
+                </div>
+            </div>
+            <button type="submit" class="btn-signin">
+                <span data-i18n="login.btn">Sign In</span>
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></svg>
+            </button>
+        </form>
+
+        <div class="demo-box">
+            <div class="demo-box-title" data-i18n="login.demo">Demo Accounts</div>
+            <div class="demo-row">
+                <span class="demo-pill admin">Admin</span>
+                <span class="demo-email">admin@atm.com</span>
+            </div>
+            <div class="demo-row">
+                <span class="demo-pill tech">Tech</span>
+                <span class="demo-email">tech@atm.com</span>
+            </div>
+        </div>
+    </div>
+
+    <script src="translations.js"></script>
+    <script>
+        /* ── Theme ── */
+        const MOON = `<path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9z"/>`;
+        const SUN  = `<circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"/>`;
+        function applyTheme(th) {
+            document.documentElement.setAttribute('data-theme', th);
+            document.getElementById('theme-icon').innerHTML = th === 'dark' ? MOON : SUN;
+            localStorage.setItem('theme', th);
+        }
+        function toggleTheme() { applyTheme(document.documentElement.getAttribute('data-theme') === 'dark' ? 'light' : 'dark'); }
+        applyTheme(localStorage.getItem('theme') || 'light');
+
+        /* ── i18n init ── */
+        applyLang();
+
+        /* ── Login ── */
+        function handleLogin(event) {
+            event.preventDefault();
+            const email = document.getElementById("emailInput").value.trim().toLowerCase();
+            if (email === "admin@atm.com") {
+                localStorage.setItem("userRole", "admin");
+                localStorage.setItem("userEmail", email);
+                window.location.href = "admin.html";
+            } else if (email === "tech@atm.com" || email.includes("tech")) {
+                localStorage.setItem("userRole", "tech");
+                localStorage.setItem("userEmail", email);
+                window.location.href = "tech.html";
+            } else {
+                alert(t('login.error'));
+            }
+        }
+    </script>
+</body>
+</html>

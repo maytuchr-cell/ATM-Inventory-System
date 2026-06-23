@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Stock Transfers — ATM Inventory</title>
+  <link rel="stylesheet" href="shared/styles.css">
+  <style>
+    .xfer-actions { display:flex; gap:8px; flex-wrap:wrap; }
+    .xfer-actions .btn { padding:6px 12px; font-size:12px; }
+  </style>
+</head>
+<body>
+  <div class="app-layout">
+    <div id="sidebar-root"></div>
+    <div class="main-content">
+      <div class="topbar">
+        <div>
+          <div class="topbar-title" data-i18n="xfer.title">Stock Transfers</div>
+          <div class="topbar-sub"   data-i18n="xfer.sub">Move stock between warehouses and locations</div>
+        </div>
+      </div>
+
+      <div class="page-body">
+        <!-- New Transfer Form -->
+        <div class="card">
+          <div class="card-body" style="padding:24px;">
+            <div class="section-head" style="display:flex;align-items:center;gap:10px;margin-bottom:20px;">
+              <div class="section-accent" style="width:4px;height:22px;background:var(--orange);border-radius:2px;"></div>
+              <span class="section-title" style="font-size:16px;font-weight:700;" data-i18n="xfer.new">New Transfer Request</span>
+            </div>
+            <form id="xfer-form" onsubmit="submitTransfer(event)">
+              <div class="form-grid-2">
+                <div class="form-group">
+                  <label class="form-label" data-i18n="xfer.part">Part</label>
+                  <select class="form-select" id="f-part" required></select>
+                </div>
+                <div class="form-group">
+                  <label class="form-label" data-i18n="xfer.qty">Qty</label>
+                  <input class="form-input" id="f-qty" type="number" min="1" value="1" required>
+                </div>
+                <div class="form-group">
+                  <label class="form-label" data-i18n="xfer.condition">Condition</label>
+                  <select class="form-select" id="f-condition">
+                    <option value="Good" data-i18n="gr.condition.good">Good</option>
+                    <option value="Defective" data-i18n="gr.condition.defective">Defective</option>
+                  </select>
+                </div>
+                <div class="form-group">
+                  <label class="form-label" data-i18n="xfer.requestedby">Requested By</label>
+                  <input class="form-input" id="f-requestedby">
+                </div>
+                <div class="form-group">
+                  <label class="form-label" data-i18n="xfer.from">From Location</label>
+                  <select class="form-select" id="f-from" required></select>
+                </div>
+                <div class="form-group">
+                  <label class="form-label" data-i18n="xfer.to">To Location</label>
+                  <select class="form-select" id="f-to" required></select>
+                </div>
+              </div>
+              <div class="modal-footer" style="justify-content:flex-end;display:flex;">
+                <button type="submit" class="btn btn-primary" data-i18n="xfer.submit">Submit Request</button>
+              </div>
+            </form>
+          </div>
+        </div>
+
+        <!-- Transfer Queue -->
+        <div class="card">
+          <div class="section-head" style="display:flex;align-items:center;gap:10px;margin-bottom:20px;padding:24px 24px 0;">
+            <div class="section-accent" style="width:4px;height:22px;background:var(--orange);border-radius:2px;"></div>
+            <span class="section-title" style="font-size:16px;font-weight:700;" data-i18n="xfer.queue">Transfer Queue</span>
+          </div>
+          <div class="tbl-wrap" style="padding:0 24px 24px;">
+            <table>
+              <thead>
+                <tr>
+                  <th data-i18n="xfer.col.id">Transfer ID</th>
+                  <th data-i18n="xfer.col.part">Part</th>
+                  <th data-i18n="xfer.col.qty">Qty</th>
+                  <th data-i18n="xfer.col.from">From</th>
+                  <th data-i18n="xfer.col.to">To</th>
+                  <th data-i18n="xfer.col.status">Status</th>
+                  <th data-i18n="xfer.col.date">Created</th>
+                  <th data-i18n="xfer.col.action">Action</th>
+                </tr>
+              </thead>
+              <tbody id="xfer-tbody">
+                <tr><td colspan="8" class="empty-state" data-i18n="connecting">Connecting…</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="shared/translations.js"></script>
+  <script src="shared/toast.js"></script>
+  <script src="shared/api.js"></script>
+  <script src="shared/layout.js"></script>
+  <script src="admin-transfers.js"></script>
+</body>
+</html>

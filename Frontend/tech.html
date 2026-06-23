@@ -1,0 +1,508 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Tech Workspace — ATM Inventory</title>
+    <link rel="stylesheet" href="shared/styles.css">
+    <style>
+        /* Tech-page-specific styles */
+        .section-head { display:flex; align-items:center; gap:10px; margin-bottom:20px; }
+        .section-accent { width:4px; height:22px; background:var(--orange); border-radius:2px; }
+        .section-title  { font-size:17px; font-weight:700; color:var(--text-primary); }
+        .section-label { font-size:11px; font-weight:700; letter-spacing:.8px; text-transform:uppercase; color:var(--orange); margin-bottom:16px; display:block; }
+        .form-divider { border:none; border-top:1px solid var(--border); margin:8px 0 20px; }
+        .form-textarea { padding:12px 14px; border:1.5px solid var(--border); border-radius:10px; background:var(--bg-input); color:var(--text-primary); font-family:'Inter','Sarabun',sans-serif; font-size:14px; resize:vertical; min-height:80px; transition:border-color .2s,box-shadow .2s,background .3s; width:100%; }
+        .form-textarea:focus { outline:none; border-color:var(--orange); box-shadow:0 0 0 4px var(--orange-ring); }
+        .form-textarea::placeholder { color:var(--text-muted); }
+        .upload-zone { border:2px dashed var(--border); border-radius:12px; padding:24px; text-align:center; cursor:pointer; transition:border-color .2s,background .2s; position:relative; }
+        .upload-zone:hover, .upload-zone.drag-over { border-color:var(--orange); background:var(--orange-light); }
+        .upload-zone input[type=file] { position:absolute; inset:0; opacity:0; cursor:pointer; width:100%; height:100%; }
+        .upload-icon { font-size:28px; margin-bottom:8px; }
+        .upload-text { font-size:13px; color:var(--text-secondary); }
+        .upload-hint { font-size:11px; color:var(--text-muted); margin-top:4px; }
+        .img-preview { margin-top:14px; border-radius:10px; max-height:200px; max-width:100%; object-fit:contain; border:1px solid var(--border); display:none; }
+        .img-preview.show { display:block; margin:14px auto 0; }
+        .remove-img { display:none; margin-top:8px; font-size:12px; color:var(--red); background:none; border:none; cursor:pointer; font-family:'Inter',sans-serif; font-weight:600; }
+        .remove-img.show { display:inline-block; }
+        .btn-receive { background:var(--green-light); color:#065f46; border:1.5px solid transparent; padding:7px 14px; font-size:13px; border-radius:8px; font-family:'Inter','Sarabun',sans-serif; cursor:pointer; }
+        .btn-receive:hover { background:var(--green); color:#fff; }
+        .btn-return { background:var(--orange-light); color:var(--orange); border:1.5px solid transparent; padding:7px 14px; font-size:13px; border-radius:8px; font-family:'Inter','Sarabun',sans-serif; cursor:pointer; }
+        .btn-return:hover { background:var(--orange); color:#fff; }
+        .badge { display:inline-flex; align-items:center; gap:5px; padding:4px 10px; border-radius:6px; font-size:12px; font-weight:600; white-space:nowrap; }
+        .badge-dot { width:6px; height:6px; border-radius:50%; flex-shrink:0; }
+        .badge-pending  { background:var(--yellow-light); color:#92400e; }
+        .badge-pending  .badge-dot { background:var(--yellow); }
+        .badge-approved { background:var(--orange-light); color:var(--orange); }
+        .badge-approved .badge-dot { background:var(--orange); }
+        .badge-success  { background:var(--green-light); color:#065f46; }
+        .badge-success  .badge-dot { background:var(--green); }
+        .badge-danger   { background:var(--red-light); color:#991b1b; }
+        .badge-danger   .badge-dot { background:var(--red); }
+        .id-chip { font-size:12px; font-weight:600; color:var(--text-muted); background:var(--bg-subtle); padding:3px 8px; border-radius:5px; font-family:'Inter',monospace; border:1px solid var(--border); }
+        .ticket-id { color:var(--orange); }
+        .due-chip { display:inline-flex; align-items:center; gap:5px; font-size:12px; font-weight:600; color:var(--orange); background:var(--orange-light); padding:4px 10px; border-radius:6px; }
+        .text-green  { color:var(--green); font-weight:600; }
+        .text-muted  { color:var(--text-muted); }
+        .fw-600      { font-weight:600; }
+        .ret-modal-overlay { display:none; position:fixed; inset:0; background:rgba(0,0,0,.45); z-index:900; align-items:center; justify-content:center; padding:20px; }
+        .ret-modal-overlay.open { display:flex; }
+        .ret-modal { background:var(--bg-card); border-radius:16px; border:1px solid var(--border); width:100%; max-width:420px; padding:24px; }
+        .ret-modal h3 { font-size:16px; font-weight:700; margin-bottom:16px; }
+        .ret-modal .form-group { margin-bottom:16px; }
+        @media(max-width:640px) { .form-grid { grid-template-columns:1fr; } }
+    </style>
+</head>
+<body>
+
+<div class="app-layout">
+    <div id="sidebar-root"></div>
+    <div class="main-content">
+        <div class="topbar">
+            <div>
+                <div class="topbar-title" data-i18n="tech.title">Tech Workspace</div>
+                <div class="topbar-sub" data-i18n="tech.sub">Submit and track your withdrawal tickets</div>
+            </div>
+        </div>
+
+        <div class="page-body">
+
+            <!-- Create Ticket -->
+            <div class="card" style="margin-bottom:28px">
+                <div class="card-body">
+                    <div class="section-head">
+                        <div class="section-accent"></div>
+                        <span class="section-title" data-i18n="form.section">Create Withdrawal Ticket</span>
+                    </div>
+                    <form id="ticketForm" onsubmit="createTicket(event)">
+
+                        <!-- Technician Info -->
+                        <span class="section-label">👤 ข้อมูลช่างเทคนิค</span>
+                        <div class="form-grid">
+                            <div class="form-group">
+                                <label class="form-label" data-i18n="form.name">Full Name</label>
+                                <input type="text" id="techName" class="form-input" required
+                                    data-i18n-ph="form.ph.name" placeholder="e.g. John Smith">
+                            </div>
+                            <div class="form-group">
+                                <label class="form-label" data-i18n="form.dept">Department / Region</label>
+                                <input type="text" id="techDept" class="form-input" required
+                                    data-i18n-ph="form.ph.dept" placeholder="e.g. South Service Zone">
+                            </div>
+                        </div>
+                        <div class="form-grid">
+                            <div class="form-group">
+                                <label class="form-label" data-i18n="form.phone">Phone Number</label>
+                                <input type="tel" id="techPhone" class="form-input" required
+                                    data-i18n-ph="form.ph.phone" placeholder="08X-XXX-XXXX">
+                            </div>
+                            <div class="form-group">
+                                <label class="form-label" data-i18n="form.part">Select Replacement Part</label>
+                                <select id="requestedPart" class="form-select" required></select>
+                            </div>
+                        </div>
+
+                        <hr class="form-divider">
+
+                        <!-- Defective Part Info -->
+                        <span class="section-label">🔧 ข้อมูลอะไหล่ที่เสีย</span>
+                        <div class="form-grid">
+                            <div class="form-group">
+                                <label class="form-label">S/N อะไหล่ที่เสีย</label>
+                                <input type="text" id="faultySerialNo" class="form-input"
+                                    placeholder="e.g. SN-2024-001234">
+                            </div>
+                            <div class="form-group">
+                                <label class="form-label">Part Number อะไหล่ที่เสีย</label>
+                                <input type="text" id="faultyPartNo" class="form-input"
+                                    placeholder="e.g. ATM-001">
+                            </div>
+                        </div>
+                        <div class="form-grid">
+                            <div class="form-group">
+                                <label class="form-label">Model เครื่อง ATM</label>
+                                <select id="machineModel" class="form-select" onchange="onModelChange()">
+                                    <option value="">— เลือกโมเดล ATM —</option>
+                                </select>
+                            </div>
+                            <div class="form-group" style="grid-column:1/-1;">
+                                <label class="form-label">อธิบายปัญหา / Fault Description</label>
+                                <textarea id="description" class="form-textarea"
+                                    placeholder="อธิบายอาการเสีย สาเหตุ หรือรายละเอียดเพิ่มเติม…"></textarea>
+                            </div>
+                        </div>
+
+                        <hr class="form-divider">
+
+                        <!-- Attachment -->
+                        <span class="section-label">📷 แนบรูปอะไหล่ที่เสีย</span>
+                        <div class="upload-zone" id="uploadZone">
+                            <input type="file" id="attachmentFile" accept="image/*"
+                                onchange="handleFileSelect(this)">
+                            <div class="upload-icon">📎</div>
+                            <div class="upload-text">คลิกหรือลากไฟล์มาวางที่นี่</div>
+                            <div class="upload-hint">รองรับ JPG, PNG, WEBP (ไม่เกิน 5MB)</div>
+                        </div>
+                        <img id="imgPreview" class="img-preview" alt="Preview">
+                        <button type="button" class="remove-img" id="removeImg" onclick="removeImage()">✕ ลบรูป</button>
+
+                        <div style="margin-top:20px;">
+                            <button type="submit" class="btn btn-primary" id="submitBtn" style="width:100%;justify-content:center;padding:13px 20px;font-size:15px;">
+                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+                                <span data-i18n="form.submit">Submit Withdrawal Request</span>
+                            </button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+
+            <!-- History -->
+            <div class="card">
+                <div class="card-body">
+                    <div class="section-head">
+                        <div class="section-accent"></div>
+                        <span class="section-title" data-i18n="my.section">My Ticket History</span>
+                    </div>
+                    <div class="table-wrap">
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th style="width:10%" data-i18n="my.colid">Ticket ID</th>
+                                    <th style="width:22%" data-i18n="my.colreq">Requested Part</th>
+                                    <th style="width:22%" data-i18n="my.colissued">Issued Part</th>
+                                    <th style="width:15%" data-i18n="my.colstatus">Status</th>
+                                    <th style="width:16%" data-i18n="my.coldue">Return Deadline</th>
+                                    <th style="width:15%" data-i18n="my.colaction">Action</th>
+                                </tr>
+                            </thead>
+                            <tbody id="ticketsTableBody">
+                                <tr><td colspan="6" class="empty-state"><span data-i18n="connecting">Connecting to server…</span></td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+        </div><!-- /page-body -->
+    </div><!-- /main-content -->
+</div><!-- /app-layout -->
+
+<!-- Return Part Modal -->
+<div class="ret-modal-overlay" id="retModalOverlay" onclick="if(event.target===this) closeReturnModal()">
+    <div class="ret-modal">
+        <h3 data-i18n="ret.title">Return Part</h3>
+        <div class="form-group">
+            <label class="form-label" data-i18n="ret.condition">Condition</label>
+            <select id="retCondition" class="form-select">
+                <option value="Good" data-i18n="gr.condition.good">Good</option>
+                <option value="Defective" data-i18n="gr.condition.defective">Defective</option>
+            </select>
+        </div>
+        <div class="form-group">
+            <label class="form-label" data-i18n="ret.location">Return To Location</label>
+            <select id="retLocation" class="form-select"></select>
+        </div>
+        <div style="display:flex;gap:10px;justify-content:flex-end;">
+            <button type="button" class="btn btn-ghost" onclick="closeReturnModal()" data-i18n="btn.cancel">Cancel</button>
+            <button type="button" class="btn btn-primary" style="width:auto;margin-top:0;" onclick="confirmReturn()" data-i18n="ret.confirm">Confirm Return</button>
+        </div>
+    </div>
+</div>
+
+<script src="shared/translations.js"></script>
+<script src="shared/toast.js"></script>
+<script src="shared/api.js"></script>
+<script src="shared/layout.js"></script>
+<script>
+    const TICKET_URL = "http://localhost:5128/api/Ticket";
+    let cachedParts      = [];
+    let cachedTickets    = [];
+    let cachedAtmModels  = [];
+    let returnedTicketIds = new Set();
+    let allLocations  = [];
+    let returnTicketId = null;
+
+    function onLangChange() { renderPartsSelect(); renderTicketsTable(); }
+
+    window.addEventListener('DOMContentLoaded', () => {
+        initLayout();
+        const savedEmail = localStorage.getItem("userEmail");
+        if (savedEmail) document.getElementById("techName").value = savedEmail.split('@')[0];
+        fetchAtmModels();
+        fetchParts();
+        fetchTickets();
+        fetchReturnedIds();
+        loadLocationsForReturn();
+    });
+
+    /* ── ATM Model dropdown ── */
+    async function fetchAtmModels() {
+        try {
+            cachedAtmModels = await api.atmModels.getAll({ isActive: true });
+            const sel = document.getElementById('machineModel');
+            sel.innerHTML = `<option value="">— เลือกโมเดล ATM —</option>`;
+            cachedAtmModels.forEach(m => {
+                sel.innerHTML += `<option value="${m.modelCode}">${m.modelName}${m.manufacturer ? ' (' + m.manufacturer + ')' : ''}</option>`;
+            });
+        } catch { /* non-critical — leave as empty dropdown */ }
+    }
+
+    async function onModelChange() {
+        const modelCode = document.getElementById('machineModel').value;
+        if (!modelCode) {
+            // No model selected → show all parts
+            renderPartsSelect(cachedParts);
+            return;
+        }
+        const model = cachedAtmModels.find(m => m.modelCode === modelCode);
+        if (!model) return;
+        try {
+            const result = await api.atmModels.getCompatible(model.id);
+            // result.restricted=false means no parts assigned → show all
+            renderPartsSelect(result.parts, result.restricted, model.modelName);
+        } catch {
+            renderPartsSelect(cachedParts);
+        }
+    }
+
+    /* ── Return Part ── */
+    async function fetchReturnedIds() {
+        try {
+            const returns = await api.returns.getAll();
+            returnedTicketIds = new Set(returns.map(r => r.ticketId));
+            renderTicketsTable();
+        } catch {}
+    }
+    async function loadLocationsForReturn() {
+        try {
+            allLocations = await api.locations.getAll({ isActive: true });
+            document.getElementById('retLocation').innerHTML =
+                allLocations.map(l => `<option value="${l.id}">${l.name} (${l.code})</option>`).join('');
+        } catch {}
+    }
+    function openReturnModal(ticketId) {
+        returnTicketId = ticketId;
+        document.getElementById('retModalOverlay').classList.add('open');
+    }
+    function closeReturnModal() {
+        document.getElementById('retModalOverlay').classList.remove('open');
+        returnTicketId = null;
+    }
+    async function confirmReturn() {
+        const condition   = document.getElementById('retCondition').value;
+        const locationToId = parseInt(document.getElementById('retLocation').value, 10);
+        try {
+            await api.returns.create({
+                ticketId: returnTicketId,
+                partNo: cachedTickets.find(t => t.ticketId === returnTicketId)?.approvedPartNo,
+                condition,
+                sourceType: 'Technician',
+                locationToId,
+                returnedBy: document.getElementById('techName').value
+            });
+            closeReturnModal();
+            await fetchReturnedIds();
+        } catch (e) {
+            alert(e.message || t('toast.error'));
+        }
+    }
+
+    /* ── Parts dropdown ── */
+    async function fetchParts() {
+        try {
+            cachedParts = await api.parts.getAll({ isActive: true });
+            renderPartsSelect(cachedParts);
+        } catch {
+            document.getElementById("requestedPart").innerHTML =
+                `<option value="">⚠ ${t('error.connect')}</option>`;
+        }
+    }
+
+    function renderPartsSelect(parts, restricted, modelName) {
+        parts = parts || cachedParts;
+        const sel = document.getElementById("requestedPart");
+        const prev = sel.value;
+        const hint = restricted && modelName
+            ? `— เลือกอะไหล่สำหรับ ${modelName} —`
+            : t('form.ph.part');
+        sel.innerHTML = `<option value="">${hint}</option>`;
+        parts.forEach(p => {
+            const qty = p.stockQuantity ?? p.StockQuantity ?? 0;
+            if (qty > 0) {
+                sel.innerHTML += `<option value="${p.partNo}" ${prev===p.partNo?'selected':''}>${p.partName} (${t('form.instock')}: ${qty})</option>`;
+            } else {
+                sel.innerHTML += `<option value="${p.partNo}" disabled>${p.partName} (${t('form.outofstock')})</option>`;
+            }
+        });
+        // If prev selection is no longer valid, clear it
+        if (prev && !parts.find(p => p.partNo === prev)) sel.value = '';
+    }
+
+    /* ── Image upload helpers ── */
+    let selectedFile = null;
+
+    function handleFileSelect(input) {
+        const file = input.files[0];
+        if (!file) return;
+        if (file.size > 5 * 1024 * 1024) { alert('ไฟล์ใหญ่เกิน 5MB'); input.value = ''; return; }
+        selectedFile = file;
+        const reader = new FileReader();
+        reader.onload = e => {
+            const img = document.getElementById('imgPreview');
+            img.src = e.target.result;
+            img.classList.add('show');
+            document.getElementById('removeImg').classList.add('show');
+            document.getElementById('uploadZone').style.borderColor = 'var(--orange)';
+        };
+        reader.readAsDataURL(file);
+    }
+
+    function removeImage() {
+        selectedFile = null;
+        document.getElementById('attachmentFile').value = '';
+        const img = document.getElementById('imgPreview');
+        img.src = ''; img.classList.remove('show');
+        document.getElementById('removeImg').classList.remove('show');
+        document.getElementById('uploadZone').style.borderColor = '';
+    }
+
+    async function uploadImage() {
+        if (!selectedFile) return null;
+        const form = new FormData();
+        form.append('file', selectedFile);
+        const res = await fetch(`${TICKET_URL}/upload`, { method: 'POST', body: form });
+        if (!res.ok) throw new Error('Upload failed');
+        const json = await res.json();
+        return json.path;
+    }
+
+    /* ── Create ticket ── */
+    async function createTicket(event) {
+        event.preventDefault();
+        const btn = document.getElementById('submitBtn');
+        btn.querySelector('span').textContent = t('form.submitting');
+        btn.disabled = true;
+
+        try {
+            const attachmentPath = await uploadImage();
+
+            const data = {
+                techName:        document.getElementById("techName").value,
+                techDept:        document.getElementById("techDept").value,
+                techPhone:       document.getElementById("techPhone").value,
+                requestedPartNo: document.getElementById("requestedPart").value,
+                faultySerialNo:  document.getElementById("faultySerialNo").value || null,
+                faultyPartNo:    document.getElementById("faultyPartNo").value   || null,
+                machineModel:    document.getElementById("machineModel").value   || null,
+                description:     document.getElementById("description").value    || null,
+                attachmentPath:  attachmentPath
+            };
+
+            const res = await fetch(TICKET_URL, {
+                method:"POST", headers:{"Content-Type":"application/json"},
+                body: JSON.stringify(data)
+            });
+            if (res.ok) {
+                document.getElementById("ticketForm").reset();
+                removeImage();
+                await fetchParts();
+                fetchTickets();
+            } else {
+                alert(t('form.err.create'));
+            }
+        } catch {
+            alert(t('form.err.server'));
+        } finally {
+            btn.querySelector('span').textContent = t('form.submit');
+            btn.disabled = false;
+        }
+    }
+
+    /* ── Ticket history ── */
+    async function fetchTickets() {
+        try {
+            const res = await fetch(TICKET_URL);
+            cachedTickets = await res.json();
+            renderTicketsTable();
+        } catch {
+            document.getElementById("ticketsTableBody").innerHTML =
+                `<tr><td colspan="6" class="empty-state" style="color:var(--red)">${t('error.connect')}</td></tr>`;
+        }
+    }
+    function renderTicketsTable() {
+        const tbody = document.getElementById("ticketsTableBody");
+        tbody.innerHTML = "";
+
+        if (!cachedTickets.length) {
+            tbody.innerHTML = `<tr><td colspan="6" class="empty-state">${t('my.empty')}</td></tr>`;
+            return;
+        }
+
+        cachedTickets.forEach(tk => {
+            const reqName     = tk.requestedPartNav?.partName || tk.requestedPartNo || '—';
+            const approvedName = tk.approvedPartNav?.partName || tk.approvedPartNo;
+            let badge = "", action = `<span class="text-muted">—</span>`;
+            let due = tk.dueDate
+                ? `<span class="due-chip">⏱ ${new Date(tk.dueDate).toLocaleDateString(getLang()==='th'?'th-TH':'en-GB')}</span>`
+                : `<span class="text-muted">${t('my.none.due')}</span>`;
+            let issued = approvedName
+                ? `<span class="text-green">${approvedName}</span>`
+                : `<span class="text-muted">—</span>`;
+
+            if (tk.status === "Pending") {
+                badge  = `<span class="badge badge-pending"><span class="badge-dot"></span>${t('status.pending')}</span>`;
+            } else if (tk.status === "Approved") {
+                badge  = `<span class="badge badge-approved"><span class="badge-dot"></span>${t('status.awaiting')}</span>`;
+                action = `<button class="btn btn-receive" onclick="receivePart(${tk.ticketId})">
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+                    ${t('my.confirm')}
+                </button>`;
+            } else if (tk.status === "Received") {
+                badge = `<span class="badge badge-success"><span class="badge-dot"></span>${t('status.received')}</span>`
+                       + (tk.isDOA ? ` <span class="badge badge-danger" style="margin-left:4px;">${t('doa.badge')}</span>` : '');
+                if (!returnedTicketIds.has(tk.ticketId)) {
+                    action = `<button class="btn-return" onclick="openReturnModal(${tk.ticketId})">↩ ${t('ret.title')}</button>`;
+                    if (!tk.isDOA) {
+                        action += `<button class="btn-return" style="margin-left:6px;" onclick="reportDoa(${tk.ticketId})">⚠ ${t('doa.btn')}</button>`;
+                    }
+                } else {
+                    action = `<span class="text-muted" style="font-size:12px;">✓ ${t('ret.done')}</span>`;
+                }
+            } else if (tk.status === "Rejected") {
+                badge  = `<span class="badge badge-danger"><span class="badge-dot"></span>${t('status.rejected')}</span>`;
+                due    = `<span class="text-muted">—</span>`;
+                issued = `<span class="text-muted">—</span>`;
+            }
+
+            tbody.innerHTML += `
+                <tr>
+                    <td><span class="id-chip ticket-id">TK-${tk.ticketId.toString().padStart(4,'0')}</span></td>
+                    <td class="fw-600">${reqName}</td>
+                    <td>${issued}</td>
+                    <td>${badge}</td>
+                    <td>${due}</td>
+                    <td>${action}</td>
+                </tr>`;
+        });
+    }
+
+    async function receivePart(id) {
+        if (!confirm(t('my.confirm.receive'))) return;
+        try {
+            const res = await fetch(`${TICKET_URL}/${id}/receive`, { method:"PUT" });
+            if (res.ok) fetchTickets();
+        } catch {}
+    }
+
+    async function reportDoa(id) {
+        if (!confirm(t('doa.confirm'))) return;
+        try {
+            await api.tickets.doa(id);
+            fetchTickets();
+        } catch (e) {
+            alert(e.message || t('toast.error'));
+        }
+    }
+</script>
+</body>
+</html>

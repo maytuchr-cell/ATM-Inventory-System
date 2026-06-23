@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Returns — ATM Inventory</title>
+  <link rel="stylesheet" href="shared/styles.css">
+</head>
+<body>
+  <div class="app-layout">
+    <div id="sidebar-root"></div>
+    <div class="main-content">
+      <div class="topbar">
+        <div>
+          <div class="topbar-title" data-i18n="ret.title">Return Part</div>
+          <div class="topbar-sub"   data-i18n="ret.sub">Track and process parts returned by technicians</div>
+        </div>
+      </div>
+
+      <div class="page-body">
+        <!-- On-hand tracking (FR-RT-03) -->
+        <div class="card">
+          <div class="section-head" style="display:flex;align-items:center;gap:10px;margin-bottom:20px;padding:24px 24px 0;">
+            <div class="section-accent" style="width:4px;height:22px;background:var(--orange);border-radius:2px;"></div>
+            <span class="section-title" style="font-size:16px;font-weight:700;" data-i18n="ret.onhand.title">Technician On-Hand Parts</span>
+            <span class="section-count" id="onhand-count">—</span>
+          </div>
+          <div class="tbl-wrap" style="padding:0 24px 24px;">
+            <table>
+              <thead>
+                <tr>
+                  <th data-i18n="ret.col.ticket">Ticket</th>
+                  <th data-i18n="ret.col.tech">Technician</th>
+                  <th data-i18n="ret.col.part">Part</th>
+                  <th data-i18n="ret.col.due">Due Date</th>
+                  <th data-i18n="col.status">Status</th>
+                </tr>
+              </thead>
+              <tbody id="onhand-tbody">
+                <tr><td colspan="5" class="empty-state" data-i18n="connecting">Connecting…</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- Return History -->
+        <div class="card">
+          <div class="section-head" style="display:flex;align-items:center;gap:10px;margin-bottom:20px;padding:24px 24px 0;">
+            <div class="section-accent" style="width:4px;height:22px;background:var(--orange);border-radius:2px;"></div>
+            <span class="section-title" style="font-size:16px;font-weight:700;" data-i18n="ret.history">Return History</span>
+          </div>
+          <div class="tbl-wrap" style="padding:0 24px 24px;">
+            <table>
+              <thead>
+                <tr>
+                  <th data-i18n="ret.col.ticket">Ticket</th>
+                  <th data-i18n="ret.col.tech">Technician</th>
+                  <th data-i18n="ret.col.part">Part</th>
+                  <th data-i18n="ret.col.condition">Condition</th>
+                  <th data-i18n="ret.col.source">Source</th>
+                  <th data-i18n="ret.col.to">Returned To</th>
+                  <th data-i18n="ret.col.date">Date</th>
+                </tr>
+              </thead>
+              <tbody id="history-tbody">
+                <tr><td colspan="7" class="empty-state" data-i18n="connecting">Connecting…</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="shared/translations.js"></script>
+  <script src="shared/toast.js"></script>
+  <script src="shared/api.js"></script>
+  <script src="shared/layout.js"></script>
+  <script src="admin-returns.js"></script>
+</body>
+</html>

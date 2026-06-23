@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Disposal & Expiry — ATM Inventory</title>
+  <link rel="stylesheet" href="shared/styles.css">
+  <style>
+    .scan-result { background:var(--orange-light); color:var(--orange); border-radius:8px; padding:10px 14px; margin-top:12px; font-size:13px; font-weight:600; display:none; }
+    .scan-result.show { display:block; }
+  </style>
+</head>
+<body>
+  <div class="app-layout">
+    <div id="sidebar-root"></div>
+    <div class="main-content">
+      <div class="topbar">
+        <div>
+          <div class="topbar-title" data-i18n="disp.title">Disposal & Expiry</div>
+          <div class="topbar-sub"   data-i18n="disp.sub">Scrap and write-off expired or unrepairable parts</div>
+        </div>
+        <div class="topbar-controls">
+          <button class="btn btn-primary" onclick="runScan()">
+            🔍 <span data-i18n="disp.scan">Scan for Expired/Unrepairable</span>
+          </button>
+        </div>
+      </div>
+
+      <div class="page-body">
+        <div class="scan-result" id="scan-result"></div>
+
+        <!-- Manual Request -->
+        <div class="card">
+          <div class="card-body" style="padding:24px;">
+            <div class="section-head" style="display:flex;align-items:center;gap:10px;margin-bottom:20px;">
+              <div class="section-accent" style="width:4px;height:22px;background:var(--orange);border-radius:2px;"></div>
+              <span class="section-title" style="font-size:16px;font-weight:700;" data-i18n="disp.new">Manual Disposal Request</span>
+            </div>
+            <form id="disp-form" onsubmit="submitRequest(event)">
+              <div class="form-grid-2">
+                <div class="form-group">
+                  <label class="form-label" data-i18n="disp.part">Part</label>
+                  <select class="form-select" id="f-part" required></select>
+                </div>
+                <div class="form-group">
+                  <label class="form-label" data-i18n="disp.serial">Serial No. (optional)</label>
+                  <input class="form-input" id="f-serial">
+                </div>
+                <div class="form-group">
+                  <label class="form-label" data-i18n="disp.location">Location</label>
+                  <select class="form-select" id="f-location" required></select>
+                </div>
+                <div class="form-group">
+                  <label class="form-label" data-i18n="disp.qty">Qty</label>
+                  <input class="form-input" id="f-qty" type="number" min="1" value="1" required>
+                </div>
+                <div class="form-group">
+                  <label class="form-label" data-i18n="disp.reason">Reason Code</label>
+                  <select class="form-select" id="f-reason">
+                    <option value="Expired" data-i18n="disp.reason.expired">Expired</option>
+                    <option value="Unrepairable" data-i18n="disp.reason.unrepairable">Unrepairable</option>
+                    <option value="Damaged" data-i18n="disp.reason.damaged">Damaged</option>
+                    <option value="Other" data-i18n="disp.reason.other">Other</option>
+                  </select>
+                </div>
+                <div class="form-group">
+                  <label class="form-label" data-i18n="disp.requestedby">Requested By</label>
+                  <input class="form-input" id="f-requestedby">
+                </div>
+              </div>
+              <div class="modal-footer" style="justify-content:flex-end;display:flex;">
+                <button type="submit" class="btn btn-primary" data-i18n="disp.submit">Submit Request</button>
+              </div>
+            </form>
+          </div>
+        </div>
+
+        <!-- Queue -->
+        <div class="card">
+          <div class="section-head" style="display:flex;align-items:center;gap:10px;margin-bottom:20px;padding:24px 24px 0;">
+            <div class="section-accent" style="width:4px;height:22px;background:var(--orange);border-radius:2px;"></div>
+            <span class="section-title" style="font-size:16px;font-weight:700;" data-i18n="disp.queue">Disposal Requests</span>
+          </div>
+          <div class="tbl-wrap" style="padding:0 24px 24px;">
+            <table>
+              <thead>
+                <tr>
+                  <th data-i18n="disp.col.part">Part</th>
+                  <th data-i18n="disp.col.serial">S/N</th>
+                  <th data-i18n="disp.col.location">Location</th>
+                  <th data-i18n="disp.col.qty">Qty</th>
+                  <th data-i18n="disp.col.reason">Reason</th>
+                  <th data-i18n="disp.col.status">Status</th>
+                  <th data-i18n="disp.col.date">Created</th>
+                  <th data-i18n="disp.col.action">Action</th>
+                </tr>
+              </thead>
+              <tbody id="disp-tbody">
+                <tr><td colspan="8" class="empty-state" data-i18n="connecting">Connecting…</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="shared/translations.js"></script>
+  <script src="shared/toast.js"></script>
+  <script src="shared/api.js"></script>
+  <script src="shared/layout.js"></script>
+  <script src="admin-disposal.js"></script>
+</body>
+</html>

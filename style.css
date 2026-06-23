@@ -1,0 +1,57 @@
+body {
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    background-color: #f4f4f4; /* พื้นหลังสีเทาอ่อนเกือบขาวให้ดูสะอาด */
+    color: #111;
+    padding: 20px;
+}
+.container {
+    max-width: 900px;
+    margin: 0 auto;
+}
+h1 {
+    text-align: center;
+    color: #000000; /* สีดำ */
+    border-bottom: 3px solid #ff6600; /* ขีดเส้นใต้สีส้ม */
+    padding-bottom: 10px;
+    display: inline-block;
+}
+.header-container { text-align: center; margin-bottom: 30px; }
+.form-card {
+    background: #ffffff; /* พื้นสีขาว */
+    padding: 20px;
+    border-radius: 8px;
+    box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+    margin-bottom: 20px;
+    border-left: 5px solid #ff6600; /* แถบข้างสีส้ม */
+}
+.input-group { display: flex; gap: 10px; }
+input {
+    flex: 1; padding: 10px;
+    border: 1px solid #ccc; border-radius: 4px;
+}
+.btn-primary {
+    padding: 10px 20px;
+    background: #ff6600; /* ปุ่มหลักสีส้ม */
+    color: #ffffff;
+    border: none; border-radius: 4px;
+    cursor: pointer; font-weight: bold;
+    transition: background 0.3s;
+}
+.btn-primary:hover { background: #cc5200; }
+
+table {
+    width: 100%; background: #ffffff;
+    border-collapse: collapse; border-radius: 8px;
+    overflow: hidden; box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+}
+th, td { padding: 15px; text-align: left; border-bottom: 1px solid #eee; }
+th { background-color: #000000; color: #ffffff; /* หัวตารางสีดำ ตัวหนังสือขาว */ }
+
+.status-pending { color: #ff6600; font-weight: bold; } /* รอดำเนินการสีส้ม */
+.status-approved { color: #000000; font-weight: bold; } /* อนุมัติแล้วสีดำ */
+
+/* ปุ่มจัดการในตาราง */
+.btn-approve { background: #000000; color: #ffffff; padding: 6px 12px; border: none; border-radius: 4px; cursor: pointer; font-size: 13px;}
+.btn-approve:hover { background: #333333; }
+.btn-delete { background: transparent; color: #000000; border: 1px solid #000000; padding: 6px 12px; border-radius: 4px; cursor: pointer; font-size: 13px; margin-left: 5px;}
+.btn-delete:hover { background: #ff6600; color: white; border-color: #ff6600;}

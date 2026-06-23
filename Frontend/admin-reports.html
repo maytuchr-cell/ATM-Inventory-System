@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Reports — ATM Inventory</title>
+  <link rel="stylesheet" href="shared/styles.css">
+  <style>
+    .tab-bar { display:flex; gap:8px; margin-bottom:20px; }
+    .tab-btn { padding:9px 18px; border-radius:9px; border:1.5px solid var(--border); background:var(--bg-card); color:var(--text-secondary); font-family:inherit; font-size:13px; font-weight:600; cursor:pointer; transition:all .15s; }
+    .tab-btn.active { background:var(--orange); color:#fff; border-color:var(--orange); }
+    .tab-panel { display:none; }
+    .tab-panel.active { display:block; }
+    .filter-row { display:flex; gap:14px; align-items:end; margin-bottom:18px; flex-wrap:wrap; }
+    .filter-row .form-group { margin-bottom:0; min-width:160px; }
+    .recon-yes { color:var(--green); font-weight:700; }
+    .recon-no  { color:var(--red);   font-weight:700; }
+    .fs-12 { font-size:12px; }
+  </style>
+</head>
+<body>
+  <div class="app-layout">
+    <div id="sidebar-root"></div>
+    <div class="main-content">
+      <div class="topbar">
+        <div>
+          <div class="topbar-title" data-i18n="rpt.title">Reporting & Analytics</div>
+          <div class="topbar-sub"   data-i18n="rpt.sub">Audit trail and lifecycle summaries for compliance review</div>
+        </div>
+        <div class="topbar-controls">
+          <button class="btn btn-primary" onclick="exportExcel()">⬇ Export Excel</button>
+        </div>
+      </div>
+
+      <div class="page-body">
+        <div class="tab-bar">
+          <button class="tab-btn active" id="tab-audit-btn" onclick="switchTab('audit')" data-i18n="rpt.tab.audit">Audit Checklist</button>
+          <button class="tab-btn" id="tab-lifecycle-btn" onclick="switchTab('lifecycle')" data-i18n="rpt.tab.lifecycle">Lifecycle Summary</button>
+        </div>
+
+        <!-- Audit Checklist Tab -->
+        <div class="tab-panel active" id="panel-audit">
+          <div class="card">
+            <div class="card-body" style="padding:24px;">
+              <div class="filter-row">
+                <div class="form-group">
+                  <label class="form-label" data-i18n="rpt.filter.from">From Date</label>
+                  <input class="form-input" type="date" id="f-from" onchange="fetchAudit()">
+                </div>
+                <div class="form-group">
+                  <label class="form-label" data-i18n="rpt.filter.to">To Date</label>
+                  <input class="form-input" type="date" id="f-to" onchange="fetchAudit()">
+                </div>
+                <div class="form-group">
+                  <label class="form-label" data-i18n="rpt.filter.type">Movement Type</label>
+                  <select class="form-select" id="f-type" onchange="fetchAudit()">
+                    <option value="" data-i18n="rpt.filter.all">All Types</option>
+                    <option value="GR">GR</option>
+                    <option value="Issue">Issue</option>
+                    <option value="Return">Return</option>
+                    <option value="Transfer">Transfer</option>
+                    <option value="Disposal">Disposal</option>
+                    <option value="Adjustment">Adjustment</option>
+                  </select>
+                </div>
+              </div>
+              <div class="tbl-wrap">
+                <table>
+                  <thead>
+                    <tr>
+                      <th data-i18n="rpt.col.date">Date</th>
+                      <th data-i18n="rpt.col.type">Type</th>
+                      <th data-i18n="rpt.col.part">Part</th>
+                      <th data-i18n="rpt.col.qty">Qty</th>
+                      <th data-i18n="rpt.col.condition">Condition</th>
+                      <th data-i18n="rpt.col.from">From</th>
+                      <th data-i18n="rpt.col.to">To</th>
+                      <th data-i18n="rpt.col.ref">Reference</th>
+                      <th data-i18n="rpt.col.user">User</th>
+                    </tr>
+                  </thead>
+                  <tbody id="audit-tbody">
+                    <tr><td colspan="9" class="empty-state" data-i18n="connecting">Connecting…</td></tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Lifecycle Tab -->
+        <div class="tab-panel" id="panel-lifecycle">
+          <div class="card">
+            <div class="tbl-wrap" style="padding:24px;">
+              <table>
+                <thead>
+                  <tr>
+                    <th data-i18n="rpt.lc.col.part">Part</th>
+                    <th data-i18n="rpt.lc.col.received">Received</th>
+                    <th data-i18n="rpt.lc.col.issued">Issued</th>
+                    <th data-i18n="rpt.lc.col.returned">Returned</th>
+                    <th data-i18n="rpt.lc.col.transferred">Transferred</th>
+                    <th data-i18n="rpt.lc.col.disposed">Disposed</th>
+                    <th data-i18n="rpt.lc.col.adjustments">Adjustments</th>
+                    <th data-i18n="rpt.lc.col.expected">Expected Total</th>
+                    <th data-i18n="rpt.lc.col.actual">Actual Total</th>
+                    <th data-i18n="rpt.lc.col.reconciled">Reconciled</th>
+                  </tr>
+                </thead>
+                <tbody id="lifecycle-tbody">
+                  <tr><td colspan="10" class="empty-state" data-i18n="connecting">Connecting…</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
+  <script src="shared/translations.js"></script>
+  <script src="shared/toast.js"></script>
+  <script src="shared/api.js"></script>
+  <script src="shared/layout.js"></script>
+  <script src="admin-reports.js"></script>
+</body>
+</html>

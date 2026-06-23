@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Stock Counting — ATM Inventory</title>
+  <link rel="stylesheet" href="shared/styles.css">
+  <style>
+    .freeze-banner { background:var(--red-light); color:var(--red); border:1.5px solid var(--red); border-radius:10px; padding:14px 18px; margin-bottom:20px; font-size:13px; font-weight:600; display:flex; align-items:center; gap:10px; }
+    .variance-pos { color:var(--green); font-weight:700; }
+    .variance-neg { color:var(--red); font-weight:700; }
+    .variance-zero { color:var(--text-secondary); }
+    .qty-input { width:90px; padding:6px 10px; border:1.5px solid var(--border); border-radius:7px; background:var(--bg-input); color:var(--text-primary); font-family:inherit; font-size:13px; }
+  </style>
+</head>
+<body>
+  <div class="app-layout">
+    <div id="sidebar-root"></div>
+    <div class="main-content">
+      <div class="topbar">
+        <div>
+          <div class="topbar-title" data-i18n="sc.title">Stock Counting & Audit</div>
+          <div class="topbar-sub"   data-i18n="sc.sub">Cycle and annual physical inventory counts</div>
+        </div>
+      </div>
+
+      <div class="page-body">
+        <div class="freeze-banner" id="freeze-banner" style="display:none;">
+          🔒 <span data-i18n="sc.freeze.banner">System is frozen for an annual stock count.</span>
+        </div>
+
+        <!-- Start New Count -->
+        <div class="card" id="start-card">
+          <div class="card-body" style="padding:24px;">
+            <div class="section-head" style="display:flex;align-items:center;gap:10px;margin-bottom:20px;">
+              <div class="section-accent" style="width:4px;height:22px;background:var(--orange);border-radius:2px;"></div>
+              <span class="section-title" style="font-size:16px;font-weight:700;" data-i18n="sc.new">Start New Count</span>
+            </div>
+            <form id="start-form" onsubmit="startCount(event)">
+              <div class="form-grid-2">
+                <div class="form-group">
+                  <label class="form-label" data-i18n="sc.type">Count Type</label>
+                  <select class="form-select" id="f-type" onchange="onTypeChange()">
+                    <option value="Cycle" data-i18n="sc.type.cycle">Cycle (sample)</option>
+                    <option value="Annual" data-i18n="sc.type.annual">Annual (full freeze)</option>
+                  </select>
+                </div>
+                <div class="form-group">
+                  <label class="form-label" data-i18n="sc.period">Period</label>
+                  <input class="form-input" id="f-period" data-i18n-ph="sc.period.ph" required>
+                </div>
+                <div class="form-group" id="samplesize-group">
+                  <label class="form-label" data-i18n="sc.samplesize">Sample Size</label>
+                  <input class="form-input" id="f-samplesize" type="number" min="1" value="10">
+                </div>
+                <div class="form-group">
+                  <label class="form-label" data-i18n="sc.startedby">Started By</label>
+                  <input class="form-input" id="f-startedby">
+                </div>
+              </div>
+              <div class="modal-footer" style="justify-content:flex-end;display:flex;">
+                <button type="submit" class="btn btn-primary" data-i18n="sc.start">Start Count</button>
+              </div>
+            </form>
+          </div>
+        </div>
+
+        <!-- Active Count -->
+        <div class="card" id="active-card" style="display:none;">
+          <div class="section-head" style="display:flex;align-items:center;gap:10px;margin-bottom:20px;padding:24px 24px 0;">
+            <div class="section-accent" style="width:4px;height:22px;background:var(--orange);border-radius:2px;"></div>
+            <span class="section-title" style="font-size:16px;font-weight:700;" data-i18n="sc.active">Active Count</span>
+          </div>
+          <div class="tbl-wrap" style="padding:0 24px;">
+            <table>
+              <thead>
+                <tr>
+                  <th data-i18n="sc.col.part">Part</th>
+                  <th data-i18n="sc.col.location">Location</th>
+                  <th data-i18n="sc.col.system">System Qty</th>
+                  <th data-i18n="sc.col.physical">Physical Qty</th>
+                  <th data-i18n="sc.col.variance">Variance</th>
+                </tr>
+              </thead>
+              <tbody id="active-tbody"></tbody>
+            </table>
+          </div>
+          <div style="padding:24px;">
+            <label class="form-label" data-i18n="sc.reconcile.remarks">Reconciliation Remarks (required)</label>
+            <textarea class="form-input" id="f-remarks" style="width:100%;min-height:70px;margin:8px 0 16px;"></textarea>
+            <button class="btn btn-primary" onclick="reconcile()" data-i18n="sc.reconcile.btn">Reconcile & Complete</button>
+          </div>
+        </div>
+
+        <!-- History -->
+        <div class="card">
+          <div class="section-head" style="display:flex;align-items:center;gap:10px;margin-bottom:20px;padding:24px 24px 0;">
+            <div class="section-accent" style="width:4px;height:22px;background:var(--orange);border-radius:2px;"></div>
+            <span class="section-title" style="font-size:16px;font-weight:700;" data-i18n="sc.history">Count History</span>
+          </div>
+          <div class="tbl-wrap" style="padding:0 24px 24px;">
+            <table>
+              <thead>
+                <tr>
+                  <th data-i18n="sc.type">Count Type</th>
+                  <th data-i18n="sc.period">Period</th>
+                  <th data-i18n="col.status">Status</th>
+                  <th data-i18n="hist.coldate">Created</th>
+                </tr>
+              </thead>
+              <tbody id="history-tbody">
+                <tr><td colspan="4" class="empty-state" data-i18n="connecting">Connecting…</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="shared/translations.js"></script>
+  <script src="shared/toast.js"></script>
+  <script src="shared/api.js"></script>
+  <script src="shared/layout.js"></script>
+  <script src="admin-stockcount.js"></script>
+</body>
+</html>

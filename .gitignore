@@ -1,0 +1,20 @@
+# .NET
+Backend/Api/bin/
+Backend/Api/obj/
+Backend/Api/*.db
+Backend/Api/*.db-shm
+Backend/Api/*.db-wal
+
+# Launcher build output
+Launcher/bin/
+Launcher/obj/
+publish/
+publish_sc/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vs/
+*.user

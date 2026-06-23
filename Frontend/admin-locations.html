@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Locations — ATM Inventory</title>
+  <link rel="stylesheet" href="shared/styles.css">
+</head>
+<body>
+  <div class="app-layout">
+    <div id="sidebar-root"></div>
+    <div class="main-content">
+      <div class="topbar">
+        <div>
+          <div class="topbar-title" data-i18n="loc.title">Locations</div>
+          <div class="topbar-sub"   data-i18n="loc.sub">Warehouse and storage location registry</div>
+        </div>
+        <div class="topbar-controls">
+          <button class="btn btn-primary" onclick="openModal()">
+            <span>+</span> <span data-i18n="loc.add">Add Location</span>
+          </button>
+        </div>
+      </div>
+
+      <div class="page-body">
+        <div class="card">
+          <div class="filter-bar">
+            <select class="form-select" id="type-filter" onchange="renderTable()" style="max-width:220px;">
+              <option value="" data-i18n="lbl.all">All</option>
+            </select>
+            <select class="form-select" id="status-filter" onchange="renderTable()" style="max-width:160px;">
+              <option value=""     data-i18n="lbl.all">All</option>
+              <option value="true" data-i18n="lbl.active">Active</option>
+              <option value="false" data-i18n="lbl.inactive">Inactive</option>
+            </select>
+          </div>
+          <div class="tbl-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th data-i18n="loc.col.code">Code</th>
+                  <th data-i18n="loc.col.name">Location Name</th>
+                  <th data-i18n="loc.col.type">Type</th>
+                  <th data-i18n="col.status">Status</th>
+                  <th data-i18n="col.actions">Actions</th>
+                </tr>
+              </thead>
+              <tbody id="loc-tbody">
+                <tr><td colspan="5" class="empty-state" data-i18n="connecting">Connecting…</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal -->
+  <div class="modal-overlay hidden" id="modal-overlay">
+    <div class="modal" style="max-width:420px;">
+      <div class="modal-header">
+        <div class="modal-title" id="modal-title" data-i18n="loc.add">Add Location</div>
+        <button class="btn btn-secondary btn-sm" onclick="closeModal()">✕</button>
+      </div>
+      <form id="loc-form" onsubmit="saveLocation(event)">
+        <div class="form-group">
+          <label class="form-label" data-i18n="loc.lbl.name">Location Name</label>
+          <input class="form-input" id="f-name" required data-i18n-ph="loc.ph.name">
+        </div>
+        <div class="form-group">
+          <label class="form-label" data-i18n="loc.lbl.code">Location Code</label>
+          <input class="form-input" id="f-code" required data-i18n-ph="loc.ph.code">
+        </div>
+        <div class="form-group">
+          <label class="form-label" data-i18n="loc.lbl.type">Location Type</label>
+          <select class="form-select" id="f-type" required></select>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" onclick="closeModal()" data-i18n="btn.cancel">Cancel</button>
+          <button type="submit" class="btn btn-primary" data-i18n="btn.save">Save</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <script src="shared/translations.js"></script>
+  <script src="shared/toast.js"></script>
+  <script src="shared/api.js"></script>
+  <script src="shared/layout.js"></script>
+  <script src="admin-locations.js"></script>
+</body>
+</html>

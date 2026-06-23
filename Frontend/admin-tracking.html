@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Serial Tracking — ATM Inventory</title>
+  <link rel="stylesheet" href="shared/styles.css">
+  <style>
+    .search-bar { display:flex; gap:10px; margin-bottom:24px; }
+    .search-bar input { flex:1; max-width:400px; }
+
+    /* Current-status summary cards */
+    .status-cards { display:grid; grid-template-columns:repeat(auto-fit,minmax(160px,1fr)); gap:12px; margin-bottom:28px; }
+    .stat-card { background:var(--bg-card); border:1.5px solid var(--border); border-radius:12px; padding:14px 18px; }
+    .stat-card .label { font-size:11px; color:var(--text-secondary); text-transform:uppercase; letter-spacing:.5px; margin-bottom:4px; }
+    .stat-card .value { font-size:17px; font-weight:700; color:var(--text-primary); }
+
+    /* Vertical timeline */
+    .timeline { position:relative; padding-left:30px; }
+    .timeline::before { content:''; position:absolute; left:10px; top:0; bottom:0; width:2px; background:var(--border); }
+    .tl-item { position:relative; margin-bottom:24px; }
+    .tl-dot { position:absolute; left:-24px; top:4px; width:12px; height:12px; border-radius:50%; background:var(--orange); border:2px solid var(--bg-card); box-shadow:0 0 0 2px var(--orange); }
+    .tl-dot.good      { background:var(--green); box-shadow:0 0 0 2px var(--green); }
+    .tl-dot.defective { background:var(--red);   box-shadow:0 0 0 2px var(--red);   }
+    .tl-dot.latest    { width:16px; height:16px; left:-26px; top:2px; }
+    .tl-content { background:var(--bg-card); border:1.5px solid var(--border); border-radius:10px; padding:12px 16px; }
+    .tl-content:hover { border-color:var(--orange); }
+    .tl-meta { display:flex; gap:10px; align-items:center; flex-wrap:wrap; margin-bottom:6px; }
+    .tl-time { font-size:11px; color:var(--text-secondary); }
+    .tl-desc { font-size:13px; color:var(--text-primary); margin-bottom:4px; }
+    .tl-footer { font-size:11px; color:var(--text-secondary); display:flex; gap:12px; flex-wrap:wrap; }
+    .tl-ref { font-size:11px; }
+    .badge-event { padding:2px 8px; border-radius:6px; font-size:11px; font-weight:700;
+                   background:var(--orange-bg, #fff3e0); color:var(--orange); }
+    .badge-event.gr       { background:#e8f5e9; color:#388e3c; }
+    .badge-event.issue    { background:#e3f2fd; color:#1565c0; }
+    .badge-event.return   { background:#f3e5f5; color:#7b1fa2; }
+    .badge-event.transfer { background:#fff8e1; color:#f57f17; }
+    .badge-event.disposal { background:#fce4ec; color:#c62828; }
+    .badge-event.adjust   { background:#f5f5f5; color:#616161; }
+  </style>
+</head>
+<body>
+  <div class="app-layout">
+    <div id="sidebar-root"></div>
+    <div class="main-content">
+      <div class="topbar">
+        <div>
+          <div class="topbar-title" data-i18n="trk.title">Serial Number Tracking</div>
+          <div class="topbar-sub"   data-i18n="trk.sub">Search by Serial No. to view the full movement history</div>
+        </div>
+      </div>
+
+      <div class="page-body">
+        <div class="search-bar">
+          <input class="form-input" id="sn-input" data-i18n-placeholder="trk.placeholder" placeholder="Enter Serial No. (e.g. SN-00123)"
+                 onkeydown="if(event.key==='Enter') doSearch()">
+          <button class="btn btn-primary" onclick="doSearch()" data-i18n="trk.btn.search">Search</button>
+        </div>
+
+        <div id="result-area">
+          <div class="empty-state" data-i18n="trk.empty">Enter a Serial No. and press Search.</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="shared/translations.js"></script>
+  <script src="shared/toast.js"></script>
+  <script src="shared/api.js"></script>
+  <script src="shared/layout.js"></script>
+  <script src="admin-tracking.js"></script>
+</body>
+</html>

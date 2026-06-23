@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Equivalent Groups — ATM Inventory</title>
+  <link rel="stylesheet" href="shared/styles.css">
+  <style>
+    .group-card { border:1.5px solid var(--border); border-radius:12px; padding:18px 20px; margin-bottom:14px; background:var(--bg-card); }
+    .group-header { display:flex; justify-content:space-between; align-items:center; gap:12px; }
+    .group-name { font-size:15px; font-weight:700; color:var(--text-primary); }
+    .group-desc { font-size:12px; color:var(--text-secondary); margin-top:2px; }
+    .members-row { display:flex; flex-wrap:wrap; gap:8px; margin-top:12px; }
+    .member-chip { display:inline-flex; align-items:center; gap:6px; padding:4px 10px; border-radius:20px; background:var(--orange-light, #fff3e0); color:var(--orange); font-size:12px; font-weight:600; }
+    .member-chip .rm { cursor:pointer; opacity:.6; margin-left:2px; }
+    .member-chip .rm:hover { opacity:1; color:var(--red); }
+    .add-member-row { display:flex; gap:8px; margin-top:10px; align-items:center; }
+    .add-member-row input { flex:1; }
+    .group-actions { display:flex; gap:6px; }
+  </style>
+</head>
+<body>
+  <div class="app-layout">
+    <div id="sidebar-root"></div>
+    <div class="main-content">
+      <div class="topbar">
+        <div>
+          <div class="topbar-title" data-i18n="eg.title">Alternative Parts Grouping</div>
+          <div class="topbar-sub"   data-i18n="eg.sub">Define groups of interchangeable parts for return validation</div>
+        </div>
+        <div class="topbar-controls">
+          <button class="btn btn-primary" onclick="openNewGroupModal()">+ <span data-i18n="eg.btn.newgroup">New Group</span></button>
+        </div>
+      </div>
+
+      <div class="page-body">
+        <div id="groups-container">
+          <div class="empty-state" data-i18n="connecting">Connecting…</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Group Modal -->
+  <div class="modal-overlay" id="group-modal" style="display:none">
+    <div class="modal" style="max-width:420px">
+      <div class="modal-header">
+        <span id="modal-title" data-i18n="eg.modal.new">New Equivalent Group</span>
+        <button class="modal-close" onclick="closeModal()">✕</button>
+      </div>
+      <div class="modal-body">
+        <div class="form-group">
+          <label class="form-label" data-i18n="eg.lbl.name">Group Name *</label>
+          <input class="form-input" id="g-name" placeholder="e.g. Display Module Group">
+        </div>
+        <div class="form-group">
+          <label class="form-label" data-i18n="eg.lbl.desc">Description</label>
+          <input class="form-input" id="g-desc" placeholder="Optional description">
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn" onclick="closeModal()" data-i18n="btn.cancel">Cancel</button>
+        <button class="btn btn-primary" onclick="saveGroup()" data-i18n="btn.save">Save</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="shared/translations.js"></script>
+  <script src="shared/toast.js"></script>
+  <script src="shared/api.js"></script>
+  <script src="shared/layout.js"></script>
+  <script src="admin-equivalent-groups.js"></script>
+</body>
+</html>
