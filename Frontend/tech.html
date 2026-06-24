@@ -214,7 +214,7 @@
 <script src="shared/api.js"></script>
 <script src="shared/layout.js"></script>
 <script>
-    const TICKET_URL = "http://localhost:5128/api/Ticket";
+    const TICKET_URL = API_BASE.replace(/\/api$/, "") + "/api/Ticket";
     let cachedParts      = [];
     let cachedTickets    = [];
     let cachedAtmModels  = [];

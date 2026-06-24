@@ -164,7 +164,7 @@
 <script src="shared/api.js"></script>
 <script src="shared/layout.js"></script>
 <script>
-  const IMG_BASE = 'http://localhost:5128';
+  const IMG_BASE = API_BASE.replace(/\/api$/, '');
   let allTickets = [], allParts = [];
 
   window.addEventListener('DOMContentLoaded', () => {

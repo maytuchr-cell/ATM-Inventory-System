@@ -230,7 +230,7 @@
 <script src="shared/api.js"></script>
 <script src="shared/layout.js"></script>
 <script>
-    const TICKET_URL = "http://localhost:5128/api/Ticket";
+    const TICKET_URL = API_BASE.replace(/\/api$/, "") + "/api/Ticket";
     let globalParts  = [];
     let cachedParts  = [];
     let cachedTickets = [];
@@ -492,7 +492,7 @@
     }
 
     /* ── Ticket Detail Modal ── */
-    const IMG_BASE = 'http://localhost:5128';
+    const IMG_BASE = API_BASE.replace(/\/api$/, '');
 
     function showDetail(id) {
         const tk = cachedTickets.find(t => t.ticketId === id);
