@@ -3,10 +3,23 @@ const API_BASE = 'http://localhost:5128/api';
 
 async function apiFetch(path, options = {}) {
   const url = API_BASE + path;
+  const token = localStorage.getItem('authToken');
   const res = await fetch(url, {
-    headers: { 'Content-Type': 'application/json', ...(options.headers || {}) },
+    headers: {
+      'Content-Type': 'application/json',
+      ...(token ? { 'Authorization': 'Bearer ' + token } : {}),
+      ...(options.headers || {})
+    },
     ...options
   });
+  if (res.status === 401) {
+    // Token missing/expired — bounce to login
+    localStorage.removeItem('authToken');
+    if (!location.pathname.endsWith('login.html')) location.href = 'login.html';
+    const err = new Error('Session expired. Please sign in again.');
+    err.status = 401;
+    throw err;
+  }
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));
     const err = new Error(body.message || `HTTP ${res.status}`);

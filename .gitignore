@@ -15,6 +15,9 @@ publish_sc/
 .DS_Store
 Thumbs.db
 
+# Office temp lock files
+~$*
+
 # IDE
 .vs/
 *.user

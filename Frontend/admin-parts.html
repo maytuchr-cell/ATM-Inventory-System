@@ -46,14 +46,12 @@
                   <th data-i18n="parts.col.cat">Category</th>
                   <th data-i18n="parts.col.stock">Stock</th>
                   <th data-i18n="parts.col.min">Min</th>
-                  <th data-i18n="parts.col.unit">Unit</th>
-                  <th data-i18n="parts.col.cost">Cost/Unit</th>
                   <th data-i18n="col.status">Status</th>
                   <th data-i18n="col.actions">Actions</th>
                 </tr>
               </thead>
               <tbody id="parts-tbody">
-                <tr><td colspan="9" class="empty-state" data-i18n="connecting">Connecting…</td></tr>
+                <tr><td colspan="7" class="empty-state" data-i18n="connecting">Connecting…</td></tr>
               </tbody>
             </table>
           </div>
@@ -86,10 +84,6 @@
             <input class="form-input" id="f-ordernum" data-i18n-ph="parts.ph.ordernum">
           </div>
           <div class="form-group">
-            <label class="form-label" data-i18n="parts.lbl.unit">Unit</label>
-            <input class="form-input" id="f-unit" data-i18n-ph="parts.ph.unit" value="pcs">
-          </div>
-          <div class="form-group">
             <label class="form-label" data-i18n="parts.lbl.stock">Stock Quantity</label>
             <input class="form-input" id="f-stock" type="number" min="0" value="0">
           </div>
@@ -111,10 +105,6 @@
             <label class="form-label" data-i18n="parts.lbl.reorder">Reorder Point</label>
             <input class="form-input" id="f-reorder" type="number" min="0" value="3">
           </div>
-          <div class="form-group">
-            <label class="form-label" data-i18n="parts.lbl.cost">Cost per Unit</label>
-            <input class="form-input" id="f-cost" type="number" min="0" step="0.01">
-          </div>
         </div>
         <div class="form-group">
           <label class="form-label" data-i18n="parts.lbl.catalogue">Catalogue Ref.</label>
@@ -128,10 +118,39 @@
     </div>
   </div>
 
-  <script src="shared/translations.js"></script>
+  <!-- ── Part Detail Popup (catalog view) ── -->
+  <div class="modal-overlay hidden" id="part-detail-overlay" onclick="if(event.target===this)closePartDetail()">
+    <div class="modal" style="max-width:560px;">
+      <div class="modal-header">
+        <span class="modal-title"><code id="pd-title"></code></span>
+        <button type="button" class="modal-close" onclick="closePartDetail()">✕</button>
+      </div>
+      <div class="pd-body">
+        <div class="pd-image" id="pd-image"></div>
+        <div class="pd-fields" id="pd-fields"></div>
+      </div>
+    </div>
+  </div>
+
+  <style>
+    .part-name-link { color: var(--text-primary); text-decoration: none; cursor: pointer; }
+    .part-name-link:hover { color: var(--orange); }
+    .pd-body { padding: 4px 4px 8px; }
+    .pd-image { display: flex; align-items: center; justify-content: center; min-height: 160px; margin-bottom: 16px; }
+    .pd-noimg { color: var(--text-muted); font-size: 13px; padding: 40px; text-align: center;
+                border: 1px dashed var(--border); border-radius: 10px; width: 100%; }
+    .pd-row { display: flex; gap: 12px; padding: 9px 2px; border-bottom: 1px solid var(--border); }
+    .pd-row:last-child { border-bottom: none; }
+    .pd-label { flex: 0 0 130px; font-size: 12px; font-weight: 600; color: var(--text-secondary);
+                text-transform: uppercase; letter-spacing: 0.3px; }
+    .pd-value { flex: 1; font-size: 14px; color: var(--text-primary); word-break: break-word; }
+  </style>
+
+  <script src="https://code.iconify.design/iconify-icon/2.1.0/iconify-icon.min.js"></script>
+  <script src="shared/translations.js?v=4"></script>
   <script src="shared/toast.js"></script>
   <script src="shared/api.js"></script>
   <script src="shared/layout.js"></script>
-  <script src="admin-parts.js?v=2"></script>
+  <script src="admin-parts.js?v=4"></script>
 </body>
 </html>

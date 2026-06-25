@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using System.Text.Json;
@@ -35,6 +36,7 @@ public class PartsController : ControllerBase
             p.Id, p.PartNo, p.PartName, p.OrderNumber, p.Unit,
             p.StockQuantity, p.CategoryId, p.MinStock, p.MaxStock,
             p.ReorderPoint, p.CostPerUnit, p.CatalogueRef, p.SerialNo,
+            p.MainUnit, p.Remark, p.ImagePath,
             p.IsActive, p.CreatedAt, p.UpdatedAt,
             category = p.Category == null ? null : new { p.Category.Id, p.Category.Name },
             serialNos = serialMap.ContainsKey(p.PartNo) ? serialMap[p.PartNo] : new List<string>()
@@ -53,9 +55,13 @@ public class PartsController : ControllerBase
     }
 
     // POST /api/Parts
+    [Authorize(Roles = "Admin")]
     [HttpPost]
     public IActionResult Create([FromBody] PartWriteDto dto)
     {
+        var error = Validate(dto);
+        if (error != null) return BadRequest(new { message = error });
+
         if (_context.Parts.Any(p => p.PartNo == dto.PartNo))
             return BadRequest(new { message = $"PartNo '{dto.PartNo}' already exists." });
 
@@ -71,11 +77,15 @@ public class PartsController : ControllerBase
     }
 
     // PUT /api/Parts/{id}
+    [Authorize(Roles = "Admin")]
     [HttpPut("{id}")]
     public IActionResult Update(int id, [FromBody] PartWriteDto dto)
     {
         var part = _context.Parts.FirstOrDefault(p => p.Id == id);
         if (part == null) return NotFound();
+
+        var error = Validate(dto);
+        if (error != null) return BadRequest(new { message = error });
 
         if (_context.Parts.Any(p => p.PartNo == dto.PartNo && p.Id != id))
             return BadRequest(new { message = $"PartNo '{dto.PartNo}' already used by another part." });
@@ -90,6 +100,7 @@ public class PartsController : ControllerBase
     }
 
     // DELETE /api/Parts/{id}  — soft delete
+    [Authorize(Roles = "Admin")]
     [HttpDelete("{id}")]
     public IActionResult Delete(int id)
     {
@@ -106,6 +117,7 @@ public class PartsController : ControllerBase
     }
 
     // PATCH /api/Parts/{id}/restore
+    [Authorize(Roles = "Admin")]
     [HttpPatch("{id}/restore")]
     public IActionResult Restore(int id)
     {
@@ -118,6 +130,26 @@ public class PartsController : ControllerBase
 
         WriteAudit("Part", id.ToString(), "UPDATE", null, part);
         return Ok(new { message = "Part restored." });
+    }
+
+    // Returns an error message if the DTO is invalid, otherwise null.
+    private static string? Validate(PartWriteDto dto)
+    {
+        if (string.IsNullOrWhiteSpace(dto.PartNo))
+            return "Part No. is required.";
+        if (string.IsNullOrWhiteSpace(dto.PartName))
+            return "Part Name is required.";
+        if (dto.MinStock < 0 || dto.MaxStock < 0 || dto.ReorderPoint < 0)
+            return "Min / Max / Reorder values cannot be negative.";
+        if (dto.MinStock > dto.MaxStock)
+            return $"Min Stock ({dto.MinStock}) cannot be greater than Max Stock ({dto.MaxStock}).";
+        if (dto.ReorderPoint > dto.MaxStock)
+            return $"Reorder Point ({dto.ReorderPoint}) cannot be greater than Max Stock ({dto.MaxStock}).";
+        if (dto.StockQuantity < 0)
+            return "Stock Quantity cannot be negative.";
+        if (dto.CostPerUnit.HasValue && dto.CostPerUnit < 0)
+            return "Cost per unit cannot be negative.";
+        return null;
     }
 
     private static Part MapFromDto(Part part, PartWriteDto dto)
@@ -139,6 +171,9 @@ public class PartsController : ControllerBase
         part.CostPerUnit  = dto.CostPerUnit;
         part.ExpiryDate     = dto.ExpiryDate;
         part.IsUnrepairable = dto.IsUnrepairable;
+        part.MainUnit       = dto.MainUnit;
+        part.Remark         = dto.Remark;
+        if (dto.ImagePath != null) part.ImagePath = dto.ImagePath;
         return part;
     }
 
@@ -177,4 +212,7 @@ public class PartWriteDto
     public decimal? CostPerUnit { get; set; }
     public DateTime? ExpiryDate { get; set; }
     public bool IsUnrepairable { get; set; }
+    public string? MainUnit { get; set; }
+    public string? Remark { get; set; }
+    public string? ImagePath { get; set; }
 }

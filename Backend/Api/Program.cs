@@ -1,6 +1,9 @@
 using Api.Models;
 using Api.Services;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.IdentityModel.Tokens;
+using System.Text;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -16,11 +19,30 @@ builder.Services.AddControllers().AddJsonOptions(options =>
 });
 builder.Services.AddEndpointsApiExplorer();
 
-// SQLite for demo — switch to UseNpgsql when PostgreSQL is ready
+// SQLite for demo — switch to MySQL for production.
+// For MySQL: set ConnectionStrings:DefaultConnection (e.g. "server=localhost;port=3306;database=atm_inventory;user=root;password=...")
+// and swap the line below to:
+//   options.UseMySQL(builder.Configuration.GetConnectionString("DefaultConnection")!);
 builder.Services.AddDbContext<AppDbContext>(options =>
     options.UseSqlite(builder.Configuration.GetConnectionString("DefaultConnection") ?? "Data Source=AtmInventory.db"));
 
 builder.Services.AddScoped<StockService>();
+
+// ── JWT Authentication ──
+var jwtKey = builder.Configuration["Jwt:Key"] ?? JwtHelper.DefaultKey;
+builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
+    .AddJwtBearer(options =>
+    {
+        options.TokenValidationParameters = new TokenValidationParameters
+        {
+            ValidateIssuer = false,
+            ValidateAudience = false,
+            ValidateLifetime = true,
+            ValidateIssuerSigningKey = true,
+            IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtKey))
+        };
+    });
+builder.Services.AddAuthorization();
 
 var app = builder.Build();
 
@@ -30,6 +52,39 @@ using (var scope = app.Services.CreateScope())
     try
     {
         context.Database.EnsureCreated();
+
+        // ── Lightweight migration: add new Part catalog columns if missing (preserves data) ──
+        try
+        {
+            var existing = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            using (var cmd = context.Database.GetDbConnection().CreateCommand())
+            {
+                if (cmd.Connection!.State != System.Data.ConnectionState.Open) cmd.Connection.Open();
+                cmd.CommandText = "PRAGMA table_info(Parts);";
+                using var reader = cmd.ExecuteReader();
+                while (reader.Read()) existing.Add(reader.GetString(1)); // column name is index 1
+            }
+            foreach (var (col, type) in new[] { ("MainUnit", "TEXT"), ("Remark", "TEXT"), ("ImagePath", "TEXT") })
+            {
+                if (!existing.Contains(col))
+                {
+                    context.Database.ExecuteSqlRaw($"ALTER TABLE Parts ADD COLUMN {col} {type};");
+                    Console.WriteLine($"✅ Migration: added Parts.{col}");
+                }
+            }
+        }
+        catch (Exception mex) { Console.WriteLine($"⚠ Migration skipped: {mex.Message}"); }
+
+        // ── Users (login credentials) ──
+        if (!context.Users.Any())
+        {
+            context.Users.AddRange(
+                new User { Email = "admin@atm.com", Name = "Administrator", Role = "Admin", PasswordHash = PasswordHasher.Hash("admin123") },
+                new User { Email = "tech@atm.com",  Name = "Technician",    Role = "Tech",  PasswordHash = PasswordHasher.Hash("tech123") }
+            );
+            context.SaveChanges();
+            Console.WriteLine("✅ Seeded users: admin@atm.com / admin123  |  tech@atm.com / tech123");
+        }
 
         // ── Categories (from GRG Parts Catalog) ──
         if (!context.Categories.Any())
@@ -887,6 +942,8 @@ using (var scope = app.Services.CreateScope())
 }
 
 app.UseCors("AllowAll");
+
+app.UseAuthentication();
 
 // Serve uploaded images from wwwroot/uploads
 var uploadsPath = Path.Combine(Directory.GetCurrentDirectory(), "wwwroot");

@@ -79,17 +79,17 @@
   <div class="main-content">
     <div class="topbar">
       <div>
-        <div class="topbar-title" data-i18n="atm.title">ATM Model Compatibility</div>
-        <div class="topbar-sub" data-i18n="atm.sub">Define which parts are compatible with each ATM model</div>
+        <div class="topbar-title" data-i18n="atm.title">ATM Group Compatibility</div>
+        <div class="topbar-sub" data-i18n="atm.sub">Define which parts are compatible with each ATM group</div>
       </div>
-      <button id="topbarBtn" class="btn btn-primary" onclick="topbarAction()">+ New Model</button>
+      <button id="topbarBtn" class="btn btn-primary" onclick="topbarAction()">+ New Group</button>
     </div>
 
     <div class="page-body">
       <!-- Tabs -->
       <div class="tab-bar">
         <button class="tab-btn active" id="tab-models" onclick="switchTab('models')">
-          <iconify-icon icon="material-symbols:join" width="15" style="vertical-align:-3px"></iconify-icon> ATM Models
+          <iconify-icon icon="material-symbols:join" width="15" style="vertical-align:-3px"></iconify-icon> ATM Groups
         </button>
         <button class="tab-btn" id="tab-equiv" onclick="switchTab('equiv')">
           <iconify-icon icon="lsicon:switch-filled" width="15" style="vertical-align:-3px"></iconify-icon> Equivalent Groups
@@ -102,8 +102,8 @@
           <div class="table-wrap">
             <table>
               <thead><tr>
-                <th style="width:12%" data-i18n="atm.col.code">Model Code</th>
-                <th style="width:22%" data-i18n="atm.col.name">Model Name</th>
+                <th style="width:12%" data-i18n="atm.col.code">Group Code</th>
+                <th style="width:22%" data-i18n="atm.col.name">Group Name</th>
                 <th style="width:12%" data-i18n="atm.col.maker">Manufacturer</th>
                 <th data-i18n="atm.col.parts">Compatible Parts</th>
                 <th style="width:10%" data-i18n="atm.col.action">Action</th>
@@ -130,13 +130,13 @@
 <div class="modal-overlay" id="modelModal" onclick="if(event.target===this)closeModelModal()">
   <div class="modal">
     <div class="modal-header">
-      <span class="modal-title" id="modelModalTitle">New Model</span>
+      <span class="modal-title" id="modelModalTitle">New Group</span>
       <button class="modal-close" onclick="closeModelModal()">✕</button>
     </div>
 
     <div class="form-grid" style="margin-bottom:14px">
       <div class="form-group">
-        <label class="form-label" data-i18n="atm.lbl.code">Model Code</label>
+        <label class="form-label" data-i18n="atm.lbl.code">Group Code</label>
         <input id="fCode" class="form-input" placeholder="e.g. GRG-H22N">
       </div>
       <div class="form-group">
@@ -145,7 +145,7 @@
       </div>
     </div>
     <div class="form-group" style="margin-bottom:14px">
-      <label class="form-label" data-i18n="atm.lbl.name">Model Name</label>
+      <label class="form-label" data-i18n="atm.lbl.name">Group Name</label>
       <input id="fName" class="form-input" placeholder="e.g. GRG H22N">
     </div>
     <div class="form-group" style="margin-bottom:20px">
@@ -195,7 +195,7 @@
   </div>
 </div>
 
-<script src="shared/translations.js"></script>
+<script src="shared/translations.js?v=3"></script>
 <script src="shared/toast.js"></script>
 <script src="shared/api.js"></script>
 <script src="shared/layout.js"></script>
@@ -316,7 +316,7 @@ function switchTab(tab) {
   document.getElementById('tab-models').classList.toggle('active', tab === 'models');
   document.getElementById('tab-equiv').classList.toggle('active',  tab === 'equiv');
   const btn = document.getElementById('topbarBtn');
-  btn.textContent = tab === 'models' ? '+ New Model' : '+ New Group';
+  btn.textContent = tab === 'models' ? '+ New Group' : '+ New Group';
 }
 
 function topbarAction() {
@@ -423,7 +423,7 @@ async function saveModel() {
   const name  = document.getElementById('fName').value.trim();
   const maker = document.getElementById('fMaker').value.trim();
   const desc  = document.getElementById('fDesc').value.trim();
-  if (!code || !name) { showToast('Model Code และ Name จำเป็น', 'error'); return; }
+  if (!code || !name) { showToast('Group Code และ Name จำเป็น', 'error'); return; }
   const btn = document.getElementById('modelSaveBtn');
   btn.disabled = true;
   try {
@@ -432,7 +432,7 @@ async function saveModel() {
       showToast('บันทึกแล้ว', 'success');
     } else {
       await api.atmModels.create({ modelCode: code, modelName: name, manufacturer: maker || null, description: desc || null });
-      showToast('สร้างโมเดลแล้ว', 'success');
+      showToast('สร้างกลุ่มแล้ว', 'success');
     }
     allModels = await api.atmModels.getAll({ isActive: true });
     renderModels();

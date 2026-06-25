@@ -3,7 +3,27 @@
    Import this on every page.
    ───────────────────────────────────────────────────────────── */
 
-@import url('https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;1,9..40,400&display=swap');
+@font-face {
+  font-family: 'DM Sans';
+  src: url('../assets/fonts/dm-sans-400.woff2') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'DM Sans';
+  src: url('../assets/fonts/dm-sans-500.woff2') format('woff2');
+  font-weight: 500;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'DM Sans';
+  src: url('../assets/fonts/dm-sans-700.woff2') format('woff2');
+  font-weight: 700;
+  font-style: normal;
+  font-display: swap;
+}
 
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
@@ -56,6 +76,8 @@
 /* ── Base ── */
 body {
   font-family: 'DM Sans', sans-serif;
+  font-optical-sizing: auto;
+  font-feature-settings: "ss03" 1;
   background: var(--bg);
   color: var(--text-primary);
   min-height: 100vh;
@@ -97,6 +119,10 @@ body {
 }
 .sidebar-logo-wrap img {
   width: 100%; max-width: 148px; height: 48px; object-fit: contain; object-position: left center;
+  transition: filter 0.3s;
+}
+[data-theme="dark"] .sidebar-logo-wrap img {
+  filter: invert(1) brightness(1.8);
 }
 .sidebar.collapsed .sidebar-logo-wrap img {
   max-width: 36px; object-position: center center;

@@ -27,6 +27,7 @@ public class AppDbContext : DbContext
     public DbSet<EquivalentGroupMember> EquivalentGroupMembers { get; set; }
     public DbSet<AtmModel> AtmModels { get; set; }
     public DbSet<AtmModelPart> AtmModelParts { get; set; }
+    public DbSet<User> Users { get; set; }
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -116,6 +117,11 @@ public class AppDbContext : DbContext
             .WithMany(a => a.CompatibleParts)
             .HasForeignKey(m => m.AtmModelId)
             .OnDelete(DeleteBehavior.Cascade);
+
+        // User: unique email
+        modelBuilder.Entity<User>()
+            .HasIndex(u => u.Email)
+            .IsUnique();
 
         // StockCountLine: Variance is computed in C#, not stored
         modelBuilder.Entity<StockCountLine>()

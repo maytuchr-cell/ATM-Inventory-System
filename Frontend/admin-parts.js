@@ -3,6 +3,7 @@ let allCategories = [];
 let editingId = null;
 let currentPage = 1;
 const PAGE_SIZE = 50;
+const IMG_BASE = API_BASE.replace(/\/api$/, '');
 
 function resetPage() { currentPage = 1; }
 
@@ -47,7 +48,7 @@ async function loadParts() {
   } catch (e) {
     showToast(t('toast.network'), 'error');
     document.getElementById('parts-tbody').innerHTML =
-      `<tr><td colspan="9" class="empty-state">${t('inv.empty')}</td></tr>`;
+      `<tr><td colspan="7" class="empty-state">${t('inv.empty')}</td></tr>`;
   }
 }
 
@@ -83,7 +84,7 @@ function renderTable() {
 
   const tbody = document.getElementById('parts-tbody');
   if (!rows.length) {
-    tbody.innerHTML = `<tr><td colspan="9" class="empty-state">${t('parts.empty')}</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="7" class="empty-state">${t('parts.empty')}</td></tr>`;
     renderPagination(0, 1);
     return;
   }
@@ -96,22 +97,59 @@ function renderTable() {
       : `<span class="badge badge-gray">${t('lbl.inactive')}</span>`;
     const actions = p.isActive
       ? `<button class="btn btn-secondary btn-xs" onclick="openModal(${p.id})">${t('btn.edit')}</button>
-         <button class="btn btn-danger btn-xs" onclick="deletePart(${p.id})">${t('btn.delete')}</button>`
+         <button class="btn btn-danger btn-xs" onclick="deletePart(${p.id})">${t('btn.deactivate')}</button>`
       : `<button class="btn btn-secondary btn-xs" onclick="restorePart(${p.id})">${t('btn.restore')}</button>`;
+    const imgIcon = p.imagePath
+      ? `<iconify-icon icon="material-symbols:image-outline" width="15" style="vertical-align:-3px;color:var(--orange)"></iconify-icon> `
+      : '';
     return `<tr>
       <td><code>${p.partNo}</code></td>
-      <td><strong>${p.partName}</strong></td>
+      <td><a href="#" class="part-name-link" onclick="openPartDetail(${p.id});return false;">${imgIcon}<strong>${p.partName}</strong></a></td>
       <td>${catName}</td>
       <td><span class="stock-pill ${stockClass}">${p.stockQuantity} ${t('inv.units')}</span></td>
       <td>${p.minStock}</td>
-      <td>${p.unit}</td>
-      <td>${p.costPerUnit != null ? '฿' + Number(p.costPerUnit).toLocaleString() : '—'}</td>
       <td>${statusBadge}</td>
       <td style="white-space:nowrap;display:flex;gap:6px;">${actions}</td>
     </tr>`;
   }).join('');
 
   renderPagination(total, totalPages);
+}
+
+/* ── Part detail popup (catalog view) ── */
+function openPartDetail(id) {
+  const p = allParts.find(x => x.id === id);
+  if (!p) return;
+  const catName = p.category?.name ?? (allCategories.find(c => c.id === p.categoryId)?.name ?? '—');
+  const dash = v => (v == null || v === '') ? '—' : v;
+
+  const imgHtml = p.imagePath
+    ? `<img src="${IMG_BASE}${p.imagePath}" alt="${p.partName}"
+           style="max-width:100%;max-height:320px;object-fit:contain;border-radius:10px;border:1px solid var(--border);background:#fff"
+           onerror="this.parentElement.innerHTML='<div class=&quot;pd-noimg&quot;>'+t('parts.pd.noimg')+'</div>'">`
+    : `<div class="pd-noimg">${t('parts.pd.noimg')}</div>`;
+
+  const rows = [
+    ['parts.pd.partno', `<code>${p.partNo}</code>`],
+    ['parts.pd.desc',   `<strong>${dash(p.partName)}</strong>`],
+    ['parts.pd.main',   dash(p.mainUnit)],
+    ['parts.pd.sub',    dash(catName)],
+    ['parts.pd.stock',  `${p.stockQuantity}`],
+    ['parts.pd.remark', dash(p.remark)],
+  ].map(([k, v]) => `
+    <div class="pd-row">
+      <div class="pd-label">${t(k)}</div>
+      <div class="pd-value">${v}</div>
+    </div>`).join('');
+
+  document.getElementById('pd-image').innerHTML = imgHtml;
+  document.getElementById('pd-fields').innerHTML = rows;
+  document.getElementById('pd-title').textContent = p.partNo;
+  document.getElementById('part-detail-overlay').classList.remove('hidden');
+}
+
+function closePartDetail() {
+  document.getElementById('part-detail-overlay').classList.add('hidden');
 }
 
 function renderPagination(total, totalPages) {
@@ -159,18 +197,15 @@ function openModal(id = null) {
     document.getElementById('f-partno').value   = p.partNo;
     document.getElementById('f-partname').value = p.partName;
     document.getElementById('f-ordernum').value = p.orderNumber ?? '';
-    document.getElementById('f-unit').value     = p.unit ?? 'pcs';
     document.getElementById('f-stock').value    = p.stockQuantity;
     document.getElementById('f-cat').value      = p.categoryId ?? '';
     document.getElementById('f-min').value      = p.minStock;
     document.getElementById('f-max').value      = p.maxStock;
     document.getElementById('f-reorder').value  = p.reorderPoint;
-    document.getElementById('f-cost').value     = p.costPerUnit ?? '';
     document.getElementById('f-cat-ref').value  = p.catalogueRef ?? '';
   } else {
     title.textContent = t('parts.add');
     document.getElementById('part-form').reset();
-    document.getElementById('f-unit').value    = 'pcs';
     document.getElementById('f-stock').value   = '0';
     document.getElementById('f-min').value     = '1';
     document.getElementById('f-max').value     = '100';
@@ -191,13 +226,13 @@ async function savePart(e) {
     partNo:       document.getElementById('f-partno').value.trim(),
     partName:     document.getElementById('f-partname').value.trim(),
     orderNumber:  document.getElementById('f-ordernum').value.trim(),
-    unit:         document.getElementById('f-unit').value.trim() || 'pcs',
+    unit:         'pcs',
     stockQuantity:parseInt(document.getElementById('f-stock').value) || 0,
     categoryId:   document.getElementById('f-cat').value ? parseInt(document.getElementById('f-cat').value) : null,
     minStock:     parseInt(document.getElementById('f-min').value) || 1,
     maxStock:     parseInt(document.getElementById('f-max').value) || 100,
     reorderPoint: parseInt(document.getElementById('f-reorder').value) || 3,
-    costPerUnit:  document.getElementById('f-cost').value ? parseFloat(document.getElementById('f-cost').value) : null,
+    costPerUnit:  null,
     catalogueRef: document.getElementById('f-cat-ref').value.trim() || null,
   };
 

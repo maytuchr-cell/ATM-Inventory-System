@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Api.Models;
 
@@ -28,20 +29,33 @@ public class LocationsController : ControllerBase
         return Ok(loc);
     }
 
+    [Authorize(Roles = "Admin")]
     [HttpPost]
     public IActionResult Create([FromBody] LocationWriteDto dto)
     {
+        var error = Validate(dto);
+        if (error != null) return BadRequest(new { message = error });
+        if (_context.Locations.Any(l => l.Code == dto.Code))
+            return BadRequest(new { message = $"Location code '{dto.Code}' already exists." });
+
         var loc = new Location { Name = dto.Name, Code = dto.Code, LocationType = dto.LocationType };
         _context.Locations.Add(loc);
         _context.SaveChanges();
         return Ok(loc);
     }
 
+    [Authorize(Roles = "Admin")]
     [HttpPut("{id}")]
     public IActionResult Update(int id, [FromBody] LocationWriteDto dto)
     {
         var loc = _context.Locations.FirstOrDefault(l => l.Id == id);
         if (loc == null) return NotFound();
+
+        var error = Validate(dto);
+        if (error != null) return BadRequest(new { message = error });
+        if (_context.Locations.Any(l => l.Code == dto.Code && l.Id != id))
+            return BadRequest(new { message = $"Location code '{dto.Code}' already used by another location." });
+
         loc.Name = dto.Name;
         loc.Code = dto.Code;
         loc.LocationType = dto.LocationType;
@@ -49,6 +63,15 @@ public class LocationsController : ControllerBase
         return Ok(loc);
     }
 
+    private static string? Validate(LocationWriteDto dto)
+    {
+        if (string.IsNullOrWhiteSpace(dto.Name)) return "Location name is required.";
+        if (string.IsNullOrWhiteSpace(dto.Code)) return "Location code is required.";
+        if (string.IsNullOrWhiteSpace(dto.LocationType)) return "Location type is required.";
+        return null;
+    }
+
+    [Authorize(Roles = "Admin")]
     [HttpDelete("{id}")]
     public IActionResult Delete(int id)
     {

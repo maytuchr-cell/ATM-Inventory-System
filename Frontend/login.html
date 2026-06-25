@@ -182,6 +182,14 @@
                         data-i18n-ph="login.ph" placeholder="you@atm.com" autofocus>
                 </div>
             </div>
+            <div class="form-group">
+                <label class="form-label" for="passwordInput" data-i18n="login.pwlabel">Password</label>
+                <div class="input-wrap">
+                    <svg class="input-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+                    <input type="password" id="passwordInput" class="form-input" required
+                        placeholder="••••••••">
+                </div>
+            </div>
             <button type="submit" class="btn-signin">
                 <span data-i18n="login.btn">Sign In</span>
                 <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></svg>
@@ -192,11 +200,11 @@
             <div class="demo-box-title" data-i18n="login.demo">Demo Accounts</div>
             <div class="demo-row">
                 <span class="demo-pill admin">Admin</span>
-                <span class="demo-email">admin@atm.com</span>
+                <span class="demo-email">admin@atm.com / admin123</span>
             </div>
             <div class="demo-row">
                 <span class="demo-pill tech">Tech</span>
-                <span class="demo-email">tech@atm.com</span>
+                <span class="demo-email">tech@atm.com / tech123</span>
             </div>
         </div>
     </div>
@@ -217,20 +225,31 @@
         /* ── i18n init ── */
         applyLang();
 
-        /* ── Login ── */
-        function handleLogin(event) {
+        /* ── Login (real JWT auth) ── */
+        const LOGIN_API = 'http://localhost:5128/api/Auth/login';
+        async function handleLogin(event) {
             event.preventDefault();
             const email = document.getElementById("emailInput").value.trim().toLowerCase();
-            if (email === "admin@atm.com") {
-                localStorage.setItem("userRole", "admin");
-                localStorage.setItem("userEmail", email);
-                window.location.href = "admin.html";
-            } else if (email === "tech@atm.com" || email.includes("tech")) {
-                localStorage.setItem("userRole", "tech");
-                localStorage.setItem("userEmail", email);
-                window.location.href = "tech.html";
-            } else {
-                alert(t('login.error'));
+            const password = document.getElementById("passwordInput").value;
+            const btn = document.querySelector('.btn-signin');
+            btn.disabled = true;
+            try {
+                const res = await fetch(LOGIN_API, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ email, password })
+                });
+                const data = await res.json().catch(() => ({}));
+                if (!res.ok) { alert(data.message || t('login.error')); return; }
+
+                localStorage.setItem("authToken", data.token);
+                localStorage.setItem("userRole", data.role);
+                localStorage.setItem("userEmail", data.email);
+                window.location.href = data.role === "admin" ? "admin.html" : "tech.html";
+            } catch (err) {
+                alert("Cannot reach server. Please try again.");
+            } finally {
+                btn.disabled = false;
             }
         }
     </script>

@@ -123,6 +123,7 @@
 
   // ── Sign out ───────────────────────────────────────────────────────────────
   function signOut() {
+    localStorage.removeItem('authToken');
     localStorage.removeItem('userRole');
     localStorage.removeItem('userEmail');
     window.location.href = 'login.html';

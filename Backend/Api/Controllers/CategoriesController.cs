@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Api.Models;
 
@@ -16,7 +17,19 @@ public class CategoriesController : ControllerBase
     {
         var q = _context.Categories.AsQueryable();
         if (isActive.HasValue) q = q.Where(c => c.IsActive == isActive);
-        return Ok(q.OrderBy(c => c.Name).ToList());
+        var cats = q.OrderBy(c => c.Name).ToList();
+
+        var partCounts = _context.Parts
+            .Where(p => p.CategoryId != null && p.IsActive)
+            .GroupBy(p => p.CategoryId!.Value)
+            .ToDictionary(g => g.Key, g => g.Count());
+
+        var result = cats.Select(c => new {
+            c.Id, c.Name, c.Description, c.IsActive,
+            partCount = partCounts.ContainsKey(c.Id) ? partCounts[c.Id] : 0
+        });
+
+        return Ok(result);
     }
 
     [HttpGet("{id}")]
@@ -27,26 +40,40 @@ public class CategoriesController : ControllerBase
         return Ok(cat);
     }
 
+    [Authorize(Roles = "Admin")]
     [HttpPost]
     public IActionResult Create([FromBody] CategoryWriteDto dto)
     {
+        if (string.IsNullOrWhiteSpace(dto.Name))
+            return BadRequest(new { message = "Category name is required." });
+        if (_context.Categories.Any(c => c.Name == dto.Name))
+            return BadRequest(new { message = $"Category '{dto.Name}' already exists." });
+
         var cat = new Category { Name = dto.Name, Description = dto.Description };
         _context.Categories.Add(cat);
         _context.SaveChanges();
         return Ok(cat);
     }
 
+    [Authorize(Roles = "Admin")]
     [HttpPut("{id}")]
     public IActionResult Update(int id, [FromBody] CategoryWriteDto dto)
     {
         var cat = _context.Categories.FirstOrDefault(c => c.Id == id);
         if (cat == null) return NotFound();
+
+        if (string.IsNullOrWhiteSpace(dto.Name))
+            return BadRequest(new { message = "Category name is required." });
+        if (_context.Categories.Any(c => c.Name == dto.Name && c.Id != id))
+            return BadRequest(new { message = $"Category '{dto.Name}' already used by another category." });
+
         cat.Name = dto.Name;
         cat.Description = dto.Description;
         _context.SaveChanges();
         return Ok(cat);
     }
 
+    [Authorize(Roles = "Admin")]
     [HttpDelete("{id}")]
     public IActionResult Delete(int id)
     {

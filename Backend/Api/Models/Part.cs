@@ -25,4 +25,9 @@ public class Part
     // Disposal & Expiry (FR-DP-01)
     public DateTime? ExpiryDate { get; set; }
     public bool IsUnrepairable { get; set; }
+
+    // Catalog fields (from GRG spare parts catalog)
+    public string? MainUnit { get; set; }   // e.g. "Cabinet"
+    public string? Remark { get; set; }      // free-text remark
+    public string? ImagePath { get; set; }   // e.g. "/uploads/parts/208010040-H.jpg"
 }

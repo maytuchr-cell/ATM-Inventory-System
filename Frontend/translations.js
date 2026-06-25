@@ -17,6 +17,7 @@ const TRANSLATIONS = {
     'login.welcome':  'Welcome back',
     'login.sub':      'Sign in to access your workspace.',
     'login.label':    'Email Address',
+    'login.pwlabel':  'Password',
     'login.ph':       'you@atm.com',
     'login.btn':      'Sign In',
     'login.demo':     'Demo Accounts',
@@ -134,6 +135,7 @@ const TRANSLATIONS = {
     'login.welcome':  'ยินดีต้อนรับ',
     'login.sub':      'เข้าสู่ระบบเพื่อใช้งานระบบคลังอะไหล่',
     'login.label':    'อีเมล',
+    'login.pwlabel':  'รหัสผ่าน',
     'login.ph':       'you@atm.com',
     'login.btn':      'เข้าสู่ระบบ',
     'login.demo':     'บัญชีทดสอบ',
@@ -266,8 +268,8 @@ function applyLang() {
 
   // Switch font family for Thai readability
   document.body.style.fontFamily = lang === 'th'
-    ? "'Sarabun', 'Inter', sans-serif"
-    : "'Inter', sans-serif";
+    ? "'Sarabun', 'DM Sans', sans-serif"
+    : "'DM Sans', sans-serif";
 }
 
 function toggleLang() {
