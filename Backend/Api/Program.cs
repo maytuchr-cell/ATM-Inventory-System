@@ -75,6 +75,15 @@ using (var scope = app.Services.CreateScope())
         }
         catch (Exception mex) { Console.WriteLine($"⚠ Migration skipped: {mex.Message}"); }
 
+        // ── Migrate ImagePath from /uploads/parts/ → /assets/parts/ (one-time, idempotent) ──
+        try
+        {
+            var updated = context.Database.ExecuteSqlRaw(
+                "UPDATE Parts SET ImagePath = REPLACE(ImagePath, '/uploads/parts/', '/assets/parts/') WHERE ImagePath LIKE '/uploads/parts/%'");
+            if (updated > 0) Console.WriteLine($"✅ Migrated {updated} ImagePath(s): /uploads/parts/ → /assets/parts/");
+        }
+        catch (Exception mex) { Console.WriteLine($"⚠ ImagePath migration skipped: {mex.Message}"); }
+
         // ── Users (login credentials) ──
         if (!context.Users.Any())
         {
@@ -945,12 +954,13 @@ app.UseCors("AllowAll");
 
 app.UseAuthentication();
 
-// Serve uploaded images from wwwroot/uploads
-var uploadsPath = Path.Combine(Directory.GetCurrentDirectory(), "wwwroot");
-Directory.CreateDirectory(Path.Combine(uploadsPath, "uploads"));
+// Serve part images from external asset folder (configurable via AssetPath in appsettings.json)
+// Default: D:\ATMAssets — kept outside the repo so images don't bloat git
+var assetPath = builder.Configuration["AssetPath"] ?? Path.Combine(Directory.GetCurrentDirectory(), "wwwroot");
+Directory.CreateDirectory(assetPath);
 app.UseStaticFiles(new StaticFileOptions {
-    FileProvider = new Microsoft.Extensions.FileProviders.PhysicalFileProvider(uploadsPath),
-    RequestPath  = ""
+    FileProvider = new Microsoft.Extensions.FileProviders.PhysicalFileProvider(assetPath),
+    RequestPath  = "/assets"
 });
 
 app.UseAuthorization();
