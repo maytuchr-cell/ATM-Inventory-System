@@ -36,7 +36,7 @@ def txt(t,x,y,w,h,size=9,bold=False,color=TEXT,align=PP_ALIGN.LEFT,italic=False,
 # header
 box(0,0,13.333,0.62,NAVY); box(0,0.62,13.333,0.03,ORANGE)
 txt("ATM Inventory System — Full Database ERD (23 tables)",0.3,0.06,9,0.5,size=18,bold=True,color=WHITE,vmid=True)
-txt("เส้นทึบ = FK บังคับจริง   ·   เส้นประ = เชื่อมหลวมด้วย PartNo (string, ไม่มี FK)",0.3,0.4,9,0.2,size=9,color=RGBColor(0xB0,0xC8,0xE8),italic=True)
+txt("เส้นทึบ = FK บังคับจริง (เชื่อมครบทุก transaction แล้ว)   ·   เส้นประ = เหลือ Ticket / EquivalentPart ที่ยังอ้างด้วย PartNo",0.3,0.4,12,0.2,size=9,color=RGBColor(0xB0,0xC8,0xE8),italic=True)
 
 ENT={}  # key -> (cx_top, x,y,w,h)
 def entity(key,x,y,w,clr,bgc,fields,title=None):
@@ -77,25 +77,25 @@ entity("Part",3.4,2.35,1.85,BLUE,RGBColor(0xE3,0xEC,0xFD),
 clabel("STOCK / INVENTORY",6.9,2.12,TEAL)
 entity("PartStock",6.9,2.35,1.7,TEAL,RGBColor(0xE9,0xF6,0xF4),[("PK","Id"),("FK","PartId"),("FK","LocationId"),("","Good/DefQty")])
 entity("PartUnit",8.75,2.35,1.7,TEAL,RGBColor(0xE9,0xF6,0xF4),[("PK","Id"),("FK","PartId"),("FK","LocationId"),("UK","SerialNo")])
-entity("StockMovement",6.9,3.55,1.7,TEAL,RGBColor(0xE9,0xF6,0xF4),[("PK","Id"),("FK","PartId  *NEW*"),("","From/ToLoc"),("","Type/Qty")])
+entity("StockMovement",6.9,3.55,1.7,TEAL,RGBColor(0xE9,0xF6,0xF4),[("PK","Id"),("FK","PartId"),("FK","PartUnitId"),("","From/ToLoc"),("","Type/Qty")])
 
 # ===== CONFIG (purple) — left-mid =====
 clabel("CONFIG",0.3,2.12,PURPLE)
-entity("AtmModelPart",5.1,2.35,1.55,PURPLE,RGBColor(0xF0,0xEF,0xFA),[("PK","Id"),("FK","AtmModelId"),("~","PartNo")])
+entity("AtmModelPart",5.1,2.35,1.55,PURPLE,RGBColor(0xF0,0xEF,0xFA),[("PK","Id"),("FK","AtmModelId"),("FK","PartId")])
 entity("EquivalentGroup",0.3,2.35,1.55,PURPLE,RGBColor(0xF0,0xEF,0xFA),[("PK","Id"),("","Name")])
-entity("EquivGroupMember",0.3,3.25,1.55,PURPLE,RGBColor(0xF0,0xEF,0xFA),[("PK","Id"),("FK","GroupId"),("~","PartNo")])
+entity("EquivGroupMember",0.3,3.25,1.55,PURPLE,RGBColor(0xF0,0xEF,0xFA),[("PK","Id"),("FK","GroupId"),("FK","PartId")])
 entity("EquivalentPart",1.95,3.25,1.45,PURPLE,RGBColor(0xF0,0xEF,0xFA),[("PK","Id"),("~","Orig/Equiv")])
 
 # ===== TRANSACTIONS (amber) — bottom =====
 clabel("TRANSACTIONS",0.3,4.62,AMBER)
 entity("GoodsReceipt",0.3,4.85,1.7,AMBER,RGBColor(0xFB,0xF1,0xE7),[("PK","Id"),("FK","VendorId"),("FK","LocationId")])
-entity("GoodsReceiptLine",2.15,4.85,1.7,AMBER,RGBColor(0xFB,0xF1,0xE7),[("PK","Id"),("FK","GoodsReceiptId"),("~","PartNo")])
+entity("GoodsReceiptLine",2.15,4.85,1.7,AMBER,RGBColor(0xFB,0xF1,0xE7),[("PK","Id"),("FK","GoodsReceiptId"),("FK","PartId")])
 entity("Ticket",0.3,6.0,1.7,AMBER,RGBColor(0xFB,0xF1,0xE7),[("PK","TicketId"),("~","Req/AppPartNo")])
-entity("ReturnRequest",2.15,6.0,1.7,AMBER,RGBColor(0xFB,0xF1,0xE7),[("PK","Id"),("FK","TicketId"),("~","PartNo")])
-entity("StockTransfer",4.0,4.85,1.7,AMBER,RGBColor(0xFB,0xF1,0xE7),[("PK","Id"),("~","PartNo"),("~","From/ToLoc")])
-entity("DisposalRequest",4.0,6.0,1.7,AMBER,RGBColor(0xFB,0xF1,0xE7),[("PK","Id"),("~","PartNo"),("~","LocationId")])
+entity("ReturnRequest",2.15,6.0,1.7,AMBER,RGBColor(0xFB,0xF1,0xE7),[("PK","Id"),("FK","TicketId"),("FK","PartId")])
+entity("StockTransfer",4.0,4.85,1.7,AMBER,RGBColor(0xFB,0xF1,0xE7),[("PK","Id"),("FK","PartId"),("~","From/ToLoc")])
+entity("DisposalRequest",4.0,6.0,1.7,AMBER,RGBColor(0xFB,0xF1,0xE7),[("PK","Id"),("FK","PartId"),("~","LocationId")])
 entity("StockCount",5.85,4.85,1.7,AMBER,RGBColor(0xFB,0xF1,0xE7),[("PK","Id"),("","Type/Status")])
-entity("StockCountLine",5.85,6.0,1.7,AMBER,RGBColor(0xFB,0xF1,0xE7),[("PK","Id"),("FK","StockCountId"),("~","PartNo")])
+entity("StockCountLine",5.85,6.0,1.7,AMBER,RGBColor(0xFB,0xF1,0xE7),[("PK","Id"),("FK","StockCountId"),("FK","PartId")])
 
 def C(k):  # center of an entity
     x,y,w,h=ENT[k]; return (x+w/2,y+h/2)
@@ -107,23 +107,26 @@ def edge(a,b,clr,dashed=False,lw=1.25):
         from pptx.oxml.ns import qn
         ln=cn.line._get_or_add_ln(); d=ln.makeelement(qn('a:prstDash'),{'val':'dash'}); ln.append(d)
 
-# ---- SOLID FK edges ----
+# ---- SOLID FK edges (structural + Part links — all transaction tables now use PartId FK) ----
 for a,b in [("Category","Part"),("Part","PartStock"),("Part","PartUnit"),("Part","StockMovement"),
+            ("StockMovement","PartUnit"),
             ("Location","PartStock"),("AtmModel","AtmModelPart"),
             ("EquivalentGroup","EquivGroupMember"),("GoodsReceipt","GoodsReceiptLine"),
-            ("Vendor","GoodsReceipt"),("Ticket","ReturnRequest"),("StockCount","StockCountLine")]:
-    edge(a,b,GREY,dashed=False,lw=1.5)
+            ("Vendor","GoodsReceipt"),("Ticket","ReturnRequest"),("StockCount","StockCountLine"),
+            ("GoodsReceiptLine","Part"),("ReturnRequest","Part"),("StockTransfer","Part"),
+            ("DisposalRequest","Part"),("StockCountLine","Part"),("AtmModelPart","Part"),
+            ("EquivGroupMember","Part")]:
+    edge(a,b,GREY,dashed=False,lw=1.3)
 
-# ---- DASHED loose (PartNo) edges to Part ----
-for a in ["AtmModelPart","EquivGroupMember","GoodsReceiptLine","ReturnRequest","StockTransfer",
-          "DisposalRequest","StockCountLine","Ticket"]:
+# ---- DASHED loose links still by PartNo string (not yet FK): Ticket, EquivalentPart ----
+for a in ["Ticket","EquivalentPart"]:
     edge(a,"Part",RGBColor(0xC0,0x6A,0x2A),dashed=True,lw=1.0)
 
 # legend
 ly=7.12
-box(0.3,ly,0.5,0.04,GREY); txt("FK (enforced)",0.85,ly-0.08,1.6,0.2,size=8,color=MUTED,vmid=True)
-box(2.6,ly,0.5,0.04,RGBColor(0xC0,0x6A,0x2A)); txt("loose link by PartNo (no FK)",3.15,ly-0.08,3,0.2,size=8,color=MUTED,vmid=True)
-txt("~ = อ้างด้วย string PartNo / int LocationId",6.4,ly-0.08,4,0.2,size=8,color=MUTED,italic=True,vmid=True)
+box(0.3,ly,0.5,0.04,GREY); txt("FK (enforced)",0.85,ly-0.08,1.8,0.2,size=8,color=MUTED,vmid=True)
+box(2.7,ly,0.5,0.04,RGBColor(0xC0,0x6A,0x2A)); txt("loose link by PartNo (Ticket, EquivalentPart)",3.25,ly-0.08,4,0.2,size=8,color=MUTED,vmid=True)
+txt("~ = อ้างด้วย string PartNo / int LocationId (LocationId ยังไม่เป็น FK)",7.6,ly-0.08,5.4,0.2,size=8,color=MUTED,italic=True,vmid=True)
 
 # ════════════════════════════════════════════════════════════════════════
 #  DATA DICTIONARY SLIDES  (Field | Type | Null | Key | Description)
@@ -202,6 +205,7 @@ T={
  ("ExpiryDate","datetime",True,"","วันหมดอายุ (legacy → PartUnit)"),("IsUnrepairable","tinyint(1)",False,"","ซ่อมไม่ได้ (legacy → PartUnit)"),
  ("MainUnit","varchar(100)",True,"","กลุ่มหลัก เช่น Cabinet"),("Remark","varchar(500)",True,"","หมายเหตุ"),
  ("ImagePath","varchar(255)",True,"","พาธรูป /assets/parts/..."),
+ ("RowVersion","varchar(32)",False,"","concurrency token (กันแก้ทับกัน)"),
  ]),
 "Category":(BLUE,[("Id","int",False,"PK","Primary key"),("Name","varchar(100)",False,"UK","ชื่อหมวด = Sub Unit (ห้ามซ้ำ)"),
  ("Description","varchar(500)",True,"","รายละเอียด"),("IsActive","tinyint(1)",False,"","สถานะ")]),
@@ -215,23 +219,25 @@ T={
  ("ModelName","varchar(150)",False,"","ชื่อกลุ่ม/รุ่น"),("Manufacturer","varchar(100)",True,"","ผู้ผลิต เช่น GRG/NCR"),
  ("Description","varchar(500)",True,"","รายละเอียด"),("IsActive","tinyint(1)",False,"","สถานะ")]),
 "AtmModelPart":(PURPLE,[("Id","int",False,"PK","Primary key"),("AtmModelId","int",False,"FK","→ AtmModel (Cascade)"),
- ("PartNo","varchar(50)",False,"~","อ้าง Part.PartNo — UK(AtmModelId,PartNo)")]),
+ ("PartId","int",False,"FK","→ Part (Restrict)"),("PartNo","varchar(50)",False,"","snapshot — UK(AtmModelId,PartNo)")]),
 "EquivalentGroup":(PURPLE,[("Id","int",False,"PK","Primary key"),("Name","varchar(150)",False,"","ชื่อกลุ่มอะไหล่ทดแทน"),
  ("Description","varchar(500)",True,"","รายละเอียด"),("CreatedAt","datetime",False,"","เวลาสร้าง")]),
 "EquivalentGroupMember":(PURPLE,[("Id","int",False,"PK","Primary key"),("GroupId","int",False,"FK","→ EquivalentGroup (Cascade)"),
- ("PartNo","varchar(50)",False,"~","อ้าง Part.PartNo — UK(GroupId,PartNo)")]),
+ ("PartId","int",False,"FK","→ Part (Restrict)"),("PartNo","varchar(50)",False,"","snapshot — UK(GroupId,PartNo)")]),
 "EquivalentPart":(PURPLE,[("Id","int",False,"PK","Primary key"),("OriginalPartNo","varchar(50)",False,"~","อะไหล่ต้นทาง"),
  ("EquivalentPartNo","varchar(50)",False,"~","อะไหล่ทดแทน — UK(Orig,Equiv)")]),
-"PartStock":(TEAL,[("Id","int",False,"PK","Primary key"),("PartId","int",False,"FK","→ Part"),
+"PartStock":(TEAL,[("Id","int",False,"PK","Primary key"),("PartId","int",False,"FK","→ Part — UQ(PartId,LocationId)"),
  ("LocationId","int",False,"FK","→ Location"),("GoodQty","int",False,"","จำนวนสภาพดี"),
- ("DefectiveQty","int",False,"","จำนวนสภาพเสีย")]),
+ ("DefectiveQty","int",False,"","จำนวนสภาพเสีย"),("UpdatedAt","datetime",False,"","เวลายอดเปลี่ยนล่าสุด"),
+ ("RowVersion","varchar(32)",False,"","concurrency token (กันยอดทับกัน)")]),
 "PartUnit":(TEAL,[("Id","int",False,"PK","Primary key"),("PartId","int",False,"FK","→ Part (Cascade)"),
  ("LocationId","int",True,"FK","→ Location (SetNull)"),("SerialNo","varchar(100)",False,"UK","ซีเรียลของชิ้นนี้ (ห้ามซ้ำ)"),
  ("Condition","varchar(20)",False,"","Good | Defective"),("ExpiryDate","datetime",True,"","วันหมดอายุของชิ้นนี้"),
  ("IsUnrepairable","tinyint(1)",False,"","ซ่อมไม่ได้ → Disposal"),("ReceivedAt","datetime",False,"","วันรับเข้า (ใช้คำนวณ Aging)"),
  ("Status","varchar(20)",False,"","InStock|Issued|Disposed")]),
 "StockMovement":(TEAL,[("Id","int",False,"PK","Primary key"),("MovementType","varchar(20)",False,"","GR/Issue/Return/Transfer/Disposal/Adjust"),
- ("PartId","int",False,"FK","→ Part (Restrict) — NEW"),("PartNo","varchar(50)",False,"","snapshot ของ PartNo ตอนนั้น"),
+ ("PartId","int",False,"FK","→ Part (Restrict)"),("PartNo","varchar(50)",False,"","snapshot ของ PartNo ตอนนั้น"),
+ ("PartUnitId","int",True,"FK","→ PartUnit (ชิ้นซีเรียล ถ้ามี, SetNull)"),
  ("FromLocationId","int",True,"","คลังต้นทาง (ออก)"),("ToLocationId","int",True,"","คลังปลายทาง (เข้า)"),
  ("Qty","int",False,"","จำนวนที่ขยับ"),("Condition","varchar(20)",False,"","Good | Defective"),
  ("RefType","varchar(20)",True,"","Ticket/GoodsReceipt/Transfer..."),("RefId","varchar(50)",True,"","เลขเอกสารอ้างอิง"),
@@ -244,7 +250,7 @@ T={
  ("ReceivedBy","varchar(100)",False,"","ผู้รับ"),("ReceivedAt","datetime",False,"","เวลารับ"),
  ("HandlingCost","decimal(18,2)",True,"","ค่าจัดการ/ขนส่ง")]),
 "GoodsReceiptLine":(AMBER,[("Id","int",False,"PK","Primary key"),("GoodsReceiptId","int",False,"FK","→ GoodsReceipt (Cascade)"),
- ("PartNo","varchar(50)",False,"~","อ้าง Part.PartNo"),("Qty","int",False,"","จำนวน"),
+ ("PartId","int",False,"FK","→ Part (Restrict)"),("PartNo","varchar(50)",False,"","snapshot"),("Qty","int",False,"","จำนวน"),
  ("Condition","varchar(20)",False,"","Good | Defective"),("SerialNo","varchar(100)",True,"","ซีเรียล"),
  ("IsManualAdjust","tinyint(1)",False,"","ปรับมือ (ต้องมี Remarks)"),("Remarks","varchar(500)",True,"","หมายเหตุ")]),
 "Ticket":(AMBER,[("TicketId","int",False,"PK","Primary key"),("TechEmail","varchar(150)",False,"","อีเมลช่าง"),
@@ -258,11 +264,12 @@ T={
  ("IsDOA","tinyint(1)",False,"","Dead-on-arrival (FR-MC-04)"),("CreatedAt","datetime",False,"","เวลาสร้าง"),
  ("ReceivedAt","datetime",True,"","เวลารับของ"),("DueDate","datetime",True,"","กำหนดส่ง")]),
 "ReturnRequest":(AMBER,[("Id","int",False,"PK","Primary key"),("TicketId","int",False,"FK","→ Ticket (Restrict, บังคับ)"),
- ("PartNo","varchar(50)",False,"~","อ้าง Part.PartNo"),("Condition","varchar(20)",False,"","Good | Defective"),
+ ("PartId","int",False,"FK","→ Part (Restrict)"),("PartNo","varchar(50)",False,"","snapshot"),("Condition","varchar(20)",False,"","Good | Defective"),
  ("SourceType","varchar(20)",False,"","Technician/GRG/LocalVendor"),("LocationFromId","int",False,"","คลังต้นทาง"),
  ("LocationToId","int",False,"","คลังปลายทาง"),("ReturnedBy","varchar(100)",False,"","ผู้คืน"),
  ("CreatedAt","datetime",False,"","เวลาสร้าง")]),
-"StockTransfer":(AMBER,[("Id","int",False,"PK","Primary key"),("PartNo","varchar(50)",False,"~","อ้าง Part.PartNo"),
+"StockTransfer":(AMBER,[("Id","int",False,"PK","Primary key"),("PartId","int",False,"FK","→ Part (Restrict)"),
+ ("PartNo","varchar(50)",False,"","snapshot"),
  ("Qty","int",False,"","จำนวน"),("Condition","varchar(20)",False,"","Good | Defective"),
  ("FromLocationId","int",False,"~","คลังต้นทาง"),("ToLocationId","int",False,"~","คลังปลายทาง"),
  ("Status","varchar(20)",False,"","Pending/Approved/InTransit/Received"),("RequestedBy","varchar(100)",False,"","ผู้ขอ"),
@@ -274,11 +281,12 @@ T={
  ("IsSystemFrozen","tinyint(1)",False,"","freeze ระบบระหว่างนับ"),("StartedBy","varchar(100)",False,"","ผู้เริ่มนับ"),
  ("CreatedAt","datetime",False,"","เวลาสร้าง"),("CompletedAt","datetime",True,"","เวลาเสร็จ")]),
 "StockCountLine":(AMBER,[("Id","int",False,"PK","Primary key"),("StockCountId","int",False,"FK","→ StockCount (Cascade)"),
- ("PartNo","varchar(50)",False,"~","อ้าง Part.PartNo"),("LocationId","int",False,"","คลังที่นับ"),
+ ("PartId","int",False,"FK","→ Part (Restrict)"),("PartNo","varchar(50)",False,"","snapshot"),("LocationId","int",False,"","คลังที่นับ"),
  ("SystemQty","int",False,"","ยอดระบบ ณ ตอนเริ่มนับ"),("PhysicalQty","int",True,"","ยอดนับจริง"),
  ("Variance","int (computed)",False,"","ผลต่าง = Physical - System (ไม่เก็บ)"),("AdjustApproved","tinyint(1)",False,"","อนุมัติปรับยอด"),
  ("Remarks","varchar(500)",True,"","หมายเหตุ")]),
-"DisposalRequest":(AMBER,[("Id","int",False,"PK","Primary key"),("PartNo","varchar(50)",False,"~","อ้าง Part.PartNo"),
+"DisposalRequest":(AMBER,[("Id","int",False,"PK","Primary key"),("PartId","int",False,"FK","→ Part (Restrict)"),
+ ("PartNo","varchar(50)",False,"","snapshot"),
  ("SerialNo","varchar(100)",True,"","ซีเรียล"),("LocationId","int",False,"~","คลัง (ปกติ Scrap)"),
  ("Qty","int",False,"","จำนวน"),("Status","varchar(20)",False,"","Pending/Approved/Disposed"),
  ("ReasonCode","varchar(30)",False,"","Expired/Unrepairable/Damaged/Other"),("RequestedBy","varchar(100)",False,"","ผู้ขอ"),
