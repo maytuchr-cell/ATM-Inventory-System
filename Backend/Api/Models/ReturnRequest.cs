@@ -4,7 +4,9 @@ public class ReturnRequest
 {
     public int Id { get; set; }
     public int TicketId { get; set; }            // required — every return must trace to a ticket
-    public string PartNo { get; set; } = string.Empty;
+    public int PartId { get; set; }              // FK to Part
+    public string PartNo { get; set; } = string.Empty; // snapshot
+    public Part? Part { get; set; }
     public string Condition { get; set; } = "Good"; // Good | Defective
     public string SourceType { get; set; } = string.Empty; // Technician | GRG | LocalVendor
     public int LocationFromId { get; set; }       // where the part is being returned from (e.g. OL_TECHNICIAN)

@@ -4,7 +4,9 @@ public class StockMovement
 {
     public int Id { get; set; }
     public string MovementType { get; set; } = string.Empty; // GR|Issue|Return|Transfer|Disposal|Adjustment
-    public string PartNo { get; set; } = string.Empty;
+    public int PartId { get; set; }                  // FK to Part — authoritative link (matches PartStock/PartUnit)
+    public string PartNo { get; set; } = string.Empty; // snapshot of the part number at the time of the movement
+    public Part? Part { get; set; }
     public int? FromLocationId { get; set; }
     public int? ToLocationId { get; set; }
     public int Qty { get; set; }

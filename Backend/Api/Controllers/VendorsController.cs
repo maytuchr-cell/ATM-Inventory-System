@@ -1,6 +1,8 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using System.Text.Json;
 using Api.Models;
+using Api.Services;
 
 namespace Api.Controllers;
 
@@ -9,8 +11,13 @@ namespace Api.Controllers;
 public class VendorsController : ControllerBase
 {
     private readonly AppDbContext _context;
+    private readonly AuditService _audit;
 
-    public VendorsController(AppDbContext context) => _context = context;
+    public VendorsController(AppDbContext context, AuditService audit)
+    {
+        _context = context;
+        _audit = audit;
+    }
 
     [HttpGet]
     public IActionResult GetAll([FromQuery] string? vendorType, [FromQuery] bool? isActive)
@@ -41,6 +48,7 @@ public class VendorsController : ControllerBase
         var vendor = new Vendor { Name = dto.Name, Code = dto.Code, VendorType = dto.VendorType, ContactInfo = dto.ContactInfo };
         _context.Vendors.Add(vendor);
         _context.SaveChanges();
+        _audit.Log(User, "Vendor", vendor.Id.ToString(), "CREATE", null, vendor);
         return Ok(vendor);
     }
 
@@ -56,11 +64,13 @@ public class VendorsController : ControllerBase
         if (_context.Vendors.Any(v => v.Code == dto.Code && v.Id != id))
             return BadRequest(new { message = $"Vendor code '{dto.Code}' already used by another vendor." });
 
+        var old = JsonSerializer.Serialize(new { vendor.Name, vendor.Code, vendor.VendorType, vendor.ContactInfo });
         vendor.Name = dto.Name;
         vendor.Code = dto.Code;
         vendor.VendorType = dto.VendorType;
         vendor.ContactInfo = dto.ContactInfo;
         _context.SaveChanges();
+        _audit.Log(User, "Vendor", id.ToString(), "UPDATE", old, vendor);
         return Ok(vendor);
     }
 
@@ -80,6 +90,7 @@ public class VendorsController : ControllerBase
         if (vendor == null) return NotFound();
         vendor.IsActive = false;
         _context.SaveChanges();
+        _audit.Log(User, "Vendor", id.ToString(), "DELETE", null, vendor);
         return Ok(new { message = "Vendor deactivated." });
     }
 }

@@ -74,13 +74,14 @@ public class EquivalentGroupController : ControllerBase
         if (!_context.EquivalentGroups.Any(g => g.Id == id))
             return NotFound(new { message = "Group not found." });
 
-        if (!_context.Parts.Any(p => p.PartNo == dto.PartNo))
+        var part = _context.Parts.FirstOrDefault(p => p.PartNo == dto.PartNo);
+        if (part == null)
             return BadRequest(new { message = $"Part {dto.PartNo} not found." });
 
         if (_context.EquivalentGroupMembers.Any(m => m.GroupId == id && m.PartNo == dto.PartNo))
             return BadRequest(new { message = $"{dto.PartNo} is already in this group." });
 
-        var member = new EquivalentGroupMember { GroupId = id, PartNo = dto.PartNo };
+        var member = new EquivalentGroupMember { GroupId = id, PartId = part.Id, PartNo = dto.PartNo };
         _context.EquivalentGroupMembers.Add(member);
         _context.SaveChanges();
         return Ok(new { message = "Member added.", member });

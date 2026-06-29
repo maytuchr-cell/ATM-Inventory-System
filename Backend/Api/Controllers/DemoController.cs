@@ -281,11 +281,9 @@ public class DemoController : ControllerBase
         _context.GoodsReceipts.RemoveRange(_context.GoodsReceipts);
         _context.StockMovements.RemoveRange(_context.StockMovements);
         _context.Set<PartStock>().RemoveRange(_context.Set<PartStock>());
+        _context.Set<PartUnit>().RemoveRange(_context.Set<PartUnit>());
 
-        // Reset StockQuantity on all parts
-        foreach (var p in _context.Parts)
-            p.StockQuantity = 0;
-
+        // Clearing PartStock zeroes out on-hand stock — there is no per-part total to reset.
         _context.SaveChanges();
         return Ok(new { message = "Demo data cleared. Parts and Categories are preserved." });
     }
@@ -302,6 +300,8 @@ public class DemoController : ControllerBase
         tickets       = _context.Tickets.Count(),
         returns       = _context.ReturnRequests.Count(),
         stock_movements = _context.StockMovements.Count(),
-        parts_with_stock = _context.Parts.Count(p => p.StockQuantity > 0),
+        parts_with_stock = _context.PartStocks
+            .GroupBy(s => s.PartId)
+            .Count(g => g.Sum(x => x.GoodQty) > 0),
     });
 }

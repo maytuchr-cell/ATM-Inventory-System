@@ -54,6 +54,7 @@ public class StockTransferController : ControllerBase
 
         var transfer = new StockTransfer
         {
+            PartId         = part.Id,
             PartNo         = dto.PartNo,
             Qty            = dto.Qty,
             Condition      = dto.Condition,

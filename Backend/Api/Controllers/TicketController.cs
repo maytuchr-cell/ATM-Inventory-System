@@ -10,11 +10,13 @@ public class TicketController : ControllerBase
 {
     private readonly AppDbContext _context;
     private readonly StockService _stock;
+    private readonly AuditService _audit;
 
-    public TicketController(AppDbContext context, StockService stock)
+    public TicketController(AppDbContext context, StockService stock, AuditService audit)
     {
         _context = context;
         _stock = stock;
+        _audit = audit;
     }
 
     // GET /api/Ticket
@@ -102,7 +104,10 @@ public class TicketController : ControllerBase
         if (ticket == null) return NotFound(new { message = "Ticket not found." });
 
         var part = _context.Parts.FirstOrDefault(p => p.PartNo == dto.ApprovedPartNo && p.IsActive);
-        if (part == null || part.StockQuantity <= 0)
+        if (part == null)
+            return BadRequest(new { message = "Part unavailable or out of stock." });
+        var onHand = _context.PartStocks.Where(s => s.PartId == part.Id).Sum(s => s.GoodQty);
+        if (onHand <= 0)
             return BadRequest(new { message = "Part unavailable or out of stock." });
 
         // ATM Model compatibility check on approval too
@@ -160,6 +165,7 @@ public class TicketController : ControllerBase
         ticket.Status         = "Approved";
 
         _context.SaveChanges();
+        _audit.Log(User, "Ticket", id.ToString(), "APPROVE", null, new { ticket.TicketId, ticket.ApprovedPartNo, ticket.Status });
         return Ok(new { message = "Approved.", ticket });
     }
 
@@ -210,6 +216,7 @@ public class TicketController : ControllerBase
 
         ticket.Status = "Rejected";
         _context.SaveChanges();
+        _audit.Log(User, "Ticket", id.ToString(), "REJECT", null, new { ticket.TicketId, ticket.Status });
         return Ok(new { message = "Rejected.", ticket });
     }
 

@@ -96,7 +96,6 @@ public class GoodsReceiptController : ControllerBase
                     PartNo        = line.PartNo,
                     PartName      = !string.IsNullOrWhiteSpace(line.Remarks) ? line.Remarks : line.PartNo,
                     Unit          = "pcs",
-                    StockQuantity = 0,
                     MinStock      = 1,
                     MaxStock      = 100,
                     ReorderPoint  = 3,
@@ -113,6 +112,7 @@ public class GoodsReceiptController : ControllerBase
 
             receipt.Lines.Add(new GoodsReceiptLine
             {
+                PartId         = part.Id,
                 PartNo         = line.PartNo,
                 Qty            = line.Qty,
                 Condition      = line.Condition,

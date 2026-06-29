@@ -74,6 +74,7 @@ public class DisposalController : ControllerBase
                 var scrapStock = _context.PartStocks.FirstOrDefault(s => s.PartId == part.Id && s.LocationId == scrap.Id);
                 _context.DisposalRequests.Add(new DisposalRequest
                 {
+                    PartId      = part.Id,
                     PartNo      = part.PartNo,
                     LocationId  = scrap.Id,
                     Qty         = scrapStock?.GoodQty ?? 0,
@@ -102,6 +103,7 @@ public class DisposalController : ControllerBase
 
         var request = new DisposalRequest
         {
+            PartId      = part.Id,
             PartNo      = dto.PartNo,
             SerialNo    = dto.SerialNo,
             LocationId  = dto.LocationId,

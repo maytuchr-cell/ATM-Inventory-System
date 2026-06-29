@@ -3,7 +3,9 @@ namespace Api.Models;
 public class DisposalRequest
 {
     public int Id { get; set; }
-    public string PartNo { get; set; } = string.Empty;
+    public int PartId { get; set; }              // FK to Part
+    public string PartNo { get; set; } = string.Empty; // snapshot
+    public Part? Part { get; set; }
     public string? SerialNo { get; set; }
     public int LocationId { get; set; }     // where the part currently sits (normally Scrap by this point)
     public int Qty { get; set; } = 1;

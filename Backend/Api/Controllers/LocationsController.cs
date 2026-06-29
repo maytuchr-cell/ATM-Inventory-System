@@ -1,6 +1,8 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using System.Text.Json;
 using Api.Models;
+using Api.Services;
 
 namespace Api.Controllers;
 
@@ -9,8 +11,13 @@ namespace Api.Controllers;
 public class LocationsController : ControllerBase
 {
     private readonly AppDbContext _context;
+    private readonly AuditService _audit;
 
-    public LocationsController(AppDbContext context) => _context = context;
+    public LocationsController(AppDbContext context, AuditService audit)
+    {
+        _context = context;
+        _audit = audit;
+    }
 
     [HttpGet]
     public IActionResult GetAll([FromQuery] string? locationType, [FromQuery] bool? isActive)
@@ -41,6 +48,7 @@ public class LocationsController : ControllerBase
         var loc = new Location { Name = dto.Name, Code = dto.Code, LocationType = dto.LocationType };
         _context.Locations.Add(loc);
         _context.SaveChanges();
+        _audit.Log(User, "Location", loc.Id.ToString(), "CREATE", null, loc);
         return Ok(loc);
     }
 
@@ -56,10 +64,12 @@ public class LocationsController : ControllerBase
         if (_context.Locations.Any(l => l.Code == dto.Code && l.Id != id))
             return BadRequest(new { message = $"Location code '{dto.Code}' already used by another location." });
 
+        var old = JsonSerializer.Serialize(new { loc.Name, loc.Code, loc.LocationType });
         loc.Name = dto.Name;
         loc.Code = dto.Code;
         loc.LocationType = dto.LocationType;
         _context.SaveChanges();
+        _audit.Log(User, "Location", id.ToString(), "UPDATE", old, loc);
         return Ok(loc);
     }
 
@@ -79,6 +89,7 @@ public class LocationsController : ControllerBase
         if (loc == null) return NotFound();
         loc.IsActive = false;
         _context.SaveChanges();
+        _audit.Log(User, "Location", id.ToString(), "DELETE", null, loc);
         return Ok(new { message = "Location deactivated." });
     }
 }

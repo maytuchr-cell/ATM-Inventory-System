@@ -108,9 +108,13 @@ public class ReturnController : ControllerBase
         var fromLocation = _context.Locations.FirstOrDefault(l => l.LocationType == "OL_TECHNICIAN")
             ?? _context.Locations.First();
 
+        var part = _context.Parts.FirstOrDefault(p => p.PartNo == dto.PartNo);
+        if (part == null) return BadRequest(new { message = $"Part {dto.PartNo} not found." });
+
         var ret = new ReturnRequest
         {
             TicketId       = dto.TicketId,
+            PartId         = part.Id,
             PartNo         = dto.PartNo,
             Condition      = dto.Condition,
             SourceType     = dto.SourceType,

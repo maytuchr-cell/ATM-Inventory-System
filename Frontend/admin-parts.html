@@ -84,8 +84,9 @@
             <input class="form-input" id="f-ordernum" data-i18n-ph="parts.ph.ordernum">
           </div>
           <div class="form-group">
-            <label class="form-label" data-i18n="parts.lbl.stock">Stock Quantity</label>
+            <label class="form-label" id="f-stock-label" data-i18n="parts.lbl.stock">Stock Quantity</label>
             <input class="form-input" id="f-stock" type="number" min="0" value="0">
+            <small id="f-stock-hint" class="form-hint" style="display:none;color:var(--muted,#64748b);"></small>
           </div>
           <div class="form-group">
             <label class="form-label" data-i18n="parts.lbl.cat">Category</label>

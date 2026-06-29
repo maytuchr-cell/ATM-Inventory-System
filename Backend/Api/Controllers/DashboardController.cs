@@ -11,19 +11,31 @@ public class DashboardController : ControllerBase
 
     public DashboardController(AppDbContext context) => _context = context;
 
+    // On-hand total per part (PartId → SUM(GoodQty)) from PartStock, the source of truth.
+    private Dictionary<int, int> StockTotals() =>
+        _context.PartStocks
+            .GroupBy(s => s.PartId)
+            .Select(g => new { PartId = g.Key, Good = g.Sum(x => x.GoodQty) })
+            .ToDictionary(x => x.PartId, x => x.Good);
+
     // GET /api/Dashboard/alerts — FR-MC-01: Min/Max/Reorder breaches
     [HttpGet("alerts")]
     public IActionResult GetAlerts()
     {
         var parts = _context.Parts.Where(p => p.IsActive).ToList();
+        var stockTotals = StockTotals();
 
-        var result = parts.Select(p => new
+        var result = parts.Select(p =>
         {
-            p.PartNo, p.PartName, p.StockQuantity, p.MinStock, p.MaxStock, p.ReorderPoint,
-            alertType = p.StockQuantity <= p.MinStock ? "Below Min"
-                      : p.StockQuantity <= p.ReorderPoint ? "Reorder"
-                      : p.StockQuantity > p.MaxStock ? "Over Max"
-                      : null
+            var qty = stockTotals.GetValueOrDefault(p.Id, 0);
+            return new
+            {
+                p.PartNo, p.PartName, StockQuantity = qty, p.MinStock, p.MaxStock, p.ReorderPoint,
+                alertType = qty <= p.MinStock ? "Below Min"
+                          : qty <= p.ReorderPoint ? "Reorder"
+                          : qty > p.MaxStock ? "Over Max"
+                          : (string?)null
+            };
         }).Where(p => p.alertType != null).ToList();
 
         return Ok(result);
@@ -60,11 +72,13 @@ public class DashboardController : ControllerBase
             .Select(g => new { PartNo = g.Key, LastMoved = g.Max(m => m.Timestamp) })
             .ToDictionary(x => x.PartNo, x => x.LastMoved);
 
-        var parts = _context.Parts.Where(p => p.IsActive && p.StockQuantity > 0).ToList();
+        var stockTotals = StockTotals();
+        var parts = _context.Parts.Where(p => p.IsActive).ToList()
+            .Where(p => stockTotals.GetValueOrDefault(p.Id, 0) > 0).ToList();
 
         var result = parts.Select(p => new
         {
-            p.PartNo, p.PartName, p.StockQuantity,
+            p.PartNo, p.PartName, StockQuantity = stockTotals.GetValueOrDefault(p.Id, 0),
             lastMoved = lastMovementByPart.GetValueOrDefault(p.PartNo, p.CreatedAt),
             agingDays = (int)(DateTime.Now - lastMovementByPart.GetValueOrDefault(p.PartNo, p.CreatedAt)).TotalDays
         })

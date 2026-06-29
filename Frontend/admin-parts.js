@@ -203,6 +203,8 @@ function openModal(id = null) {
     document.getElementById('f-max').value      = p.maxStock;
     document.getElementById('f-reorder').value  = p.reorderPoint;
     document.getElementById('f-cat-ref').value  = p.catalogueRef ?? '';
+    // Stock is managed via Goods Receipt / Issue — not editable on an existing part.
+    setStockFieldMode(false);
   } else {
     title.textContent = t('parts.add');
     document.getElementById('part-form').reset();
@@ -210,9 +212,30 @@ function openModal(id = null) {
     document.getElementById('f-min').value     = '1';
     document.getElementById('f-max').value     = '100';
     document.getElementById('f-reorder').value = '3';
+    // New part: stock field is the optional opening balance.
+    setStockFieldMode(true);
   }
 
   overlay.classList.remove('hidden');
+}
+
+// Stock field is an editable "opening balance" only when creating a new part.
+// When editing, it's read-only because on-hand stock changes flow through Goods Receipt / Issue.
+function setStockFieldMode(isNew) {
+  const input = document.getElementById('f-stock');
+  const label = document.getElementById('f-stock-label');
+  const hint  = document.getElementById('f-stock-hint');
+  if (isNew) {
+    input.readOnly = false;
+    input.style.opacity = '';
+    if (label) label.textContent = t('parts.lbl.stockinit');
+    if (hint) hint.style.display = 'none';
+  } else {
+    input.readOnly = true;
+    input.style.opacity = '0.6';
+    if (label) label.textContent = t('parts.lbl.stock');
+    if (hint) { hint.textContent = t('parts.hint.stockmanaged'); hint.style.display = 'block'; }
+  }
 }
 
 function closeModal() {

@@ -8,7 +8,6 @@ public class Part
     public string PartName { get; set; } = string.Empty;
     public string Unit { get; set; } = "pcs";
     public string? SerialNo { get; set; }
-    public int StockQuantity { get; set; }
     public int? CategoryId { get; set; }
     public Category? Category { get; set; }
     public string? CatalogueRef { get; set; }
@@ -29,5 +28,12 @@ public class Part
     // Catalog fields (from GRG spare parts catalog)
     public string? MainUnit { get; set; }   // e.g. "Cabinet"
     public string? Remark { get; set; }      // free-text remark
-    public string? ImagePath { get; set; }   // e.g. "/uploads/parts/208010040-H.jpg"
+    public string? ImagePath { get; set; }   // e.g. "/assets/parts/208010040-H.jpg"
+
+    // Optimistic-concurrency token — bumped on every save (see AppDbContext.SaveChanges).
+    public string RowVersion { get; set; } = Guid.NewGuid().ToString("N");
+
+    // Stock is tracked per-location in PartStock — there is no denormalized total column.
+    // Total on-hand = Stocks.Sum(s => s.GoodQty). Compute it from PartStock, never store it here.
+    public ICollection<PartStock> Stocks { get; set; } = new List<PartStock>();
 }

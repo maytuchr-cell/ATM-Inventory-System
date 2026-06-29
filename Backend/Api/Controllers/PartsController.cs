@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using System.Text.Json;
 using Api.Models;
+using Api.Services;
 
 namespace Api.Controllers;
 
@@ -11,8 +12,25 @@ namespace Api.Controllers;
 public class PartsController : ControllerBase
 {
     private readonly AppDbContext _context;
+    private readonly StockService _stock;
 
-    public PartsController(AppDbContext context) => _context = context;
+    public PartsController(AppDbContext context, StockService stock)
+    {
+        _context = context;
+        _stock = stock;
+    }
+
+    // On-hand total for each part = SUM(PartStock.GoodQty). Computed from PartStock,
+    // never stored on Part. Pass the part ids you need totals for.
+    private Dictionary<int, int> StockTotals(IEnumerable<int> partIds)
+    {
+        var ids = partIds.ToList();
+        return _context.PartStocks
+            .Where(s => ids.Contains(s.PartId))
+            .GroupBy(s => s.PartId)
+            .Select(g => new { PartId = g.Key, Good = g.Sum(x => x.GoodQty) })
+            .ToDictionary(x => x.PartId, x => x.Good);
+    }
 
     // GET /api/Parts?categoryId=&isActive=&search=
     [HttpGet]
@@ -26,6 +44,9 @@ public class PartsController : ControllerBase
 
         var parts = q.OrderBy(p => p.PartNo).ToList();
 
+        // on-hand totals from PartStock (source of truth)
+        var stockTotals = StockTotals(parts.Select(p => p.Id));
+
         // attach known serial numbers from StockMovements
         var serialMap = _context.StockMovements
             .Where(m => m.SerialNo != null && m.SerialNo != "")
@@ -34,7 +55,8 @@ public class PartsController : ControllerBase
 
         var result = parts.Select(p => new {
             p.Id, p.PartNo, p.PartName, p.OrderNumber, p.Unit,
-            p.StockQuantity, p.CategoryId, p.MinStock, p.MaxStock,
+            StockQuantity = stockTotals.GetValueOrDefault(p.Id, 0),
+            p.CategoryId, p.MinStock, p.MaxStock,
             p.ReorderPoint, p.CostPerUnit, p.CatalogueRef, p.SerialNo,
             p.MainUnit, p.Remark, p.ImagePath,
             p.IsActive, p.CreatedAt, p.UpdatedAt,
@@ -51,7 +73,27 @@ public class PartsController : ControllerBase
     {
         var part = _context.Parts.Include(p => p.Category).FirstOrDefault(p => p.Id == id);
         if (part == null) return NotFound();
-        return Ok(part);
+
+        // on-hand total + per-location breakdown, computed from PartStock
+        var byLocation = _context.PartStocks
+            .Where(s => s.PartId == id)
+            .Include(s => s.Location)
+            .Select(s => new {
+                locationId = s.LocationId,
+                location = s.Location == null ? null : s.Location.Name,
+                s.GoodQty, s.DefectiveQty
+            })
+            .ToList();
+
+        return Ok(new {
+            part.Id, part.PartNo, part.PartName, part.OrderNumber, part.Unit, part.SerialNo,
+            StockQuantity = byLocation.Sum(s => s.GoodQty),
+            part.CategoryId, part.MinStock, part.MaxStock, part.ReorderPoint,
+            part.CostPerUnit, part.CatalogueRef, part.MainUnit, part.Remark, part.ImagePath,
+            part.IsActive, part.CreatedAt, part.UpdatedAt,
+            category = part.Category == null ? null : new { part.Category.Id, part.Category.Name },
+            stockByLocation = byLocation
+        });
     }
 
     // POST /api/Parts
@@ -66,14 +108,27 @@ public class PartsController : ControllerBase
             return BadRequest(new { message = $"PartNo '{dto.PartNo}' already exists." });
 
         var part = MapFromDto(new Part(), dto);
-        part.StockQuantity = dto.StockQuantity; // initial stock — no PartStock history exists yet for a brand-new part
         part.CreatedAt = DateTime.UtcNow;
         part.UpdatedAt = DateTime.UtcNow;
         _context.Parts.Add(part);
         _context.SaveChanges();
 
+        // Initial stock (if any) becomes a PartStock row at the main warehouse + an opening
+        // StockMovement — the same path every other stock change takes. No stored total.
+        if (dto.StockQuantity > 0)
+        {
+            var mainWh = _context.Locations.FirstOrDefault(l => l.Code == "WH-RAT")
+                         ?? _context.Locations.FirstOrDefault();
+            if (mainWh != null)
+            {
+                _stock.AdjustStock(part.PartNo, mainWh.Id, dto.StockQuantity, "Good",
+                    "GR", "OpeningBalance", null, CurrentUser(), "Initial stock on part creation");
+                _context.SaveChanges();
+            }
+        }
+
         WriteAudit("Part", part.Id.ToString(), "CREATE", null, part);
-        return Ok(part);
+        return Ok(PartSummary(part));
     }
 
     // PUT /api/Parts/{id}
@@ -96,7 +151,7 @@ public class PartsController : ControllerBase
         _context.SaveChanges();
 
         WriteAudit("Part", id.ToString(), "UPDATE", old, part);
-        return Ok(part);
+        return Ok(PartSummary(part));
     }
 
     // DELETE /api/Parts/{id}  — soft delete
@@ -159,8 +214,8 @@ public class PartsController : ControllerBase
         part.OrderNumber  = dto.OrderNumber ?? string.Empty;
         part.Unit         = dto.Unit ?? "pcs";
         part.SerialNo     = dto.SerialNo;
-        // StockQuantity is intentionally NOT set here — it's a denormalized total owned by
-        // StockService, kept in sync from PartStock via GR/Issue/Return/Transfer/Disposal/Adjustment.
+        // On-hand stock lives in PartStock, not on Part — initial stock is handled in Create()
+        // via StockService, and all later changes go through GR/Issue/Return/Transfer/Disposal.
         part.CategoryId   = dto.CategoryId;
         part.CatalogueRef = dto.CatalogueRef;
         part.MinStock     = dto.MinStock;
@@ -177,6 +232,27 @@ public class PartsController : ControllerBase
         return part;
     }
 
+    // Clean response shape for a single part (avoids serializing the Stocks navigation cycle).
+    private object PartSummary(Part p) => new
+    {
+        p.Id, p.PartNo, p.PartName, p.OrderNumber, p.Unit, p.SerialNo,
+        StockQuantity = _context.PartStocks.Where(s => s.PartId == p.Id).Sum(s => s.GoodQty),
+        p.CategoryId, p.MinStock, p.MaxStock, p.ReorderPoint,
+        p.CostPerUnit, p.CatalogueRef, p.MainUnit, p.Remark, p.ImagePath,
+        p.IsActive, p.CreatedAt, p.UpdatedAt
+    };
+
+    private string CurrentUser() =>
+        User?.FindFirst(System.Security.Claims.ClaimTypes.Name)?.Value
+        ?? User?.Identity?.Name
+        ?? User?.FindFirst(System.Security.Claims.ClaimTypes.Email)?.Value
+        ?? "system";
+
+    private string CurrentUserId() =>
+        User?.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value
+        ?? User?.FindFirst(System.Security.Claims.ClaimTypes.Email)?.Value
+        ?? "system";
+
     private void WriteAudit(string entityType, string entityId, string action, string? oldValues, object? newValues)
     {
         _context.AuditLogs.Add(new AuditLog
@@ -186,8 +262,8 @@ public class PartsController : ControllerBase
             Action     = action,
             OldValues  = oldValues,
             NewValues  = newValues != null ? JsonSerializer.Serialize(newValues) : null,
-            UserId     = "system",
-            UserName   = "system",
+            UserId     = CurrentUserId(),
+            UserName   = CurrentUser(),
             Timestamp  = DateTime.UtcNow
         });
         _context.SaveChanges();
