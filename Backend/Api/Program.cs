@@ -159,6 +159,11 @@ using (var scope = app.Services.CreateScope())
                 context.Database.ExecuteSqlRaw("ALTER TABLE StockMovements ADD COLUMN PartId INTEGER NOT NULL DEFAULT 0;");
                 Console.WriteLine("✅ Migration: added StockMovements.PartId");
             }
+            if (!smCols.Contains("PartUnitId"))
+            {
+                context.Database.ExecuteSqlRaw("ALTER TABLE StockMovements ADD COLUMN PartUnitId INTEGER NULL;");
+                Console.WriteLine("✅ Migration: added StockMovements.PartUnitId");
+            }
         }
         catch (Exception mex) { Console.WriteLine($"⚠ StockMovement.PartId migration skipped: {mex.Message}"); }
 

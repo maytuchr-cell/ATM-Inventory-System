@@ -9,6 +9,8 @@ public class StockMovement
     public Part? Part { get; set; }
     public int? FromLocationId { get; set; }
     public int? ToLocationId { get; set; }
+    public int? PartUnitId { get; set; }             // FK to the specific serial-tracked unit (when applicable)
+    public PartUnit? PartUnit { get; set; }
     public int Qty { get; set; }
     public string Condition { get; set; } = "Good"; // Good|Defective
     public string? RefType { get; set; }   // Ticket|GoodsReceipt|Transfer|Disposal|StockCount

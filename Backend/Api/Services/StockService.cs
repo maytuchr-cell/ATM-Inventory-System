@@ -24,7 +24,7 @@ public class StockService
     public StockMovement AdjustStock(
         string partNo, int locationId, int qtyDelta, string condition,
         string movementType, string? refType, string? refId,
-        string userName, string? remarks = null, decimal? cost = null, string? serialNo = null)
+        string userName, string? remarks = null, decimal? cost = null, string? serialNo = null, int? partUnitId = null)
     {
         var part = _context.Parts.FirstOrDefault(p => p.PartNo == partNo)
             ?? throw new InvalidOperationException($"Part {partNo} not found.");
@@ -61,6 +61,7 @@ public class StockService
             RefId = refId,
             Cost = cost,
             SerialNo = serialNo,
+            PartUnitId = partUnitId,
             Remarks = remarks,
             UserName = userName,
             Timestamp = DateTime.Now
@@ -76,7 +77,7 @@ public class StockService
     /// </summary>
     public StockMovement MoveStock(
         string partNo, int? fromLocationId, int? toLocationId, int qty, string condition,
-        string movementType, string? refType, string? refId, string userName, string? remarks = null, string? serialNo = null)
+        string movementType, string? refType, string? refId, string userName, string? remarks = null, string? serialNo = null, int? partUnitId = null)
     {
         var part = _context.Parts.FirstOrDefault(p => p.PartNo == partNo)
             ?? throw new InvalidOperationException($"Part {partNo} not found.");
@@ -118,6 +119,7 @@ public class StockService
             RefType = refType,
             RefId = refId,
             SerialNo = serialNo,
+            PartUnitId = partUnitId,
             Remarks = remarks,
             UserName = userName,
             Timestamp = DateTime.Now

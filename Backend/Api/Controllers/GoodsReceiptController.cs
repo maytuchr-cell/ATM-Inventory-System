@@ -127,11 +127,30 @@ public class GoodsReceiptController : ControllerBase
 
         foreach (var line in receipt.Lines)
         {
+            // For a serial-tracked line, register the physical unit so it can be tracked piece-by-piece.
+            int? partUnitId = null;
+            if (!string.IsNullOrWhiteSpace(line.SerialNo)
+                && !_context.PartUnits.Any(u => u.SerialNo == line.SerialNo))
+            {
+                var unit = new PartUnit
+                {
+                    PartId     = line.PartId,
+                    LocationId = dto.LocationId,
+                    SerialNo   = line.SerialNo!.Trim(),
+                    Condition  = line.Condition,
+                    ReceivedAt = receipt.ReceivedAt,
+                    Status     = "InStock"
+                };
+                _context.PartUnits.Add(unit);
+                _context.SaveChanges();
+                partUnitId = unit.Id;
+            }
+
             _stock.AdjustStock(
                 partNo: line.PartNo, locationId: dto.LocationId, qtyDelta: line.Qty,
                 condition: line.Condition, movementType: "GR", refType: "GoodsReceipt",
                 refId: receipt.Id.ToString(), userName: receipt.ReceivedBy,
-                remarks: line.Remarks, cost: dto.HandlingCost, serialNo: line.SerialNo);
+                remarks: line.Remarks, cost: dto.HandlingCost, serialNo: line.SerialNo, partUnitId: partUnitId);
         }
         _context.SaveChanges();
 

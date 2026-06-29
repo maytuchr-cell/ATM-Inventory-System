@@ -131,6 +131,12 @@ public class AppDbContext : DbContext
             .WithMany()
             .HasForeignKey(m => m.PartId)
             .OnDelete(DeleteBehavior.Restrict);
+        // Optional FK to the specific serial-tracked unit
+        modelBuilder.Entity<StockMovement>()
+            .HasOne(m => m.PartUnit)
+            .WithMany()
+            .HasForeignKey(m => m.PartUnitId)
+            .OnDelete(DeleteBehavior.SetNull);
 
         // GoodsReceipt / Lines
         modelBuilder.Entity<GoodsReceiptLine>()

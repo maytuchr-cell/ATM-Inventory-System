@@ -154,6 +154,13 @@ public class DisposalController : ControllerBase
             return BadRequest(new { message = ex.Message });
         }
 
+        // If a specific serial-tracked unit was disposed, mark it Disposed too.
+        if (!string.IsNullOrWhiteSpace(request.SerialNo))
+        {
+            var unit = _context.PartUnits.FirstOrDefault(u => u.SerialNo == request.SerialNo);
+            if (unit != null) { unit.Status = "Disposed"; }
+        }
+
         request.Status     = "Disposed";
         request.DisposedAt = DateTime.Now;
         _context.SaveChanges();
