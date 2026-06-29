@@ -54,8 +54,13 @@ using (var scope = app.Services.CreateScope())
     {
         context.Database.EnsureCreated();
 
+        // The lightweight migrations below upgrade EXISTING SQLite databases in place
+        // (they use SQLite-only DDL: PRAGMA, ALTER ADD/DROP COLUMN). On MySQL/other providers
+        // EnsureCreated already builds the full schema from the model, so we skip them.
+        var isSqlite = context.Database.IsSqlite();
+
         // ── Lightweight migration: add new Part catalog columns if missing (preserves data) ──
-        try
+        if (isSqlite) try
         {
             var existing = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             using (var cmd = context.Database.GetDbConnection().CreateCommand())
@@ -90,7 +95,7 @@ using (var scope = app.Services.CreateScope())
         catch (Exception mex) { Console.WriteLine($"⚠ Migration skipped: {mex.Message}"); }
 
         // ── Lightweight migration: PartStock concurrency + audit columns on existing DBs ──
-        try
+        if (isSqlite) try
         {
             var psCols = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             using (var cmd = context.Database.GetDbConnection().CreateCommand())
@@ -117,7 +122,7 @@ using (var scope = app.Services.CreateScope())
 
         // ── Lightweight migration: create PartUnit table on existing DBs (EnsureCreated only
         //    builds tables for a brand-new DB, so add it here for databases created earlier) ──
-        try
+        if (isSqlite) try
         {
             context.Database.ExecuteSqlRaw(@"
                 CREATE TABLE IF NOT EXISTS PartUnits (
@@ -139,7 +144,7 @@ using (var scope = app.Services.CreateScope())
         catch (Exception mex) { Console.WriteLine($"⚠ PartUnit migration skipped: {mex.Message}"); }
 
         // ── Lightweight migration: add StockMovement.PartId (FK to Part) on existing DBs ──
-        try
+        if (isSqlite) try
         {
             var smCols = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             using (var cmd = context.Database.GetDbConnection().CreateCommand())
@@ -158,7 +163,7 @@ using (var scope = app.Services.CreateScope())
         catch (Exception mex) { Console.WriteLine($"⚠ StockMovement.PartId migration skipped: {mex.Message}"); }
 
         // ── Lightweight migration: add PartId (FK to Part) to transaction tables on existing DBs ──
-        foreach (var tbl in new[] { "GoodsReceiptLines", "ReturnRequests", "StockTransfers",
+        if (isSqlite) foreach (var tbl in new[] { "GoodsReceiptLines", "ReturnRequests", "StockTransfers",
                                     "StockCountLines", "DisposalRequests", "AtmModelParts", "EquivalentGroupMembers" })
         {
             try
@@ -181,7 +186,7 @@ using (var scope = app.Services.CreateScope())
         }
 
         // ── Migrate ImagePath from /uploads/parts/ → /assets/parts/ (one-time, idempotent) ──
-        try
+        if (isSqlite) try
         {
             var updated = context.Database.ExecuteSqlRaw(
                 "UPDATE Parts SET ImagePath = REPLACE(ImagePath, '/uploads/parts/', '/assets/parts/') WHERE ImagePath LIKE '/uploads/parts/%'");
@@ -1065,7 +1070,7 @@ using (var scope = app.Services.CreateScope())
 
         // ── Backfill StockMovement.PartId from PartNo (existing rows where PartId=0) ──
         // Idempotent: only touches unlinked rows whose PartNo matches an existing Part.
-        try
+        if (isSqlite) try
         {
             var linked = context.Database.ExecuteSqlRaw(@"
                 UPDATE StockMovements
@@ -1081,7 +1086,7 @@ using (var scope = app.Services.CreateScope())
         catch (Exception bex) { Console.WriteLine($"⚠ PartId backfill skipped: {bex.Message}"); }
 
         // ── Backfill PartId on transaction tables from their PartNo snapshot (idempotent) ──
-        foreach (var tbl in new[] { "GoodsReceiptLines", "ReturnRequests", "StockTransfers",
+        if (isSqlite) foreach (var tbl in new[] { "GoodsReceiptLines", "ReturnRequests", "StockTransfers",
                                     "StockCountLines", "DisposalRequests", "AtmModelParts", "EquivalentGroupMembers" })
         {
             try
