@@ -470,6 +470,9 @@ tbody tr:last-child td { border-bottom: none; }
 .readonly-mode .btn-return,
 .readonly-mode .btn-remove,
 .readonly-mode .btn-import { display: none !important; }
+/* Control buttons (logout / theme / language) are UI controls, not data writes — keep them
+   even though logout is styled with .btn-danger. */
+.readonly-mode .ctrl-btn { display: flex !important; }
 .readonly-banner {
   display: none;
   background: #fff7ed; color: #b45309; border: 1px solid #fed7aa;
