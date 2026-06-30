@@ -43,7 +43,15 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
             IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtKey))
         };
     });
-builder.Services.AddAuthorization();
+// Role policies — one place to map roles to capabilities.
+//  SystemAdmin = full control + user management   ·   Staff = day-to-day operations (master data, approvals)
+//  Auditor     = read-only everywhere + audit/integrity view   ·   Tech = mobile, create/track own tickets
+builder.Services.AddAuthorization(options =>
+{
+    options.AddPolicy("CanWriteMasterData", p => p.RequireRole("SystemAdmin", "Staff"));
+    options.AddPolicy("CanAudit",           p => p.RequireRole("SystemAdmin", "Auditor"));
+    options.AddPolicy("SystemAdminOnly",    p => p.RequireRole("SystemAdmin"));
+});
 
 var app = builder.Build();
 
@@ -203,11 +211,23 @@ using (var scope = app.Services.CreateScope())
         if (!context.Users.Any())
         {
             context.Users.AddRange(
-                new User { Email = "admin@atm.com", Name = "Administrator", Role = "Admin", PasswordHash = PasswordHasher.Hash("admin123") },
-                new User { Email = "tech@atm.com",  Name = "Technician",    Role = "Tech",  PasswordHash = PasswordHasher.Hash("tech123") }
+                new User { Email = "admin@atm.com",   Name = "System Admin",  Role = "SystemAdmin", PasswordHash = PasswordHasher.Hash("admin123") },
+                new User { Email = "staff@atm.com",   Name = "Staff User",    Role = "Staff",       PasswordHash = PasswordHasher.Hash("staff123") },
+                new User { Email = "auditor@atm.com", Name = "Auditor User",  Role = "Auditor",     PasswordHash = PasswordHasher.Hash("auditor123") },
+                new User { Email = "tech@atm.com",    Name = "Technician",    Role = "Tech",        PasswordHash = PasswordHasher.Hash("tech123") }
             );
             context.SaveChanges();
-            Console.WriteLine("✅ Seeded users: admin@atm.com / admin123  |  tech@atm.com / tech123");
+            Console.WriteLine("✅ Seeded users: admin@/staff@/auditor@/tech@atm.com (pw: <role>123)");
+        }
+        // Idempotent role upgrade for existing DBs: legacy "Admin" → "SystemAdmin", add Staff/Auditor if missing.
+        {
+            var legacyAdmin = context.Users.FirstOrDefault(u => u.Role == "Admin");
+            if (legacyAdmin != null) { legacyAdmin.Role = "SystemAdmin"; context.SaveChanges(); Console.WriteLine("✅ Upgraded legacy Admin → SystemAdmin"); }
+            if (!context.Users.Any(u => u.Role == "Staff"))
+                context.Users.Add(new User { Email = "staff@atm.com", Name = "Staff User", Role = "Staff", PasswordHash = PasswordHasher.Hash("staff123") });
+            if (!context.Users.Any(u => u.Role == "Auditor"))
+                context.Users.Add(new User { Email = "auditor@atm.com", Name = "Auditor User", Role = "Auditor", PasswordHash = PasswordHasher.Hash("auditor123") });
+            context.SaveChanges();
         }
 
         // ── Categories (from GRG Parts Catalog) ──

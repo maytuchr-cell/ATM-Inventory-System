@@ -6,7 +6,7 @@ namespace Api.Controllers;
 
 [ApiController]
 [Route("api/[controller]")]
-[Authorize(Roles = "Admin")]
+[Authorize(Policy = "CanAudit")]
 public class AdminController : ControllerBase
 {
     private readonly AppDbContext _context;

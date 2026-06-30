@@ -36,7 +36,7 @@ public class VendorsController : ControllerBase
         return Ok(vendor);
     }
 
-    [Authorize(Roles = "Admin")]
+    [Authorize(Policy = "CanWriteMasterData")]
     [HttpPost]
     public IActionResult Create([FromBody] VendorWriteDto dto)
     {
@@ -52,7 +52,7 @@ public class VendorsController : ControllerBase
         return Ok(vendor);
     }
 
-    [Authorize(Roles = "Admin")]
+    [Authorize(Policy = "CanWriteMasterData")]
     [HttpPut("{id}")]
     public IActionResult Update(int id, [FromBody] VendorWriteDto dto)
     {
@@ -82,7 +82,7 @@ public class VendorsController : ControllerBase
         return null;
     }
 
-    [Authorize(Roles = "Admin")]
+    [Authorize(Policy = "CanWriteMasterData")]
     [HttpDelete("{id}")]
     public IActionResult Delete(int id)
     {

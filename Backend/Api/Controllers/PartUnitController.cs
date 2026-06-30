@@ -38,7 +38,7 @@ public class PartUnitController : ControllerBase
     }
 
     // POST /api/PartUnit
-    [Authorize(Roles = "Admin")]
+    [Authorize(Policy = "CanWriteMasterData")]
     [HttpPost]
     public IActionResult Create([FromBody] PartUnitWriteDto dto)
     {
@@ -62,7 +62,7 @@ public class PartUnitController : ControllerBase
     }
 
     // PUT /api/PartUnit/{id}
-    [Authorize(Roles = "Admin")]
+    [Authorize(Policy = "CanWriteMasterData")]
     [HttpPut("{id}")]
     public IActionResult Update(int id, [FromBody] PartUnitWriteDto dto)
     {
@@ -85,7 +85,7 @@ public class PartUnitController : ControllerBase
     }
 
     // DELETE /api/PartUnit/{id}
-    [Authorize(Roles = "Admin")]
+    [Authorize(Policy = "CanWriteMasterData")]
     [HttpDelete("{id}")]
     public IActionResult Delete(int id)
     {

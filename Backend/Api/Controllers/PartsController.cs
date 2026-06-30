@@ -97,7 +97,7 @@ public class PartsController : ControllerBase
     }
 
     // POST /api/Parts
-    [Authorize(Roles = "Admin")]
+    [Authorize(Policy = "CanWriteMasterData")]
     [HttpPost]
     public IActionResult Create([FromBody] PartWriteDto dto)
     {
@@ -132,7 +132,7 @@ public class PartsController : ControllerBase
     }
 
     // PUT /api/Parts/{id}
-    [Authorize(Roles = "Admin")]
+    [Authorize(Policy = "CanWriteMasterData")]
     [HttpPut("{id}")]
     public IActionResult Update(int id, [FromBody] PartWriteDto dto)
     {
@@ -155,7 +155,7 @@ public class PartsController : ControllerBase
     }
 
     // DELETE /api/Parts/{id}  — soft delete
-    [Authorize(Roles = "Admin")]
+    [Authorize(Policy = "CanWriteMasterData")]
     [HttpDelete("{id}")]
     public IActionResult Delete(int id)
     {
@@ -172,7 +172,7 @@ public class PartsController : ControllerBase
     }
 
     // PATCH /api/Parts/{id}/restore
-    [Authorize(Roles = "Admin")]
+    [Authorize(Policy = "CanWriteMasterData")]
     [HttpPatch("{id}/restore")]
     public IActionResult Restore(int id)
     {
