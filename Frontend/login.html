@@ -245,7 +245,10 @@
                 localStorage.setItem("authToken", data.token);
                 localStorage.setItem("userRole", data.role);
                 localStorage.setItem("userEmail", data.email);
-                window.location.href = data.role === "admin" ? "admin.html" : "tech.html";
+                // Admin-side roles land on the admin console; technicians on the workspace.
+                const adminRoles = ["systemadmin", "staff", "auditor", "admin"];
+                const isAdminSide = adminRoles.includes((data.role || "").toLowerCase());
+                window.location.href = isAdminSide ? "admin.html" : "tech.html";
             } catch (err) {
                 alert("Cannot reach server. Please try again.");
             } finally {

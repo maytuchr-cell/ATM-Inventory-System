@@ -457,3 +457,13 @@ tbody tr:last-child td { border-bottom: none; }
   .form-grid-2, .form-grid-3 { grid-template-columns: 1fr; }
   .page-body { padding: 16px; }
 }
+
+/* Read-only mode (Auditor): hide write controls. Backend also enforces this (403). */
+.readonly-mode [data-write],
+.readonly-mode .write-action { display: none !important; }
+.readonly-banner {
+  display: none;
+  background: #fff7ed; color: #b45309; border: 1px solid #fed7aa;
+  border-radius: 8px; padding: 8px 14px; margin-bottom: 14px; font-size: 13px;
+}
+.readonly-mode .readonly-banner { display: block; }

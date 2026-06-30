@@ -69,6 +69,15 @@
       ]
     },
     {
+      key: 'nav.group.admin',
+      labelEN: 'Administration', labelTH: 'ผู้ดูแลระบบ',
+      icon: 'mdi:shield-account',
+      adminOnly: true,
+      items: [
+        { key: 'nav.users', href: 'admin-users.html', icon: 'mdi:account-multiple', adminOnly: true, systemAdminOnly: true },
+      ]
+    },
+    {
       key: 'nav.group.tools',
       labelEN: 'Tools', labelTH: 'เครื่องมือ',
       icon: 'mdi:tools',
@@ -138,14 +147,23 @@
     const email = localStorage.getItem('userEmail') || '';
     const page  = location.pathname.split('/').pop() || 'index.html';
 
+    // Role flags (4 roles: SystemAdmin / Staff / Auditor / Tech; "admin" kept for legacy)
+    const r = role.toLowerCase();
+    const isAdminSide   = ['systemadmin', 'staff', 'auditor', 'admin'].includes(r);
+    const isSystemAdmin = (r === 'systemadmin' || r === 'admin');
+    const isReadOnly    = (r === 'auditor');
+    // Auditor sees everything but cannot write — hide write controls marked [data-write] / .write-action.
+    document.body.classList.toggle('readonly-mode', isReadOnly);
+
     const isCollapsed    = localStorage.getItem('sidebarCollapsed') === '1';
     const savedGroups    = JSON.parse(localStorage.getItem('navGroups') || '{}');
 
     // Build nav HTML
     const navHtml = NAV_GROUPS
-      .filter(g => !g.adminOnly || role === 'admin')
+      .filter(g => !g.adminOnly || isAdminSide)
       .map(group => {
-        const visibleItems = group.items.filter(i => !i.adminOnly || role === 'admin');
+        const visibleItems = group.items.filter(i =>
+          (!i.adminOnly || isAdminSide) && (!i.systemAdminOnly || isSystemAdmin));
         if (!visibleItems.length) return '';
 
         // Check if any item in this group is the active page

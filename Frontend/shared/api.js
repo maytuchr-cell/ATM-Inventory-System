@@ -122,6 +122,13 @@ const api = {
   tracking: {
     bySerial: (sn) => apiFetch(`/Tracking/serial/${encodeURIComponent(sn)}`),
   },
+  users: {
+    getAll:        ()           => apiFetch('/Users'),
+    roles:         ()           => apiFetch('/Users/roles'),
+    create:        (data)       => apiFetch('/Users', { method: 'POST', body: JSON.stringify(data) }),
+    update:        (id, data)   => apiFetch(`/Users/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
+    resetPassword: (id, password) => apiFetch(`/Users/${id}/password`, { method: 'PUT', body: JSON.stringify({ password }) }),
+  },
   atmModels: {
     getAll:        (params = {}) => apiFetch('/AtmModel?' + new URLSearchParams(params)),
     getById:       (id)          => apiFetch(`/AtmModel/${id}`),
