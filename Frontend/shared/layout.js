@@ -152,8 +152,25 @@
     const isAdminSide   = ['systemadmin', 'staff', 'auditor', 'admin'].includes(r);
     const isSystemAdmin = (r === 'systemadmin' || r === 'admin');
     const isReadOnly    = (r === 'auditor');
-    // Auditor sees everything but cannot write — hide write controls marked [data-write] / .write-action.
+    // Auditor sees everything but cannot write. Hide write controls (the unambiguous write
+    // button classes are hidden via CSS); for the mixed .btn-primary class, tag the write
+    // ones with [data-write] here — but leave read actions (Export / Search) visible.
     document.body.classList.toggle('readonly-mode', isReadOnly);
+    if (isReadOnly) {
+      const READ_ONCLICK = /export|search|dosearch|view|detail|toggle|filter/i;
+      const tagWriteButtons = (rootEl) => {
+        rootEl.querySelectorAll('.btn-primary:not([data-write])').forEach(btn => {
+          const on = (btn.getAttribute('onclick') || '') + ' ' + (btn.textContent || '');
+          if (!READ_ONCLICK.test(on)) btn.setAttribute('data-write', '');
+        });
+      };
+      tagWriteButtons(document);
+      // Re-tag dynamically rendered buttons (table rows, modals opened later).
+      new MutationObserver(muts => {
+        for (const m of muts) for (const n of m.addedNodes)
+          if (n.nodeType === 1) tagWriteButtons(n.matches?.('.btn-primary') ? n.parentElement || document : n);
+      }).observe(document.body, { childList: true, subtree: true });
+    }
 
     const isCollapsed    = localStorage.getItem('sidebarCollapsed') === '1';
     const savedGroups    = JSON.parse(localStorage.getItem('navGroups') || '{}');
