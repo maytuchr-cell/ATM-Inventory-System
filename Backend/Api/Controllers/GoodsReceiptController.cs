@@ -216,6 +216,7 @@ public class GoodsReceiptController : ControllerBase
 
             lines.Add(new GoodsReceiptLine
             {
+                PartId    = part.Id,
                 PartNo    = partNo,
                 SerialNo  = string.IsNullOrEmpty(serialNo) ? null : serialNo,
                 Qty       = qty,
