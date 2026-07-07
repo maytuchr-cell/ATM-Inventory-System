@@ -58,7 +58,7 @@ public class PartsController : ControllerBase
             StockQuantity = stockTotals.GetValueOrDefault(p.Id, 0),
             p.CategoryId, p.MinStock, p.MaxStock,
             p.ReorderPoint, p.CostPerUnit, p.CatalogueRef, p.SerialNo,
-            p.MainUnit, p.Remark, p.ImagePath,
+            p.MainUnit, p.Remark, p.ImagePath, p.Zone, p.DeviceType,
             p.IsActive, p.CreatedAt, p.UpdatedAt,
             category = p.Category == null ? null : new { p.Category.Id, p.Category.Name },
             serialNos = serialMap.ContainsKey(p.PartNo) ? serialMap[p.PartNo] : new List<string>()
@@ -89,7 +89,7 @@ public class PartsController : ControllerBase
             part.Id, part.PartNo, part.PartName, part.OrderNumber, part.Unit, part.SerialNo,
             StockQuantity = byLocation.Sum(s => s.GoodQty),
             part.CategoryId, part.MinStock, part.MaxStock, part.ReorderPoint,
-            part.CostPerUnit, part.CatalogueRef, part.MainUnit, part.Remark, part.ImagePath,
+            part.CostPerUnit, part.CatalogueRef, part.MainUnit, part.Remark, part.ImagePath, part.Zone, part.DeviceType,
             part.IsActive, part.CreatedAt, part.UpdatedAt,
             category = part.Category == null ? null : new { part.Category.Id, part.Category.Name },
             stockByLocation = byLocation
@@ -229,6 +229,8 @@ public class PartsController : ControllerBase
         part.MainUnit       = dto.MainUnit;
         part.Remark         = dto.Remark;
         if (dto.ImagePath != null) part.ImagePath = dto.ImagePath;
+        part.Zone           = dto.Zone;
+        part.DeviceType     = dto.DeviceType;
         return part;
     }
 
@@ -238,7 +240,7 @@ public class PartsController : ControllerBase
         p.Id, p.PartNo, p.PartName, p.OrderNumber, p.Unit, p.SerialNo,
         StockQuantity = _context.PartStocks.Where(s => s.PartId == p.Id).Sum(s => s.GoodQty),
         p.CategoryId, p.MinStock, p.MaxStock, p.ReorderPoint,
-        p.CostPerUnit, p.CatalogueRef, p.MainUnit, p.Remark, p.ImagePath,
+        p.CostPerUnit, p.CatalogueRef, p.MainUnit, p.Remark, p.ImagePath, p.Zone, p.DeviceType,
         p.IsActive, p.CreatedAt, p.UpdatedAt
     };
 
@@ -291,4 +293,6 @@ public class PartWriteDto
     public string? MainUnit { get; set; }
     public string? Remark { get; set; }
     public string? ImagePath { get; set; }
+    public string? Zone { get; set; }
+    public string? DeviceType { get; set; }
 }

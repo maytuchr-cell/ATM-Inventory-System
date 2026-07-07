@@ -30,6 +30,15 @@ public class Part
     public string? Remark { get; set; }      // free-text remark
     public string? ImagePath { get; set; }   // e.g. "/assets/parts/208010040-H.jpg"
 
+    // Physical assembly zone within the ATM/ADM (from catalog "Sub Unit" = "Upper Unit"/"Lower Unit").
+    // Null/empty = zone not known for this part — do not guess from MainUnit.
+    public string? Zone { get; set; }        // "Upper" | "Lower" | null
+
+    // Which machine type(s) this part applies to, parsed from the catalog "Remark" free-text
+    // column (e.g. "ADM,GHB,BOC,VTM" -> "ADM"). Comma-separated when a part serves more than
+    // one type (e.g. "ADM,ATM"). Null/empty = not mentioned in Remark — do not guess.
+    public string? DeviceType { get; set; }  // "ATM" | "ADM" | "CDM" | comma-combo | null
+
     // Optimistic-concurrency token — bumped on every save (see AppDbContext.SaveChanges).
     public string RowVersion { get; set; } = Guid.NewGuid().ToString("N");
 

@@ -78,6 +78,13 @@ const TRANSLATIONS = {
     'inv.units':    'units',
     'inv.left':     'left',
     'inv.empty':    '⚠ Unable to connect to server',
+    'inv.zone.upper':   'Upper Unit',
+    'inv.zone.lower':   'Lower Unit',
+    'inv.zone.unknown': 'Not Categorized',
+    'inv.device.atm':     'ATM',
+    'inv.device.adm':     'ADM',
+    'inv.device.cdm':     'CDM',
+    'inv.device.unknown': 'Not Specified',
 
     /* ── Tickets (Admin) ── */
     'tkt.section':        'Withdrawal Requests',
@@ -340,11 +347,6 @@ const TRANSLATIONS = {
     'disp.empty':      'No disposal requests yet.',
 
     /* ── Dashboard & Monitoring ── */
-    'dash.alerts':         'Stock Alerts',
-    'dash.alerts.empty':   'No stock alerts — all parts within range.',
-    'dash.alert.belowmin': 'Below Min',
-    'dash.alert.reorder':  'Reorder',
-    'dash.alert.overmax':  'Over Max',
     'dash.aging':          'Aging Stock (30+ days idle)',
     'dash.aging.empty':    'No aging stock detected.',
     'dash.aging.days':     'days idle',
@@ -353,10 +355,6 @@ const TRANSLATIONS = {
     'dash.bottom20':       'Low Demand — Least Issued',
     'dash.recurrent':      'Recurrent Failures (30 days)',
     'dash.recurrent.empty':'No recurrent failures detected.',
-    'dash.col.part':       'Part',
-    'dash.col.qty':        'Qty',
-    'dash.col.tech':       'Technician',
-    'dash.col.count':      'Times',
     'doa.btn':             'Report DOA',
     'doa.confirm':         'Report this part as Dead on Arrival? It will be marked defective.',
     'doa.badge':           'DOA',
@@ -649,6 +647,13 @@ const TRANSLATIONS = {
     'inv.units':    'ชิ้น',
     'inv.left':     'คงเหลือ',
     'inv.empty':    '⚠ ไม่สามารถเชื่อมต่อเซิร์ฟเวอร์ได้',
+    'inv.zone.upper':   'ส่วนบน (Upper Unit)',
+    'inv.zone.lower':   'ส่วนล่าง (Lower Unit)',
+    'inv.zone.unknown': 'ยังไม่ระบุตำแหน่ง',
+    'inv.device.atm':     'ATM',
+    'inv.device.adm':     'ADM',
+    'inv.device.cdm':     'CDM',
+    'inv.device.unknown': 'ยังไม่ระบุประเภทตู้',
 
     /* ── Tickets (Admin) ── */
     'tkt.section':        'คำขอเบิกอะไหล่',
@@ -888,11 +893,6 @@ const TRANSLATIONS = {
     'disp.empty':      'ยังไม่มีคำขอทำลาย',
 
     /* ── Dashboard & Monitoring ── */
-    'dash.alerts':         'แจ้งเตือนสต็อก',
-    'dash.alerts.empty':   'ไม่มีรายการแจ้งเตือน — สต็อกอยู่ในเกณฑ์ปกติ',
-    'dash.alert.belowmin': 'ต่ำกว่า Min',
-    'dash.alert.reorder':  'ถึงจุดสั่งซื้อ',
-    'dash.alert.overmax':  'เกิน Max',
     'dash.aging':          'สต็อกค้างนาน (เกิน 30 วัน)',
     'dash.aging.empty':    'ไม่พบสต็อกค้างนาน',
     'dash.aging.days':     'วันที่ค้าง',
@@ -901,10 +901,6 @@ const TRANSLATIONS = {
     'dash.bottom20':       'ความต้องการต่ำ — เบิกน้อยสุด',
     'dash.recurrent':      'อะไหล่เสียซ้ำ (30 วัน)',
     'dash.recurrent.empty':'ไม่พบการเสียซ้ำ',
-    'dash.col.part':       'อะไหล่',
-    'dash.col.qty':        'จำนวน',
-    'dash.col.tech':       'ช่าง',
-    'dash.col.count':      'ครั้ง',
     'doa.btn':             'แจ้งของเสียทันที',
     'doa.confirm':         'ยืนยันแจ้งว่าอะไหล่ชิ้นนี้เสียทันทีที่ได้รับ (DOA)? ระบบจะปรับสถานะเป็นของเสีย',
     'doa.badge':           'DOA',
