@@ -58,7 +58,7 @@ public class PartsController : ControllerBase
             StockQuantity = stockTotals.GetValueOrDefault(p.Id, 0),
             p.CategoryId, p.MinStock, p.MaxStock,
             p.ReorderPoint, p.CostPerUnit, p.CatalogueRef, p.SerialNo,
-            p.MainUnit, p.Remark, p.ImagePath, p.Zone, p.DeviceType,
+            p.MainUnit, p.Remark, p.ImagePath, p.Zone, p.DeviceType, p.AddedBy, p.Lot, p.Project, p.AddedDate,
             p.IsActive, p.CreatedAt, p.UpdatedAt,
             category = p.Category == null ? null : new { p.Category.Id, p.Category.Name },
             serialNos = serialMap.ContainsKey(p.PartNo) ? serialMap[p.PartNo] : new List<string>()
@@ -89,7 +89,7 @@ public class PartsController : ControllerBase
             part.Id, part.PartNo, part.PartName, part.OrderNumber, part.Unit, part.SerialNo,
             StockQuantity = byLocation.Sum(s => s.GoodQty),
             part.CategoryId, part.MinStock, part.MaxStock, part.ReorderPoint,
-            part.CostPerUnit, part.CatalogueRef, part.MainUnit, part.Remark, part.ImagePath, part.Zone, part.DeviceType,
+            part.CostPerUnit, part.CatalogueRef, part.MainUnit, part.Remark, part.ImagePath, part.Zone, part.DeviceType, part.AddedBy, part.Lot, part.Project, part.AddedDate,
             part.IsActive, part.CreatedAt, part.UpdatedAt,
             category = part.Category == null ? null : new { part.Category.Id, part.Category.Name },
             stockByLocation = byLocation
@@ -231,6 +231,10 @@ public class PartsController : ControllerBase
         if (dto.ImagePath != null) part.ImagePath = dto.ImagePath;
         part.Zone           = dto.Zone;
         part.DeviceType     = dto.DeviceType;
+        part.AddedBy        = dto.AddedBy;
+        part.Lot            = dto.Lot;
+        part.Project        = dto.Project;
+        part.AddedDate      = dto.AddedDate ?? DateTime.Now;
         return part;
     }
 
@@ -240,7 +244,7 @@ public class PartsController : ControllerBase
         p.Id, p.PartNo, p.PartName, p.OrderNumber, p.Unit, p.SerialNo,
         StockQuantity = _context.PartStocks.Where(s => s.PartId == p.Id).Sum(s => s.GoodQty),
         p.CategoryId, p.MinStock, p.MaxStock, p.ReorderPoint,
-        p.CostPerUnit, p.CatalogueRef, p.MainUnit, p.Remark, p.ImagePath, p.Zone, p.DeviceType,
+        p.CostPerUnit, p.CatalogueRef, p.MainUnit, p.Remark, p.ImagePath, p.Zone, p.DeviceType, p.AddedBy, p.Lot, p.Project, p.AddedDate,
         p.IsActive, p.CreatedAt, p.UpdatedAt
     };
 
@@ -255,6 +259,9 @@ public class PartsController : ControllerBase
         ?? User?.FindFirst(System.Security.Claims.ClaimTypes.Email)?.Value
         ?? "system";
 
+    private static readonly JsonSerializerOptions _auditJson = new()
+    { ReferenceHandler = System.Text.Json.Serialization.ReferenceHandler.IgnoreCycles };
+
     private void WriteAudit(string entityType, string entityId, string action, string? oldValues, object? newValues)
     {
         _context.AuditLogs.Add(new AuditLog
@@ -263,7 +270,7 @@ public class PartsController : ControllerBase
             EntityId   = entityId,
             Action     = action,
             OldValues  = oldValues,
-            NewValues  = newValues != null ? JsonSerializer.Serialize(newValues) : null,
+            NewValues  = newValues != null ? JsonSerializer.Serialize(newValues, _auditJson) : null,
             UserId     = CurrentUserId(),
             UserName   = CurrentUser(),
             Timestamp  = DateTime.UtcNow
@@ -295,4 +302,8 @@ public class PartWriteDto
     public string? ImagePath { get; set; }
     public string? Zone { get; set; }
     public string? DeviceType { get; set; }
+    public string? AddedBy { get; set; }
+    public string? Lot { get; set; }
+    public string? Project { get; set; }
+    public DateTime? AddedDate { get; set; }
 }

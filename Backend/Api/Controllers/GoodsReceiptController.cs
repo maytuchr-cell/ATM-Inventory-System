@@ -100,6 +100,8 @@ public class GoodsReceiptController : ControllerBase
                     MaxStock      = 100,
                     ReorderPoint  = 3,
                     IsActive      = true,
+                    AddedBy       = receipt.ReceivedBy,   // provenance: who imported
+                    AddedDate     = DateTime.Now,          // date added = today (matches manual Add form)
                 };
                 _context.Parts.Add(part);
                 _context.SaveChanges();

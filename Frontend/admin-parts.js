@@ -185,12 +185,27 @@ function goPage(p) {
   document.querySelector('.tbl-wrap')?.scrollTo(0, 0);
 }
 
+let batchItems = [];        // parts added in the current Add session
+let currentDeviceType = null;
+let batchAdded = 0;         // whether any part was created (to know if we must refresh)
+
+function setDeviceType(val) {
+  currentDeviceType = (currentDeviceType === val) ? null : val;
+  document.querySelectorAll('#devtype-toggle .dt-btn').forEach(b =>
+    b.classList.toggle('active', b.dataset.dt === currentDeviceType));
+}
+
 function openModal(id = null) {
   editingId = id;
   const overlay = document.getElementById('modal-overlay');
+  const modal   = overlay.querySelector('.modal');
   const title   = document.getElementById('modal-title');
+  const submitBtn = document.getElementById('modal-submit-btn');
+  const cancelBtn = document.getElementById('modal-cancel-btn');
 
   if (id) {
+    // ── EDIT (single) ──
+    modal.classList.add('edit-mode');
     const p = allParts.find(x => x.id === id);
     if (!p) return;
     title.textContent = t('parts.edit');
@@ -203,20 +218,57 @@ function openModal(id = null) {
     document.getElementById('f-max').value      = p.maxStock;
     document.getElementById('f-reorder').value  = p.reorderPoint;
     document.getElementById('f-cat-ref').value  = p.catalogueRef ?? '';
-    // Stock is managed via Goods Receipt / Issue — not editable on an existing part.
+    submitBtn.textContent = t('btn.save');
+    cancelBtn.textContent = t('btn.cancel');
     setStockFieldMode(false);
   } else {
+    // ── ADD (batch) ──
+    modal.classList.remove('edit-mode');
     title.textContent = t('parts.add');
     document.getElementById('part-form').reset();
     document.getElementById('f-stock').value   = '0';
     document.getElementById('f-min').value     = '1';
     document.getElementById('f-max').value     = '100';
     document.getElementById('f-reorder').value = '3';
-    // New part: stock field is the optional opening balance.
+    // batch header
+    document.getElementById('b-addedby').value = localStorage.getItem('userEmail') || '';
+    document.getElementById('b-lot').value = '';
+    document.getElementById('b-project').value = '';
+    document.getElementById('b-date').value = new Date().toISOString().slice(0, 10); // auto today
+    currentDeviceType = null;
+    document.querySelectorAll('#devtype-toggle .dt-btn').forEach(b => b.classList.remove('active'));
+    batchItems = []; batchAdded = 0;
+    renderBatchList();
+    submitBtn.textContent = t('parts.batch.add');
+    cancelBtn.textContent = t('parts.batch.done');
     setStockFieldMode(true);
   }
 
   overlay.classList.remove('hidden');
+}
+
+function renderBatchList() {
+  const tbody = document.getElementById('batch-tbody');
+  document.getElementById('batch-count').textContent = batchItems.length;
+  if (!batchItems.length) {
+    tbody.innerHTML = `<tr><td colspan="5" class="empty-state">${t('parts.batch.empty')}</td></tr>`;
+    return;
+  }
+  tbody.innerHTML = batchItems.map((it, i) => `
+    <tr>
+      <td style="color:var(--text-muted)">${i + 1}</td>
+      <td><code>${it.partNo}</code></td>
+      <td>${it.partName}</td>
+      <td>${it.deviceType ? `<span class="badge badge-orange">${it.deviceType}</span>` : '—'}</td>
+      <td>${it.qty}</td>
+    </tr>`).join('');
+}
+
+// Route form submit: edit → update one part; add → append to batch.
+function onFormSubmit(e) {
+  e.preventDefault();
+  if (editingId) return updatePart();
+  return addToBatch();
 }
 
 // Stock field is an editable "opening balance" only when creating a new part.
@@ -238,14 +290,16 @@ function setStockFieldMode(isNew) {
   }
 }
 
-function closeModal() {
+async function closeModal() {
   document.getElementById('modal-overlay').classList.add('hidden');
+  const wasBatch = batchAdded > 0;
   editingId = null;
+  if (wasBatch) { batchAdded = 0; await loadParts(); }  // refresh table with newly added parts
 }
 
-async function savePart(e) {
-  e.preventDefault();
-  const dto = {
+// Reads the part-entry fields (used by both add-to-batch and edit).
+function readPartDto() {
+  return {
     partNo:       document.getElementById('f-partno').value.trim(),
     partName:     document.getElementById('f-partname').value.trim(),
     orderNumber:  document.getElementById('f-ordernum').value.trim(),
@@ -258,15 +312,40 @@ async function savePart(e) {
     costPerUnit:  null,
     catalogueRef: document.getElementById('f-cat-ref').value.trim() || null,
   };
+}
+
+// ── ADD (batch): create the part with the shared batch header, append to the session list ──
+async function addToBatch() {
+  const dto = readPartDto();
+  dto.deviceType = currentDeviceType;
+  dto.addedBy    = document.getElementById('b-addedby').value.trim() || null;
+  dto.lot        = document.getElementById('b-lot').value.trim() || null;
+  dto.project    = document.getElementById('b-project').value.trim() || null;
+  const d = document.getElementById('b-date').value;
+  dto.addedDate  = d ? new Date(d).toISOString() : null;
 
   try {
-    if (editingId) {
-      await api.parts.update(editingId, dto);
-    } else {
-      await api.parts.create(dto);
-    }
+    await api.parts.create(dto);
+    batchItems.push({ partNo: dto.partNo, partName: dto.partName, deviceType: dto.deviceType, qty: dto.stockQuantity });
+    batchAdded++;
+    renderBatchList();
+    // clear part-specific fields, keep the batch header + device type + category for the next item
+    ['f-partno', 'f-partname', 'f-ordernum', 'f-cat-ref'].forEach(id => document.getElementById(id).value = '');
+    document.getElementById('f-stock').value = '0';
+    document.getElementById('f-partno').focus();
+    showToast(t('parts.batch.toast'), 'success');
+  } catch (err) {
+    showToast(err.message || t('toast.error'), 'error');
+  }
+}
+
+// ── EDIT (single) ──
+async function updatePart() {
+  try {
+    await api.parts.update(editingId, readPartDto());
     showToast(t('toast.saved'), 'success');
-    closeModal();
+    document.getElementById('modal-overlay').classList.add('hidden');
+    editingId = null;
     await loadParts();
   } catch (err) {
     showToast(err.message || t('toast.error'), 'error');

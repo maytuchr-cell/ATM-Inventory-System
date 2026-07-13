@@ -78,7 +78,7 @@ using (var scope = app.Services.CreateScope())
                 using var reader = cmd.ExecuteReader();
                 while (reader.Read()) existing.Add(reader.GetString(1)); // column name is index 1
             }
-            foreach (var (col, type) in new[] { ("MainUnit", "TEXT"), ("Remark", "TEXT"), ("ImagePath", "TEXT"), ("Zone", "TEXT"), ("DeviceType", "TEXT") })
+            foreach (var (col, type) in new[] { ("MainUnit", "TEXT"), ("Remark", "TEXT"), ("ImagePath", "TEXT"), ("Zone", "TEXT"), ("DeviceType", "TEXT"), ("AddedBy", "TEXT"), ("Lot", "TEXT"), ("Project", "TEXT"), ("AddedDate", "TEXT") })
             {
                 if (!existing.Contains(col))
                 {

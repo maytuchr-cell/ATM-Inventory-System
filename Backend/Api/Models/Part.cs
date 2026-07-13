@@ -39,6 +39,12 @@ public class Part
     // one type (e.g. "ADM,ATM"). Null/empty = not mentioned in Remark — do not guess.
     public string? DeviceType { get; set; }  // "ATM" | "ADM" | "CDM" | comma-combo | null
 
+    // Provenance from the manual "Add Part" batch form (and Excel import).
+    public string? AddedBy { get; set; }      // person who added the part
+    public string? Lot { get; set; }          // lot / batch reference
+    public string? Project { get; set; }      // project name
+    public DateTime? AddedDate { get; set; }  // date the part was added (defaults to today)
+
     // Optimistic-concurrency token — bumped on every save (see AppDbContext.SaveChanges).
     public string RowVersion { get; set; } = Guid.NewGuid().ToString("N");
 
