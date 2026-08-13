@@ -187,6 +187,9 @@ const TRANSLATIONS = {
     'detail.no.image':      'No photo attached',
     'detail.not.specified': 'Not specified',
 
+    /* ── Tickets (เบิก/คืน) ── */
+    'nav.tickets': 'Tickets',
+
     /* ── Goods Receipt ── */
     'nav.goodsreceipt':   'Goods Receipt',
     'gr.title':           'Goods Receipt',
@@ -743,6 +746,9 @@ const TRANSLATIONS = {
     'hist.on':        'เมื่อ',
     'hist.past':      'เลยกำหนดแล้ว',
     'hist.rejected':  'ไม่อนุมัติ',
+
+    /* ── Tickets (เบิก/คืน) ── */
+    'nav.tickets': 'Tickets เบิก/คืน',
 
     /* ── Goods Receipt ── */
     'nav.goodsreceipt':   'รับอะไหล่เข้าคลัง',

@@ -1,0 +1,416 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Tickets — ATM Inventory</title>
+    <link rel="stylesheet" href="shared/styles.css">
+    <style>
+        /* Page-specific overrides */
+        .section-head { display:flex; align-items:center; gap:10px; margin-bottom:20px; }
+        .section-accent { width:4px; height:22px; background:var(--orange); border-radius:2px; flex-shrink:0; }
+        .section-title  { font-size:16px; font-weight:700; color:var(--text-primary); }
+        .section-count  { font-size:12px; font-weight:600; background:var(--bg-subtle); color:var(--text-secondary); padding:2px 9px; border-radius:20px; border:1px solid var(--border); }
+
+        /* Badge variants */
+        .badge-pending  { background:var(--yellow-light); color:var(--yellow); }
+        .badge-pending  .badge-dot { background:var(--yellow); }
+        .badge-approved { background:var(--orange-light); color:var(--orange); }
+        .badge-approved .badge-dot { background:var(--orange); }
+        .badge-teal     { background:#e0f5f3; color:#0f8a7e; }
+        .badge-teal     .badge-dot { background:#0f8a7e; }
+        [data-theme="dark"] .badge-teal { background:rgba(15,138,126,.18); color:#4fd6c6; }
+        [data-theme="dark"] .badge-teal .badge-dot { background:#4fd6c6; }
+        .badge-success  { background:var(--green-light);  color:var(--green); }
+        .badge-success  .badge-dot { background:var(--green); }
+        .badge-danger   { background:var(--red-light);    color:var(--red);   }
+        .badge-danger   .badge-dot { background:var(--red); }
+        .badge-muted    { background:var(--bg-subtle); color:var(--text-secondary); }
+        .badge-muted    .badge-dot { background:var(--text-secondary); }
+        .badge-dot { width:6px; height:6px; border-radius:50%; flex-shrink:0; }
+
+        /* Action buttons inside table */
+        .btn-approve { background:var(--green-light); color:var(--green); border:1.5px solid transparent; padding:6px 10px; border-radius:7px; font-family:inherit; font-size:11.5px; font-weight:600; cursor:pointer; display:inline-flex; align-items:center; gap:4px; transition:all .15s; }
+        .btn-approve:hover { background:var(--green); color:#fff; }
+        .btn-reject  { background:var(--red-light);   color:var(--red);   border:1.5px solid transparent; padding:6px 10px; border-radius:7px; font-family:inherit; font-size:11.5px; font-weight:600; cursor:pointer; display:inline-flex; align-items:center; gap:4px; transition:all .15s; }
+        .btn-reject:hover  { background:var(--red);   color:#fff; }
+        .btn-cancel  { background:none; color:var(--text-muted); border:none; padding:4px 2px; font-family:inherit; font-size:11px; font-weight:600; cursor:pointer; text-decoration:underline; text-underline-offset:2px; transition:color .15s; }
+        .btn-cancel:hover  { color:var(--red); }
+        .ticket-action-row { display:flex; gap:6px; flex-wrap:wrap; align-items:center; }
+
+        /* Ticket toolbar (search + status filter + refresh) */
+        .tkt-toolbar { display:flex; flex-wrap:wrap; gap:8px; align-items:center; }
+        .tkt-status-filter { padding:5px 8px; border:1px solid var(--border); border-radius:7px; font-size:12px; background:var(--surface); color:var(--text); }
+        .btn-refresh { background:var(--bg-subtle); color:var(--text-secondary); border:1px solid var(--border); border-radius:7px; padding:5px 10px; font-size:12px; font-weight:600; cursor:pointer; font-family:inherit; display:inline-flex; align-items:center; gap:5px; transition:all .15s; }
+        .btn-refresh:hover { background:var(--orange-light); color:var(--orange); border-color:var(--orange); }
+        .btn-refresh.spinning svg { animation: spin .7s linear infinite; }
+        @keyframes spin { to { transform: rotate(360deg); } }
+
+        .select-part { width:100%; padding:7px 10px; margin-bottom:7px; border-radius:8px; background:var(--bg-input); color:var(--text-primary); border:1.5px solid var(--border); font-family:inherit; font-size:13px; transition:.2s; outline:none; }
+        .select-part:focus { border-color:var(--orange); box-shadow:0 0 0 3px var(--orange-ring); }
+
+        /* Reject-reason modal */
+        .reason-overlay { display:none; position:fixed; inset:0; background:rgba(0,0,0,.45); z-index:950; align-items:center; justify-content:center; padding:20px; }
+        .reason-overlay.open { display:flex; }
+        .reason-modal { background:var(--bg-card); border-radius:16px; border:1px solid var(--border); width:100%; max-width:420px; padding:22px; box-shadow:0 20px 60px rgba(0,0,0,.25); }
+        .reason-modal h3 { font-size:15px; font-weight:700; margin-bottom:4px; color:var(--text-primary); }
+        .reason-modal p  { font-size:12.5px; color:var(--text-secondary); margin-bottom:12px; }
+        .reason-modal textarea { width:100%; min-height:80px; padding:10px; border-radius:8px; border:1.5px solid var(--border); background:var(--bg-input); color:var(--text-primary); font-family:inherit; font-size:13px; resize:vertical; outline:none; }
+        .reason-modal textarea:focus { border-color:var(--red); }
+        .reason-modal-actions { display:flex; gap:8px; margin-top:14px; justify-content:flex-end; }
+
+        .id-chip    { font-size:12px; font-weight:600; color:var(--text-muted); background:var(--bg-subtle); padding:3px 8px; border-radius:5px; font-family:'Inter',monospace; border:1px solid var(--border); }
+        .ticket-id  { color:var(--orange); }
+        .text-green { color:var(--green); font-weight:600; }
+        .text-red   { color:var(--red);   font-weight:600; }
+        .fw-600     { font-weight:600; }
+        .fs-13      { font-size:13px; }
+
+        /* Detail button */
+        .btn-detail { background:var(--bg-subtle); color:var(--text-secondary); border:1.5px solid var(--border); padding:5px 10px; border-radius:7px; font-size:12px; font-weight:600; cursor:pointer; font-family:inherit; transition:all .15s; display:inline-flex; align-items:center; gap:4px; margin-top:5px; width:100%; justify-content:center; }
+        .btn-detail:hover { background:var(--orange-light); color:var(--orange); border-color:var(--orange); }
+
+        /* Ticket detail modal */
+        .detail-overlay { display:none; position:fixed; inset:0; background:rgba(0,0,0,.45); z-index:900; align-items:center; justify-content:center; padding:20px; }
+        .detail-overlay.open { display:flex; }
+        .detail-modal { background:var(--bg-card); border-radius:18px; border:1px solid var(--border); width:100%; max-width:560px; max-height:90vh; overflow-y:auto; box-shadow:0 20px 60px rgba(0,0,0,.25); }
+        .detail-header { display:flex; align-items:center; justify-content:space-between; padding:20px 24px 16px; border-bottom:1px solid var(--border); position:sticky; top:0; background:var(--bg-card); z-index:1; border-radius:18px 18px 0 0; }
+        .detail-title { font-size:16px; font-weight:700; color:var(--text-primary); }
+        .detail-close { background:none; border:none; cursor:pointer; color:var(--text-muted); padding:4px; border-radius:6px; display:flex; align-items:center; }
+        .detail-close:hover { color:var(--text-primary); background:var(--bg-subtle); }
+        .detail-body { padding:24px; }
+        .detail-section { margin-bottom:20px; }
+        .detail-section-title { font-size:10px; font-weight:700; letter-spacing:.8px; text-transform:uppercase; color:var(--orange); margin-bottom:12px; }
+        .detail-grid { display:grid; grid-template-columns:1fr 1fr; gap:12px; }
+        .detail-field label { font-size:11px; font-weight:600; color:var(--text-muted); letter-spacing:.4px; text-transform:uppercase; display:block; margin-bottom:3px; }
+        .detail-field span  { font-size:14px; color:var(--text-primary); font-weight:500; }
+        .detail-field.full  { grid-column:1/-1; }
+        .detail-desc { font-size:14px; color:var(--text-primary); line-height:1.6; background:var(--bg-subtle); border-radius:8px; padding:12px; border:1px solid var(--border); white-space:pre-wrap; }
+        .detail-img { width:100%; border-radius:10px; border:1px solid var(--border); margin-top:4px; object-fit:contain; max-height:300px; cursor:zoom-in; }
+        .detail-divider { border:none; border-top:1px solid var(--border); margin:16px 0; }
+        .detail-empty { color:var(--text-muted); font-style:italic; font-size:13px; }
+    </style>
+</head>
+<body>
+
+<div class="app-layout">
+    <div id="sidebar-root"></div>
+
+    <div class="main-content">
+        <!-- Top bar -->
+        <div class="topbar">
+            <div>
+                <div class="topbar-title" data-i18n="nav.tickets">Tickets</div>
+                <div class="topbar-sub">เบิก / คืนอะไหล่ของช่าง — sync จาก Aservice</div>
+            </div>
+        </div>
+
+        <!-- Page body -->
+        <div class="page-body">
+
+            <!-- Tickets: เบิก / คืน -->
+            <div class="card">
+                <div class="section-head" style="flex-wrap:wrap;gap:8px;">
+                    <div class="section-accent"></div>
+                    <span class="section-title">Tickets — เบิก / คืนอะไหล่</span>
+                    <span class="section-count" id="tickets-count">—</span>
+                    <div class="tkt-toolbar" style="margin-left:auto;">
+                        <input id="tkt-search" type="text" placeholder="🔍 ค้นหา Ticket / ช่าง…"
+                            oninput="renderTicketsTable()"
+                            style="padding:5px 10px;border:1px solid var(--border);border-radius:7px;font-size:12px;background:var(--surface);color:var(--text);outline:none;width:180px;">
+                        <select id="tkt-status-filter" class="tkt-status-filter" onchange="renderTicketsTable()">
+                            <option value="">ทุกสถานะ</option>
+                            <option value="รอ">รอ</option>
+                            <option value="เดินทาง">เดินทาง</option>
+                            <option value="เบิก">เบิก</option>
+                            <option value="คืน">คืน</option>
+                            <option value="Reject">Reject</option>
+                            <option value="Cancel">Cancel</option>
+                        </select>
+                        <button class="btn-refresh" id="tkt-refresh-btn" onclick="fetchTickets()">
+                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
+                            Refresh
+                        </button>
+                    </div>
+                </div>
+                <div class="tbl-wrap">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th style="width:8%"  data-i18n="tkt.ticket">Ticket</th>
+                                <th style="width:13%" data-i18n="tkt.tech">Technician</th>
+                                <th style="width:9%">Phase</th>
+                                <th style="width:20%" data-i18n="tkt.requested">Parts</th>
+                                <th style="width:16%" data-i18n="tkt.status">Status</th>
+                                <th style="width:22%" data-i18n="tkt.action">Action</th>
+                                <th style="width:12%">รายละเอียด</th>
+                            </tr>
+                        </thead>
+                        <tbody id="ticketsTableBody">
+                            <tr><td colspan="7" class="empty-state"><span data-i18n="connecting">Connecting to server…</span></td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+        </div><!-- /page-body -->
+    </div><!-- /main-content -->
+</div><!-- /app-layout -->
+
+<!-- Reject reason modal -->
+<div class="reason-overlay" id="reasonOverlay">
+    <div class="reason-modal">
+        <h3>Reject Ticket</h3>
+        <p>ระบุเหตุผล — ระบบจะส่งกลับให้ช่างแก้ไขและส่งใหม่ (บังคับกรอก)</p>
+        <textarea id="reasonInput" placeholder="เช่น อะไหล่ที่เลือกไม่ตรงกับ Ticket / ข้อมูลไม่ครบ..."></textarea>
+        <div class="reason-modal-actions">
+            <button class="btn-cancel" style="width:auto;padding:8px 16px;" onclick="closeReasonModal()">Cancel</button>
+            <button class="btn-reject" style="width:auto;padding:8px 16px;margin-bottom:0;" onclick="confirmReject()">Reject Ticket</button>
+        </div>
+    </div>
+</div>
+
+<!-- Ticket Detail Modal -->
+<div class="detail-overlay" id="detailOverlay" onclick="closeDetail(event)">
+    <div class="detail-modal" id="detailModal">
+        <div class="detail-header">
+            <span class="detail-title" id="detailTitle">Ticket Detail</span>
+            <button class="detail-close" onclick="closeDetailModal()">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+            </button>
+        </div>
+        <div class="detail-body" id="detailBody"></div>
+    </div>
+</div>
+
+<script src="shared/translations.js?v=3"></script>
+<script src="shared/toast.js"></script>
+<script src="shared/api.js"></script>
+<script src="shared/layout.js"></script>
+<script>
+    let cachedTickets = [];
+    let rejectTargetId = null;
+
+    /* ── Init ── */
+    initLayout();
+    applyLang();
+    function onLangChange() { renderTicketsTable(); }
+
+    window.onload = function () { fetchTickets(); };
+
+    async function fetchTickets() {
+        const btn = document.getElementById('tkt-refresh-btn');
+        btn?.classList.add('spinning');
+        try {
+            cachedTickets = await api.tickets.getAll();
+            renderTicketsTable();
+        } catch (e) {
+            document.getElementById('ticketsTableBody').innerHTML =
+                `<tr><td colspan="7" class="empty-state" style="color:var(--red)">${t('error.connect')}</td></tr>`;
+        } finally {
+            btn?.classList.remove('spinning');
+        }
+    }
+
+    /* ── Tickets ── */
+    const STATUS_BADGE = {
+        "รอ":      { cls: "badge-pending"  },
+        "เดินทาง": { cls: "badge-approved" },
+        "เบิก":    { cls: "badge-teal"     },
+        "คืน":     { cls: "badge-success"  },
+        "Reject":  { cls: "badge-danger"   },
+        "Cancel":  { cls: "badge-muted"    },
+    };
+
+    function renderTicketsTable() {
+        const search = (document.getElementById('tkt-search')?.value || '').trim().toLowerCase();
+        const statusF = document.getElementById('tkt-status-filter')?.value || '';
+
+        const rows = cachedTickets.filter(tk => {
+            if (statusF && tk.status !== statusF) return false;
+            if (search) {
+                const hay = `${tk.externalTicketNo} ${tk.techName} ${tk.techDept}`.toLowerCase();
+                if (!hay.includes(search)) return false;
+            }
+            return true;
+        });
+
+        document.getElementById('tickets-count').textContent = rows.length + ' / ' + cachedTickets.length + ' ' + (getLang()==='th' ? 'ตั๋ว' : 'tickets');
+        const tbody = document.getElementById("ticketsTableBody");
+        tbody.innerHTML = "";
+        if (!cachedTickets.length) {
+            tbody.innerHTML = `<tr><td colspan="7" class="empty-state">🎉 ${t('tkt.none')}</td></tr>`;
+            return;
+        }
+        if (!rows.length) {
+            tbody.innerHTML = `<tr><td colspan="7" class="empty-state">ไม่พบ Ticket ที่ตรงกับตัวกรอง</td></tr>`;
+            return;
+        }
+        rows.forEach(tk => {
+            const b = STATUS_BADGE[tk.status] || STATUS_BADGE["รอ"];
+            const badge = `<span class="badge ${b.cls}"><span class="badge-dot"></span>${tk.status}</span>`;
+
+            const partsSummary = tk.lines.map(l =>
+                `<div style="font-size:12px;">${l.partName} <span style="color:var(--text-muted)">×${l.quantity}</span> <span style="font-size:10px;color:var(--text-muted)">(${l.lineType === 'Withdraw' ? 'เบิก' : 'คืน'})</span></div>`
+            ).join('');
+
+            const phaseLabel = tk.phase === 'withdraw'
+                ? `<span style="font-size:11px;color:var(--text-secondary);">ขาเบิก</span>`
+                : `<span style="font-size:11px;color:var(--text-secondary);">ขาคืน</span>`;
+
+            // Admin approve/reject/cancel only applies on the withdraw leg while waiting (รอ).
+            let action;
+            if (tk.status === "รอ" && tk.phase === "withdraw") {
+                action = `
+                    <div class="ticket-action-row">
+                        <button class="btn-approve" onclick="approveTicket(${tk.ticketId})">
+                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+                            Approve
+                        </button>
+                        <button class="btn-reject" onclick="openRejectModal(${tk.ticketId})">
+                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                            Reject
+                        </button>
+                        <button class="btn-cancel" onclick="cancelTicket(${tk.ticketId})">Cancel</button>
+                    </div>`;
+            } else if (!["Reject", "Cancel", "คืน"].includes(tk.status)) {
+                // Still open (return leg in progress, or in transit) — Admin can only Cancel outright.
+                action = `<button class="btn-cancel" onclick="cancelTicket(${tk.ticketId})">Cancel Ticket</button>`;
+            } else {
+                action = `<span style="color:var(--text-muted)">—</span>`;
+            }
+
+            tbody.innerHTML += `
+                <tr>
+                    <td><span class="id-chip ticket-id">${tk.externalTicketNo}</span></td>
+                    <td class="fw-600">${tk.techName}<div class="fs-13" style="color:var(--text-secondary);font-weight:400;">${tk.techDept}</div></td>
+                    <td>${phaseLabel}</td>
+                    <td>${partsSummary}</td>
+                    <td>${badge}</td>
+                    <td>${action}</td>
+                    <td><button class="btn-detail" onclick="showDetail(${tk.ticketId})">🔍 ${t('detail.btn')}</button></td>
+                </tr>`;
+        });
+    }
+
+    async function approveTicket(id) {
+        if (!confirm('อนุมัติ Ticket นี้? สถานะจะเปลี่ยนเป็น "เดินทาง"')) return;
+        try {
+            await api.tickets.approve(id);
+            await fetchTickets();
+            showToast?.('Ticket approved', 'success');
+        } catch (e) { showToast?.(e.message || t('toast.error'), 'error'); }
+    }
+
+    function openRejectModal(id) {
+        rejectTargetId = id;
+        document.getElementById('reasonInput').value = '';
+        document.getElementById('reasonOverlay').classList.add('open');
+    }
+    function closeReasonModal() {
+        document.getElementById('reasonOverlay').classList.remove('open');
+        rejectTargetId = null;
+    }
+    async function confirmReject() {
+        const reason = document.getElementById('reasonInput').value.trim();
+        if (!reason) { showToast?.('กรุณาระบุเหตุผล (บังคับ)', 'error'); return; }
+        try {
+            await api.tickets.reject(rejectTargetId, reason);
+            await fetchTickets();
+        } catch (e) { showToast?.(e.message || t('toast.error'), 'error'); }
+        closeReasonModal();
+    }
+
+    async function cancelTicket(id) {
+        if (!confirm('ยกเลิก Ticket นี้ทั้งใบ? การกระทำนี้ย้อนกลับไม่ได้')) return;
+        try {
+            await api.tickets.cancel(id);
+            await fetchTickets();
+        } catch (e) { showToast?.(e.message || t('toast.error'), 'error'); }
+    }
+
+    /* ── Ticket Detail Modal ── */
+    const IMG_BASE = API_BASE.replace(/\/api$/, '');
+
+    function showDetail(id) {
+        const tk = cachedTickets.find(t => t.ticketId === id);
+        if (!tk) return;
+
+        const none = `<span class="detail-empty">${t('detail.not.specified')}</span>`;
+        const fmt  = d => d ? new Date(d).toLocaleString(getLang()==='th' ? 'th-TH' : 'en-GB') : '—';
+
+        const withdrawLines = tk.lines.filter(l => l.lineType === 'Withdraw');
+        const returnLines   = tk.lines.filter(l => l.lineType === 'Return');
+        const lineListHtml = list => list.length
+            ? list.map(l => `<div style="display:flex;justify-content:space-between;padding:4px 0;border-bottom:1px solid var(--border);"><span>${l.partName}</span><span class="fw-600">×${l.quantity}</span></div>`).join('')
+            : `<span class="detail-empty">—</span>`;
+
+        document.getElementById('detailTitle').textContent =
+            `${tk.externalTicketNo} — ${tk.techName}`;
+
+        document.getElementById('detailBody').innerHTML = `
+            <div class="detail-section">
+                <div class="detail-section-title">${t('detail.tech')}</div>
+                <div class="detail-grid">
+                    <div class="detail-field">
+                        <label>${t('detail.name')}</label><span>${tk.techName || none}</span>
+                    </div>
+                    <div class="detail-field">
+                        <label>${t('detail.dept')}</label><span>${tk.techDept || none}</span>
+                    </div>
+                    <div class="detail-field">
+                        <label>Status</label><span>${tk.status} (${tk.phase === 'withdraw' ? 'ขาเบิก' : 'ขาคืน'})</span>
+                    </div>
+                    <div class="detail-field">
+                        <label>${t('detail.date')}</label><span>${fmt(tk.createdAt)}</span>
+                    </div>
+                </div>
+            </div>
+
+            <hr class="detail-divider">
+
+            <div class="detail-section">
+                <div class="detail-section-title">รายการอะไหล่ — เบิก</div>
+                ${lineListHtml(withdrawLines)}
+            </div>
+
+            <div class="detail-section">
+                <div class="detail-section-title">รายการอะไหล่ — คืน</div>
+                ${lineListHtml(returnLines)}
+            </div>
+
+            <hr class="detail-divider">
+
+            <div class="detail-section">
+                <div class="detail-section-title">ที่อยู่จัดส่ง</div>
+                <div class="detail-grid">
+                    <div class="detail-field">
+                        <label>Withdraw Address</label><span>${tk.withdrawAddress || none}</span>
+                    </div>
+                    <div class="detail-field">
+                        <label>Return Address</label><span>${tk.returnAddress || none}</span>
+                    </div>
+                </div>
+            </div>
+
+            ${tk.rejectReason ? `
+            <hr class="detail-divider">
+            <div class="detail-section">
+                <div class="detail-section-title">เหตุผลที่ Reject</div>
+                <div class="detail-desc">${tk.rejectReason}</div>
+            </div>` : ''}
+        `;
+
+        document.getElementById('detailOverlay').classList.add('open');
+    }
+
+    function closeDetailModal() {
+        document.getElementById('detailOverlay').classList.remove('open');
+    }
+    function closeDetail(e) {
+        if (e.target === document.getElementById('detailOverlay')) closeDetailModal();
+    }
+    document.addEventListener('keydown', e => { if (e.key === 'Escape') closeDetailModal(); });
+</script>
+</body>
+</html>

@@ -29,6 +29,7 @@
       icon: 'solar:box-bold',
       adminOnly: true,
       items: [
+        { key: 'nav.tickets',      href: 'admin-tickets.html',       icon: 'mdi:clipboard-check-outline',   adminOnly: true },
         { key: 'nav.goodsreceipt', href: 'admin-goods-receipt.html', icon: 'solar:box-bold',                adminOnly: true },
         { key: 'nav.returns',      href: 'admin-returns.html',       icon: 'streamline:return-2-solid',     adminOnly: true },
       ]
