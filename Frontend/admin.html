@@ -21,16 +21,30 @@
         .badge-success  .badge-dot { background:var(--green); }
         .badge-danger   { background:var(--red-light);    color:var(--red);   }
         .badge-danger   .badge-dot { background:var(--red); }
+        .badge-muted    { background:var(--bg-subtle); color:var(--text-secondary); }
+        .badge-muted    .badge-dot { background:var(--text-secondary); }
         .badge-dot { width:6px; height:6px; border-radius:50%; flex-shrink:0; }
 
         /* Action buttons inside table */
         .btn-approve { background:var(--green-light); color:var(--green); border:1.5px solid transparent; width:100%; justify-content:center; padding:7px; margin-bottom:5px; border-radius:8px; font-family:inherit; font-size:12px; font-weight:600; cursor:pointer; display:flex; align-items:center; gap:5px; transition:all .15s; }
         .btn-approve:hover { background:var(--green); color:#fff; }
-        .btn-reject  { background:var(--red-light);   color:var(--red);   border:1.5px solid transparent; width:100%; justify-content:center; padding:7px; border-radius:8px; font-family:inherit; font-size:12px; font-weight:600; cursor:pointer; display:flex; align-items:center; gap:5px; transition:all .15s; }
+        .btn-reject  { background:var(--red-light);   color:var(--red);   border:1.5px solid transparent; width:100%; justify-content:center; padding:7px; margin-bottom:5px; border-radius:8px; font-family:inherit; font-size:12px; font-weight:600; cursor:pointer; display:flex; align-items:center; gap:5px; transition:all .15s; }
         .btn-reject:hover  { background:var(--red);   color:#fff; }
+        .btn-cancel  { background:var(--bg-subtle);    color:var(--text-secondary); border:1.5px solid var(--border); width:100%; justify-content:center; padding:7px; border-radius:8px; font-family:inherit; font-size:12px; font-weight:600; cursor:pointer; display:flex; align-items:center; gap:5px; transition:all .15s; }
+        .btn-cancel:hover  { background:var(--text-secondary); color:#fff; }
 
         .select-part { width:100%; padding:7px 10px; margin-bottom:7px; border-radius:8px; background:var(--bg-input); color:var(--text-primary); border:1.5px solid var(--border); font-family:inherit; font-size:13px; transition:.2s; outline:none; }
         .select-part:focus { border-color:var(--orange); box-shadow:0 0 0 3px var(--orange-ring); }
+
+        /* Reject-reason modal */
+        .reason-overlay { display:none; position:fixed; inset:0; background:rgba(0,0,0,.45); z-index:950; align-items:center; justify-content:center; padding:20px; }
+        .reason-overlay.open { display:flex; }
+        .reason-modal { background:var(--bg-card); border-radius:16px; border:1px solid var(--border); width:100%; max-width:420px; padding:22px; box-shadow:0 20px 60px rgba(0,0,0,.25); }
+        .reason-modal h3 { font-size:15px; font-weight:700; margin-bottom:4px; color:var(--text-primary); }
+        .reason-modal p  { font-size:12.5px; color:var(--text-secondary); margin-bottom:12px; }
+        .reason-modal textarea { width:100%; min-height:80px; padding:10px; border-radius:8px; border:1.5px solid var(--border); background:var(--bg-input); color:var(--text-primary); font-family:inherit; font-size:13px; resize:vertical; outline:none; }
+        .reason-modal textarea:focus { border-color:var(--red); }
+        .reason-modal-actions { display:flex; gap:8px; margin-top:14px; justify-content:flex-end; }
 
         .id-chip    { font-size:12px; font-weight:600; color:var(--text-muted); background:var(--bg-subtle); padding:3px 8px; border-radius:5px; font-family:'Inter',monospace; border:1px solid var(--border); }
         .ticket-id  { color:var(--orange); }
@@ -141,18 +155,17 @@
                     <table>
                         <thead>
                             <tr>
-                                <th style="width:7%"  data-i18n="tkt.ticket">Ticket</th>
-                                <th style="width:12%" data-i18n="tkt.tech">Technician</th>
-                                <th style="width:10%" data-i18n="tkt.dept">Department</th>
-                                <th style="width:14%" data-i18n="tkt.requested">Requested Part</th>
-                                <th style="width:14%" data-i18n="tkt.issued">Issued Part</th>
-                                <th style="width:11%" data-i18n="tkt.status">Status</th>
-                                <th style="width:20%" data-i18n="tkt.action">Action</th>
+                                <th style="width:8%"  data-i18n="tkt.ticket">Ticket</th>
+                                <th style="width:13%" data-i18n="tkt.tech">Technician</th>
+                                <th style="width:9%">Phase</th>
+                                <th style="width:20%" data-i18n="tkt.requested">Parts</th>
+                                <th style="width:16%" data-i18n="tkt.status">Status</th>
+                                <th style="width:22%" data-i18n="tkt.action">Action</th>
                                 <th style="width:12%">รายละเอียด</th>
                             </tr>
                         </thead>
                         <tbody id="ticketsTableBody">
-                            <tr><td colspan="8" class="empty-state"><span data-i18n="connecting">Connecting to server…</span></td></tr>
+                            <tr><td colspan="7" class="empty-state"><span data-i18n="connecting">Connecting to server…</span></td></tr>
                         </tbody>
                     </table>
                 </div>
@@ -161,6 +174,19 @@
         </div><!-- /page-body -->
     </div><!-- /main-content -->
 </div><!-- /app-layout -->
+
+<!-- Reject reason modal -->
+<div class="reason-overlay" id="reasonOverlay">
+    <div class="reason-modal">
+        <h3>Reject Ticket</h3>
+        <p>ระบุเหตุผล — ระบบจะส่งกลับให้ช่างแก้ไขและส่งใหม่ (บังคับกรอก)</p>
+        <textarea id="reasonInput" placeholder="เช่น อะไหล่ที่เลือกไม่ตรงกับ Ticket / ข้อมูลไม่ครบ..."></textarea>
+        <div class="reason-modal-actions">
+            <button class="btn-cancel" style="width:auto;padding:8px 16px;" onclick="closeReasonModal()">Cancel</button>
+            <button class="btn-reject" style="width:auto;padding:8px 16px;margin-bottom:0;" onclick="confirmReject()">Reject Ticket</button>
+        </div>
+    </div>
+</div>
 
 <!-- Ticket Detail Modal -->
 <div class="detail-overlay" id="detailOverlay" onclick="closeDetail(event)">
@@ -180,17 +206,28 @@
 <script src="shared/api.js"></script>
 <script src="shared/layout.js"></script>
 <script>
-    const TICKET_URL = API_BASE.replace(/\/api$/, "") + "/api/Ticket";
     let globalParts  = [];
     let cachedParts  = [];
+
     let cachedTickets = [];
+    let rejectTargetId = null;
 
     /* ── Init ── */
     initLayout();
     applyLang();
     function onLangChange() { renderPartsCards(); renderTicketsTable(); fetchDashboard(); }
 
-    window.onload = async function () { await fetchParts(); fetchTickets(); fetchDashboard(); };
+    window.onload = async function () { await fetchParts(); await fetchTickets(); fetchDashboard(); };
+
+    async function fetchTickets() {
+        try {
+            cachedTickets = await api.tickets.getAll();
+            renderTicketsTable();
+        } catch (e) {
+            document.getElementById('ticketsTableBody').innerHTML =
+                `<tr><td colspan="7" class="empty-state" style="color:var(--red)">${t('error.connect')}</td></tr>`;
+        }
+    }
 
     /* ── Dashboard widgets ── */
     async function fetchDashboard() {
@@ -362,64 +399,63 @@
     }
 
     /* ── Tickets ── */
-    async function fetchTickets() {
-        try {
-            const res = await fetch(TICKET_URL);
-            cachedTickets = await res.json();
-            renderTicketsTable();
-        } catch (e) { console.error(e); }
-    }
+    const STATUS_BADGE = {
+        "รอ":      { cls: "badge-pending",  dot: true },
+        "เดินทาง": { cls: "badge-approved", dot: true },
+        "เบิก":    { cls: "badge-success",  dot: true },
+        "คืน":     { cls: "badge-success",  dot: true },
+        "Reject":  { cls: "badge-danger",   dot: true },
+        "Cancel":  { cls: "badge-muted",    dot: true },
+    };
+
     function renderTicketsTable() {
         document.getElementById('tickets-count').textContent = cachedTickets.length + ' ' + (getLang()==='th' ? 'ตั๋ว' : 'tickets');
         const tbody = document.getElementById("ticketsTableBody");
         tbody.innerHTML = "";
         if (!cachedTickets.length) {
-            tbody.innerHTML = `<tr><td colspan="8" class="empty-state">🎉 ${t('tkt.none')}</td></tr>`;
+            tbody.innerHTML = `<tr><td colspan="7" class="empty-state">🎉 ${t('tkt.none')}</td></tr>`;
             return;
         }
         cachedTickets.forEach(tk => {
-            const reqName      = tk.requestedPartNav?.partName || tk.requestedPartNo || '—';
-            const approvedName = tk.approvedPartNav?.partName  || tk.approvedPartNo;
-            let badge = "", action = `<span style="color:var(--text-muted)">—</span>`;
-            let issuedPart = approvedName
-                ? `<span class="text-green">${approvedName}</span>`
-                : `<span style="color:var(--text-muted)">${t('tkt.pending.review')}</span>`;
+            const b = STATUS_BADGE[tk.status] || STATUS_BADGE["รอ"];
+            const badge = `<span class="badge ${b.cls}"><span class="badge-dot"></span>${tk.status}</span>`;
 
-            if (tk.status === "Pending") {
-                badge = `<span class="badge badge-pending"><span class="badge-dot"></span>${t('status.pending')}</span>`;
-                const opts = globalParts.map(p => {
-                    const dis = p.stockQuantity <= 0 ? 'disabled' : '';
-                    const sel = p.partNo === tk.requestedPartNo ? 'selected' : '';
-                    return `<option value="${p.partNo}" ${dis} ${sel}>${p.partName} (${p.stockQuantity} ${t('inv.left')})</option>`;
-                }).join('');
+            const partsSummary = tk.lines.map(l =>
+                `<div style="font-size:12px;">${l.partName} <span style="color:var(--text-muted)">×${l.quantity}</span> <span style="font-size:10px;color:var(--text-muted)">(${l.lineType === 'Withdraw' ? 'เบิก' : 'คืน'})</span></div>`
+            ).join('');
+
+            const phaseLabel = tk.phase === 'withdraw'
+                ? `<span style="font-size:11px;color:var(--text-secondary);">ขาเบิก</span>`
+                : `<span style="font-size:11px;color:var(--text-secondary);">ขาคืน</span>`;
+
+            // Admin approve/reject/cancel only applies on the withdraw leg while waiting (รอ).
+            let action;
+            if (tk.status === "รอ" && tk.phase === "withdraw") {
                 action = `
-                    <select id="select-part-${tk.ticketId}" class="select-part">${opts}</select>
-                    <div style="display:flex;gap:6px;">
-                        <button class="btn-approve" onclick="approveTicketWithSelection(${tk.ticketId})">
+                    <div style="display:flex;flex-direction:column;gap:0;">
+                        <button class="btn-approve" onclick="approveTicket(${tk.ticketId})">
                             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
-                            ${t('tkt.approve')}
+                            Approve
                         </button>
-                        <button class="btn-reject" onclick="rejectTicket(${tk.ticketId})">
+                        <button class="btn-reject" onclick="openRejectModal(${tk.ticketId})">
                             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
-                            ${t('tkt.reject')}
+                            Reject
                         </button>
+                        <button class="btn-cancel" onclick="cancelTicket(${tk.ticketId})">Cancel Ticket</button>
                     </div>`;
-            } else if (tk.status === "Approved") {
-                badge = `<span class="badge badge-approved"><span class="badge-dot"></span>${t('status.awaiting')}</span>`;
-            } else if (tk.status === "Rejected") {
-                badge = `<span class="badge badge-danger"><span class="badge-dot"></span>${t('status.rejected')}</span>`;
-                issuedPart = `<span style="color:var(--text-muted)">—</span>`;
-            } else if (tk.status === "Received") {
-                badge = `<span class="badge badge-success"><span class="badge-dot"></span>${t('status.received')}</span>`;
+            } else if (!["Reject", "Cancel", "คืน"].includes(tk.status)) {
+                // Still open (return leg in progress, or in transit) — Admin can only Cancel outright.
+                action = `<button class="btn-cancel" onclick="cancelTicket(${tk.ticketId})">Cancel Ticket</button>`;
+            } else {
+                action = `<span style="color:var(--text-muted)">—</span>`;
             }
 
             tbody.innerHTML += `
                 <tr>
-                    <td><span class="id-chip ticket-id">TK-${tk.ticketId.toString().padStart(4,'0')}</span></td>
-                    <td class="fw-600">${tk.techName}</td>
-                    <td class="fs-13" style="color:var(--text-secondary)">${tk.techDept}</td>
-                    <td>${reqName}</td>
-                    <td>${issuedPart}</td>
+                    <td><span class="id-chip ticket-id">${tk.externalTicketNo}</span></td>
+                    <td class="fw-600">${tk.techName}<div class="fs-13" style="color:var(--text-secondary);font-weight:400;">${tk.techDept}</div></td>
+                    <td>${phaseLabel}</td>
+                    <td>${partsSummary}</td>
                     <td>${badge}</td>
                     <td>${action}</td>
                     <td><button class="btn-detail" onclick="showDetail(${tk.ticketId})">🔍 ${t('detail.btn')}</button></td>
@@ -427,38 +463,40 @@
         });
     }
 
-    async function approveTicketWithSelection(id, forceApprove = false) {
-        const partNo = document.getElementById(`select-part-${id}`).value;
-        const part   = globalParts.find(p => p.partNo === partNo);
-        const label  = part?.partName || partNo;
-        if (!forceApprove && !confirm(t('tkt.confirm.approve').replace('{part}', label))) return;
+    async function approveTicket(id) {
+        if (!confirm('อนุมัติ Ticket นี้? สถานะจะเปลี่ยนเป็น "เดินทาง"')) return;
         try {
-            const res = await fetch(`${TICKET_URL}/${id}/approve`, {
-                method:"PUT", headers:{"Content-Type":"application/json"},
-                body: JSON.stringify({ approvedPartNo: partNo, forceApprove })
-            });
-            if (res.ok) { await fetchParts(); fetchTickets(); }
-            else if (res.status === 409) {
-                const data = await res.json();
-                if (data.bufferWarning) {
-                    const msg = `⚠ ${data.message}\n\nApprove anyway?`;
-                    if (confirm(msg)) approveTicketWithSelection(id, true);
-                } else {
-                    showToast(data.message || t('tkt.err.approve'), 'error');
-                }
-            } else {
-                const data = await res.json().catch(() => ({}));
-                showToast(data.message || t('tkt.err.approve'), 'error');
-            }
-        } catch { showToast(t('toast.network'), 'error'); }
+            await api.tickets.approve(id);
+            await fetchTickets();
+            showToast?.('Ticket approved', 'success');
+        } catch (e) { showToast?.(e.message || t('toast.error'), 'error'); }
     }
 
-    async function rejectTicket(id) {
-        if (!confirm(t('tkt.confirm.reject'))) return;
+    function openRejectModal(id) {
+        rejectTargetId = id;
+        document.getElementById('reasonInput').value = '';
+        document.getElementById('reasonOverlay').classList.add('open');
+    }
+    function closeReasonModal() {
+        document.getElementById('reasonOverlay').classList.remove('open');
+        rejectTargetId = null;
+    }
+    async function confirmReject() {
+        const reason = document.getElementById('reasonInput').value.trim();
+        if (!reason) { showToast?.('กรุณาระบุเหตุผล (บังคับ)', 'error'); return; }
         try {
-            const res = await fetch(`${TICKET_URL}/${id}/reject`, { method:"PUT" });
-            if (res.ok) fetchTickets();
-        } catch {}
+            await api.tickets.reject(rejectTargetId, reason);
+            await fetchTickets();
+        } catch (e) { showToast?.(e.message || t('toast.error'), 'error'); }
+        closeReasonModal();
+    }
+
+    async function cancelTicket(id) {
+        if (!confirm('ยกเลิก Ticket นี้ทั้งใบ? การกระทำนี้ย้อนกลับไม่ได้')) return;
+        try {
+            await api.tickets.cancel(id);
+            await fetchTickets();
+        } catch (e) { showToast?.(e.message || t('toast.error'), 'error'); }
     }
 
     /* ── Ticket Detail Modal ── */
@@ -468,18 +506,17 @@
         const tk = cachedTickets.find(t => t.ticketId === id);
         if (!tk) return;
 
-        const reqName      = tk.requestedPartNav?.partName || tk.requestedPartNo || '—';
-        const approvedName = tk.approvedPartNav?.partName  || tk.approvedPartNo  || '—';
         const none = `<span class="detail-empty">${t('detail.not.specified')}</span>`;
         const fmt  = d => d ? new Date(d).toLocaleString(getLang()==='th' ? 'th-TH' : 'en-GB') : '—';
 
-        const imgHtml = tk.attachmentPath
-            ? `<img src="${IMG_BASE}${tk.attachmentPath}" class="detail-img" alt="Attachment"
-                    onclick="window.open('${IMG_BASE}${tk.attachmentPath}','_blank')">`
-            : `<div style="padding:16px;text-align:center;background:var(--bg-subtle);border-radius:8px;color:var(--text-muted);font-size:13px;">${t('detail.no.image')}</div>`;
+        const withdrawLines = tk.lines.filter(l => l.lineType === 'Withdraw');
+        const returnLines   = tk.lines.filter(l => l.lineType === 'Return');
+        const lineListHtml = list => list.length
+            ? list.map(l => `<div style="display:flex;justify-content:space-between;padding:4px 0;border-bottom:1px solid var(--border);"><span>${l.partName}</span><span class="fw-600">×${l.quantity}</span></div>`).join('')
+            : `<span class="detail-empty">—</span>`;
 
         document.getElementById('detailTitle').textContent =
-            `TK-${id.toString().padStart(4,'0')} — ${tk.techName}`;
+            `${tk.externalTicketNo} — ${tk.techName}`;
 
         document.getElementById('detailBody').innerHTML = `
             <div class="detail-section">
@@ -492,7 +529,7 @@
                         <label>${t('detail.dept')}</label><span>${tk.techDept || none}</span>
                     </div>
                     <div class="detail-field">
-                        <label>${t('detail.phone')}</label><span>${tk.techPhone || none}</span>
+                        <label>Status</label><span>${tk.status} (${tk.phase === 'withdraw' ? 'ขาเบิก' : 'ขาคืน'})</span>
                     </div>
                     <div class="detail-field">
                         <label>${t('detail.date')}</label><span>${fmt(tk.createdAt)}</span>
@@ -503,55 +540,35 @@
             <hr class="detail-divider">
 
             <div class="detail-section">
-                <div class="detail-section-title">${t('detail.parts')}</div>
-                <div class="detail-grid">
-                    <div class="detail-field">
-                        <label>${t('detail.requested')}</label><span>${reqName}</span>
-                    </div>
-                    <div class="detail-field">
-                        <label>${t('detail.approved')}</label><span>${approvedName}</span>
-                    </div>
-                    <div class="detail-field">
-                        <label>${t('detail.status')}</label><span>${tk.status}</span>
-                    </div>
-                    <div class="detail-field">
-                        <label>${t('detail.due')}</label><span>${fmt(tk.dueDate)}</span>
-                    </div>
-                </div>
+                <div class="detail-section-title">รายการอะไหล่ — เบิก</div>
+                ${lineListHtml(withdrawLines)}
+            </div>
+
+            <div class="detail-section">
+                <div class="detail-section-title">รายการอะไหล่ — คืน</div>
+                ${lineListHtml(returnLines)}
             </div>
 
             <hr class="detail-divider">
 
             <div class="detail-section">
-                <div class="detail-section-title">${t('detail.faulty')}</div>
+                <div class="detail-section-title">ที่อยู่จัดส่ง</div>
                 <div class="detail-grid">
                     <div class="detail-field">
-                        <label>${t('detail.sn')}</label>
-                        <span>${tk.faultySerialNo || none}</span>
+                        <label>Withdraw Address</label><span>${tk.withdrawAddress || none}</span>
                     </div>
                     <div class="detail-field">
-                        <label>${t('detail.partno')}</label>
-                        <span>${tk.faultyPartNo || none}</span>
-                    </div>
-                    <div class="detail-field full">
-                        <label>${t('detail.model')}</label>
-                        <span>${tk.machineModel || none}</span>
-                    </div>
-                    <div class="detail-field full">
-                        <label>${t('detail.desc')}</label>
-                        ${tk.description
-                            ? `<div class="detail-desc">${tk.description}</div>`
-                            : none}
+                        <label>Return Address</label><span>${tk.returnAddress || none}</span>
                     </div>
                 </div>
             </div>
 
+            ${tk.rejectReason ? `
             <hr class="detail-divider">
-
             <div class="detail-section">
-                <div class="detail-section-title">${t('detail.attachment')}</div>
-                ${imgHtml}
-            </div>
+                <div class="detail-section-title">เหตุผลที่ Reject</div>
+                <div class="detail-desc">${tk.rejectReason}</div>
+            </div>` : ''}
         `;
 
         document.getElementById('detailOverlay').classList.add('open');

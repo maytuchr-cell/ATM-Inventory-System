@@ -8,6 +8,7 @@ public class AppDbContext : DbContext
 
     public DbSet<Part> Parts { get; set; }
     public DbSet<Ticket> Tickets { get; set; }
+    public DbSet<TicketPartLine> TicketPartLines { get; set; }
     public DbSet<Category> Categories { get; set; }
     public DbSet<Location> Locations { get; set; }
     public DbSet<Vendor> Vendors { get; set; }
@@ -72,19 +73,20 @@ public class AppDbContext : DbContext
             .HasForeignKey(p => p.CategoryId)
             .OnDelete(DeleteBehavior.SetNull);
 
-        // Ticket.RequestedPartNo stores the PartNo string (no FK constraint for SQLite compat)
         modelBuilder.Entity<Ticket>()
-            .Property(t => t.RequestedPartNo)
-            .IsRequired(false);
+            .HasIndex(t => t.ExternalTicketNo)
+            .IsUnique();
 
-        modelBuilder.Entity<Ticket>()
-            .Property(t => t.ApprovedPartNo)
-            .IsRequired(false);
-
-        // Ignore navigation properties — resolve via service layer instead
-        modelBuilder.Entity<Ticket>()
-            .Ignore(t => t.RequestedPartNav)
-            .Ignore(t => t.ApprovedPartNav);
+        modelBuilder.Entity<TicketPartLine>()
+            .HasOne(l => l.Ticket)
+            .WithMany(t => t.Lines)
+            .HasForeignKey(l => l.TicketId)
+            .OnDelete(DeleteBehavior.Cascade);
+        modelBuilder.Entity<TicketPartLine>()
+            .HasOne(l => l.Part)
+            .WithMany()
+            .HasForeignKey(l => l.PartId)
+            .OnDelete(DeleteBehavior.Restrict);
 
         // AuditLog index for fast lookup by entity
         modelBuilder.Entity<AuditLog>()

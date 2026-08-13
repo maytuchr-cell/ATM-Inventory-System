@@ -117,23 +117,31 @@ public class DashboardController : ControllerBase
     public IActionResult GetRecurrentFailures(int days = 30)
     {
         var cutoff = DateTime.Now.AddDays(-days);
-        var tickets = _context.Tickets
-            .Where(t => t.CreatedAt >= cutoff && t.RequestedPartNo != null)
+        var ticketIds = _context.Tickets
+            .Where(t => t.CreatedAt >= cutoff)
+            .Select(t => t.TicketId)
+            .ToHashSet();
+        var techByTicket = _context.Tickets
+            .Where(t => ticketIds.Contains(t.TicketId))
+            .ToDictionary(t => t.TicketId, t => t.TechName);
+
+        var lines = _context.TicketPartLines
+            .Where(l => ticketIds.Contains(l.TicketId) && l.LineType == "Withdraw")
             .ToList();
 
         var partMap = _context.Parts.ToDictionary(p => p.PartNo, p => p.PartName);
 
-        var grouped = tickets
-            .GroupBy(t => new { t.TechId, t.TechName, t.RequestedPartNo })
+        var grouped = lines
+            .GroupBy(l => new { TechName = techByTicket.GetValueOrDefault(l.TicketId, "—"), l.PartNo })
             .Where(g => g.Count() > 1)
             .Select(g => new
             {
                 techName = g.Key.TechName,
-                partNo   = g.Key.RequestedPartNo,
-                partName = g.Key.RequestedPartNo != null && partMap.TryGetValue(g.Key.RequestedPartNo, out var pn) ? pn : g.Key.RequestedPartNo,
+                partNo   = g.Key.PartNo,
+                partName = partMap.GetValueOrDefault(g.Key.PartNo, g.Key.PartNo),
                 count    = g.Count(),
-                firstRequested = g.Min(t => t.CreatedAt),
-                lastRequested  = g.Max(t => t.CreatedAt),
+                firstRequested = g.Min(l => l.CreatedAt),
+                lastRequested  = g.Max(l => l.CreatedAt),
             })
             .OrderByDescending(x => x.count)
             .ToList();

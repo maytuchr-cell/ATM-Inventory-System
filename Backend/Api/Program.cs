@@ -19,12 +19,17 @@ builder.Services.AddControllers().AddJsonOptions(options =>
 });
 builder.Services.AddEndpointsApiExplorer();
 
-// SQLite for demo — switch to MySQL for production.
-// For MySQL: set ConnectionStrings:DefaultConnection (e.g. "server=localhost;port=3306;database=atm_inventory;user=root;password=...")
-// and swap the line below to:
-//   options.UseMySQL(builder.Configuration.GetConnectionString("DefaultConnection")!);
+// Provider chosen by config: "DatabaseProvider": "MySql" | "Sqlite" (default Sqlite for local dev).
+// Production sets DatabaseProvider=MySql + ConnectionStrings:DefaultConnection in appsettings.Production.json.
+var dbProvider = builder.Configuration["DatabaseProvider"] ?? "Sqlite";
+var connStr = builder.Configuration.GetConnectionString("DefaultConnection");
 builder.Services.AddDbContext<AppDbContext>(options =>
-    options.UseSqlite(builder.Configuration.GetConnectionString("DefaultConnection") ?? "Data Source=AtmInventory.db"));
+{
+    if (dbProvider.Equals("MySql", StringComparison.OrdinalIgnoreCase))
+        options.UseMySQL(connStr ?? throw new InvalidOperationException("ConnectionStrings:DefaultConnection is required when DatabaseProvider=MySql."));
+    else
+        options.UseSqlite(connStr ?? "Data Source=AtmInventory.db");
+});
 
 builder.Services.AddScoped<StockService>();
 builder.Services.AddScoped<AuditService>();
@@ -150,6 +155,59 @@ using (var scope = app.Services.CreateScope())
                 "CREATE UNIQUE INDEX IF NOT EXISTS IX_PartUnits_SerialNo ON PartUnits (SerialNo);");
         }
         catch (Exception mex) { Console.WriteLine($"⚠ PartUnit migration skipped: {mex.Message}"); }
+
+        // ── Lightweight migration: rebuild Tickets on the new เบิก/ยืม/คืน schema, add
+        //    TicketPartLines. Old Tickets rows used the single-part-request model — there is no
+        //    lossless column mapping to the new multi-part/Aservice-sync model, so on an
+        //    existing dev DB still on the old schema we drop and recreate empty (demo seed data
+        //    below repopulates it). New/already-migrated DBs are left untouched. ──
+        if (isSqlite) try
+        {
+            var ticketCols = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            using (var cmd = context.Database.GetDbConnection().CreateCommand())
+            {
+                if (cmd.Connection!.State != System.Data.ConnectionState.Open) cmd.Connection.Open();
+                cmd.CommandText = "PRAGMA table_info(Tickets);";
+                using var reader = cmd.ExecuteReader();
+                while (reader.Read()) ticketCols.Add(reader.GetString(1));
+            }
+            if (ticketCols.Contains("RequestedPartNo"))
+            {
+                context.Database.ExecuteSqlRaw("DROP TABLE IF EXISTS Tickets;");
+                context.Database.ExecuteSqlRaw(@"
+                    CREATE TABLE Tickets (
+                        TicketId INTEGER NOT NULL CONSTRAINT PK_Tickets PRIMARY KEY AUTOINCREMENT,
+                        ExternalTicketNo TEXT NOT NULL,
+                        TechEmail TEXT NOT NULL,
+                        TechName TEXT NOT NULL,
+                        TechDept TEXT NOT NULL,
+                        Status TEXT NULL,
+                        RejectReason TEXT NULL,
+                        ApproverName TEXT NULL,
+                        ApprovedAt TEXT NULL,
+                        WithdrawAddress TEXT NULL,
+                        ReturnAddress TEXT NULL,
+                        CreatedAt TEXT NOT NULL,
+                        UpdatedAt TEXT NOT NULL
+                    );");
+                context.Database.ExecuteSqlRaw(
+                    "CREATE UNIQUE INDEX IF NOT EXISTS IX_Tickets_ExternalTicketNo ON Tickets (ExternalTicketNo);");
+                Console.WriteLine("✅ Migration: rebuilt Tickets on the เบิก/ยืม/คืน schema");
+            }
+            context.Database.ExecuteSqlRaw(@"
+                CREATE TABLE IF NOT EXISTS TicketPartLines (
+                    TicketPartLineId INTEGER NOT NULL CONSTRAINT PK_TicketPartLines PRIMARY KEY AUTOINCREMENT,
+                    TicketId INTEGER NOT NULL,
+                    PartId INTEGER NOT NULL,
+                    PartNo TEXT NOT NULL,
+                    Quantity INTEGER NOT NULL,
+                    LineType TEXT NOT NULL,
+                    CreatedAt TEXT NOT NULL,
+                    CONSTRAINT FK_TicketPartLines_Tickets FOREIGN KEY (TicketId) REFERENCES Tickets (TicketId) ON DELETE CASCADE,
+                    CONSTRAINT FK_TicketPartLines_Parts FOREIGN KEY (PartId) REFERENCES Parts (Id) ON DELETE RESTRICT
+                );");
+        }
+        catch (Exception mex) { Console.WriteLine($"⚠ Tickets/TicketPartLines migration skipped: {mex.Message}"); }
 
         // ── Lightweight migration: add StockMovement.PartId (FK to Part) on existing DBs ──
         if (isSqlite) try
@@ -1015,75 +1073,8 @@ using (var scope = app.Services.CreateScope())
             Console.WriteLine("✅ ATM Models (GRG) seeded.");
         }
 
-        // ── Tickets (rich demo data) ──
-        if (!context.Tickets.Any())
-        {
-            context.Tickets.AddRange(
-
-                // ✅ Overdue — received but past SLA (admin history)
-                new Ticket {
-                    TechEmail="tech@atm.com", TechName="Somchai Saichill",
-                    TechDept="North Zone", TechPhone="081-111-1111",
-                    RequestedPartNo="ATM-001", ApprovedPartNo="ATM-001",
-                    Status="Received",
-                    CreatedAt=DateTime.Now.AddDays(-12),
-                    ReceivedAt=DateTime.Now.AddDays(-10),
-                    DueDate=DateTime.Now.AddDays(-5)      // overdue by 5 days
-                },
-
-                // ✅ Received on time (admin history)
-                new Ticket {
-                    TechEmail="tech@atm.com", TechName="Somying Wingwai",
-                    TechDept="Central Zone", TechPhone="082-222-2222",
-                    RequestedPartNo="ATM-004", ApprovedPartNo="ATM-004",
-                    Status="Received",
-                    CreatedAt=DateTime.Now.AddDays(-5),
-                    ReceivedAt=DateTime.Now.AddDays(-4),
-                    DueDate=DateTime.Now.AddDays(1)       // still within SLA
-                },
-
-                // ✅ Approved — awaiting pickup (tech sees this to confirm receive)
-                new Ticket {
-                    TechEmail="tech@atm.com", TechName="Somkiat Suchivit",
-                    TechDept="South Zone", TechPhone="083-333-3333",
-                    RequestedPartNo="ATM-006", ApprovedPartNo="ATM-006",
-                    Status="Approved",
-                    CreatedAt=DateTime.Now.AddDays(-2)
-                },
-
-                // 🟡 Pending — waiting for admin approval (admin sees approve/reject)
-                new Ticket {
-                    TechEmail="tech@atm.com", TechName="Wanchai Deeprom",
-                    TechDept="East Zone", TechPhone="084-444-4444",
-                    RequestedPartNo="ATM-002",
-                    Status="Pending",
-                    CreatedAt=DateTime.Now.AddDays(-1)
-                },
-
-                // 🟡 Pending — second request
-                new Ticket {
-                    TechEmail="tech@atm.com", TechName="Nattapong Ruanrit",
-                    TechDept="West Zone", TechPhone="085-555-5555",
-                    RequestedPartNo="ATM-008",
-                    Status="Pending",
-                    CreatedAt=DateTime.Now.AddHours(-3)
-                },
-
-                // ❌ Rejected (admin history)
-                new Ticket {
-                    TechEmail="tech@atm.com", TechName="Somkiat Suchivit",
-                    TechDept="South Zone", TechPhone="083-333-3333",
-                    RequestedPartNo="ATM-003",
-                    Status="Rejected",
-                    CreatedAt=DateTime.Now.AddDays(-3)
-                }
-            );
-            context.SaveChanges();
-            Console.WriteLine("✅ Tickets seeded.");
-        }
-
-        // ── Demo parts referenced by the serial-tracking demo (create-if-missing, ungated) ──
-        // These must exist as real Parts so StockMovement.PartId (FK) resolves on every DB.
+        // ── Demo parts referenced by Tickets/serial-tracking demo (create-if-missing, ungated) ──
+        // These must exist as real Parts so PartId/StockMovement FKs resolve on every DB.
         var demoParts = new[] {
             ("ATM-001", "Cash Dispenser Module (demo)"),
             ("ATM-002", "Bunch Note Acceptor (demo)"),
@@ -1099,6 +1090,62 @@ using (var scope = app.Services.CreateScope())
         }
         context.SaveChanges();
         int DemoPartId(string pn) => context.Parts.First(p => p.PartNo == pn).Id;
+
+        // ── Tickets (rich demo data — เบิก/ยืม/คืน synced from Aservice) ──
+        if (!context.Tickets.Any())
+        {
+            void SeedTicket(string extNo, string techName, string techDept, string status,
+                string partNo, int daysAgo, string? withdrawAddr = "Demo Address", string? returnAddr = null)
+            {
+                var ticket = new Ticket
+                {
+                    ExternalTicketNo = extNo, TechEmail = "tech@atm.com", TechName = techName, TechDept = techDept,
+                    Status = status, WithdrawAddress = withdrawAddr, ReturnAddress = returnAddr,
+                    ApproverName = status is "เดินทาง" or "เบิก" or "คืน" ? "admin@atm.com" : null,
+                    ApprovedAt = status is "เดินทาง" or "เบิก" or "คืน" ? DateTime.Now.AddDays(-daysAgo + 1) : null,
+                    CreatedAt = DateTime.Now.AddDays(-daysAgo), UpdatedAt = DateTime.Now.AddDays(-daysAgo + 1),
+                };
+                context.Tickets.Add(ticket);
+                context.SaveChanges();
+                if (status != null)
+                {
+                    context.TicketPartLines.Add(new TicketPartLine
+                    { TicketId = ticket.TicketId, PartId = context.Parts.First(p => p.PartNo == partNo).Id,
+                      PartNo = partNo, Quantity = 1, LineType = "Withdraw" });
+                    if (returnAddr != null)
+                        context.TicketPartLines.Add(new TicketPartLine
+                        { TicketId = ticket.TicketId, PartId = context.Parts.First(p => p.PartNo == partNo).Id,
+                          PartNo = partNo, Quantity = 1, LineType = "Return" });
+                    context.SaveChanges();
+                }
+            }
+
+            // เบิก — received, closed withdraw leg (admin history)
+            SeedTicket("ASV-SEED-001", "Somchai Saichill", "North Zone", "เบิก", "ATM-001", 12);
+            // คืน — full round trip completed (admin history)
+            SeedTicket("ASV-SEED-002", "Somying Wingwai", "Central Zone", "คืน", "ATM-004", 5, returnAddr: "DHL Hub Central");
+            // เดินทาง — approved, awaiting tech pickup (tech confirms receipt)
+            SeedTicket("ASV-SEED-003", "Somkiat Suchivit", "South Zone", "เดินทาง", "ATM-006", 2);
+            // รอ — waiting for admin approval (admin sees approve/reject/cancel)
+            SeedTicket("ASV-SEED-004", "Wanchai Deeprom", "East Zone", "รอ", "ATM-002", 1);
+            // รอ — second waiting request
+            SeedTicket("ASV-SEED-005", "Nattapong Ruanrit", "West Zone", "รอ", "ATM-008", 0);
+            // Reject (admin history)
+            var rejected = new Ticket
+            {
+                ExternalTicketNo = "ASV-SEED-006", TechEmail = "tech@atm.com", TechName = "Somkiat Suchivit",
+                TechDept = "South Zone", Status = "Reject", RejectReason = "อะไหล่ไม่ตรงกับรุ่นเครื่อง",
+                WithdrawAddress = "Demo Address", CreatedAt = DateTime.Now.AddDays(-3), UpdatedAt = DateTime.Now.AddDays(-3),
+            };
+            context.Tickets.Add(rejected);
+            context.SaveChanges();
+            context.TicketPartLines.Add(new TicketPartLine
+            { TicketId = rejected.TicketId, PartId = context.Parts.First(p => p.PartNo == "ATM-003").Id,
+              PartNo = "ATM-003", Quantity = 1, LineType = "Withdraw" });
+            context.SaveChanges();
+
+            Console.WriteLine("✅ Tickets seeded.");
+        }
 
         // ── Serial Tracking demo data ──────────────────────────────────────────
         // Seeds GoodsReceipts + StockMovements with SerialNo so the tracking

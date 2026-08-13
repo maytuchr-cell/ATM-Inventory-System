@@ -1,39 +1,31 @@
 namespace Api.Models;
 
+// เบิก/ยืม/คืน — Ticket synced from Aservice. One ticket carries both the withdraw leg and the
+// return leg; TicketPartLine holds the actual part quantities for each leg (LineType).
 public class Ticket
 {
     public int TicketId { get; set; }
 
-    // Technician info
+    public string ExternalTicketNo { get; set; } = string.Empty; // Aservice ticket no. — dedupe key for sync
+
+    // Technician (no separate Technician table in this codebase — kept inline as on the old Ticket)
     public string TechEmail { get; set; } = string.Empty;
-    public string TechId { get; set; } = string.Empty;
-    public string TechName { get; set; } = string.Empty;
-    public string TechPhone { get; set; } = string.Empty;
-    public string TechDept { get; set; } = string.Empty;
+    public string TechName  { get; set; } = string.Empty;
+    public string TechDept  { get; set; } = string.Empty;
 
-    // Part references (FK → Part.PartNo)
-    public string? RequestedPartNo { get; set; }
-    public string? ApprovedPartNo { get; set; }
-    public Part? RequestedPartNav { get; set; }
-    public Part? ApprovedPartNav { get; set; }
+    // null = synced from Aservice but the technician hasn't submitted a withdraw request yet.
+    // รอ / เดินทาง / เบิก / คืน / Reject / Cancel
+    public string? Status { get; set; }
 
-    // Defective part info (filled by tech)
-    public string? FaultySerialNo  { get; set; }   // S/N of broken part
-    public string? FaultyPartNo    { get; set; }   // Part number of broken part
-    public string? MachineModel    { get; set; }   // ATM machine model
-    public string? Description     { get; set; }   // Issue description
-    public string? AttachmentPath  { get; set; }   // Uploaded image path
+    public string? RejectReason { get; set; }   // required only when Status = Reject
+    public string? ApproverName { get; set; }
+    public DateTime? ApprovedAt { get; set; }
 
-    // Issue & Withdrawal enhancement (FR-IW-01, FR-IW-05)
-    public string? MainCause     { get; set; }   // Main fault cause referenced by the technician
-    public decimal? LogisticsCost { get; set; }   // Actual cost incurred issuing this part
+    public string? WithdrawAddress { get; set; }
+    public string? ReturnAddress  { get; set; }
 
-    public string Status { get; set; } = "Pending";
+    public DateTime CreatedAt { get; set; } = DateTime.Now;
+    public DateTime UpdatedAt { get; set; } = DateTime.Now;
 
-    // FR-MC-04: technician reports a part as Dead on Arrival right after receiving it
-    public bool IsDOA { get; set; }
-
-    public DateTime CreatedAt { get; set; }
-    public DateTime? ReceivedAt { get; set; }
-    public DateTime? DueDate { get; set; }
+    public ICollection<TicketPartLine> Lines { get; set; } = new List<TicketPartLine>();
 }

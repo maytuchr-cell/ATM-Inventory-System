@@ -31,17 +31,6 @@
       items: [
         { key: 'nav.goodsreceipt', href: 'admin-goods-receipt.html', icon: 'solar:box-bold',                adminOnly: true },
         { key: 'nav.returns',      href: 'admin-returns.html',       icon: 'streamline:return-2-solid',     adminOnly: true },
-        { key: 'nav.transfers',    href: 'admin-transfers.html',     icon: 'streamline:transfer-van-solid', adminOnly: true },
-      ]
-    },
-    {
-      key: 'nav.group.stockcontrol',
-      labelEN: 'Stock Control', labelTH: 'ควบคุมสต็อก',
-      icon: 'mdi:counter',
-      adminOnly: true,
-      items: [
-        { key: 'nav.stockcount', href: 'admin-stockcount.html', icon: 'mdi:counter',         adminOnly: true },
-        { key: 'nav.disposal',   href: 'admin-disposal.html',   icon: 'fa6-solid:trash-can', adminOnly: true },
       ]
     },
     {
@@ -50,7 +39,6 @@
       icon: 'mdi:file-report',
       adminOnly: true,
       items: [
-        { key: 'nav.reports',  href: 'admin-reports.html',  icon: 'mdi:file-report',            adminOnly: true },
         { key: 'nav.history',  href: 'admin-history.html',  icon: 'ic:outline-history',         adminOnly: true },
         { key: 'nav.tracking', href: 'admin-tracking.html', icon: 'mdi:magnify',                adminOnly: true },
       ]

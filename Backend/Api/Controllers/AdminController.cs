@@ -39,8 +39,7 @@ public class AdminController : ControllerBase
         Add("EquivalentGroupMembers", "PartNo", OrphanByPartNo(_context.EquivalentGroupMembers.Select(x => x.PartNo)));
         Add("EquivalentParts", "OriginalPartNo", OrphanByPartNo(_context.EquivalentParts.Select(x => x.OriginalPartNo)));
         Add("EquivalentParts", "EquivalentPartNo", OrphanByPartNo(_context.EquivalentParts.Select(x => x.EquivalentPartNo)));
-        Add("Tickets", "RequestedPartNo", OrphanByPartNo(_context.Tickets.Select(x => x.RequestedPartNo)));
-        Add("Tickets", "ApprovedPartNo", OrphanByPartNo(_context.Tickets.Select(x => x.ApprovedPartNo)));
+        Add("TicketPartLines", "PartNo", OrphanByPartNo(_context.TicketPartLines.Select(x => x.PartNo)));
 
         // ---- 2) Reconciliation: on-hand stock vs net of the movement ledger ----
         // Every stock change writes a movement (To = in, From = out), so for each part

@@ -132,109 +132,100 @@ public class DemoController : ControllerBase
 
         _context.SaveChanges();
 
-        // ── Tickets ────────────────────────────────────────────────────────
+        // ── Tickets (เบิก/ยืม/คืน — synced from Aservice) ────────────────────
         var techs = new[]
         {
-            ("T001","สมชาย จริงใจ","somchai@tech.com","081-111-1111","Field Team A"),
-            ("T002","วิภา สุขใส",  "wipa@tech.com",   "082-222-2222","Field Team B"),
-            ("T003","ประยุทธ์ ดีดี","prayuth@tech.com","083-333-3333","Field Team C"),
-            ("T004","มาลี รุ่งเรือง","malee@tech.com", "084-444-4444","Maintenance"),
-            ("T005","สุพัตรา ใจดี", "supatra@tech.com","085-555-5555","Field Team A"),
+            ("สมชาย จริงใจ","somchai@tech.com","Field Team A"),
+            ("วิภา สุขใส",  "wipa@tech.com",   "Field Team B"),
+            ("ประยุทธ์ ดีดี","prayuth@tech.com","Field Team C"),
+            ("มาลี รุ่งเรือง","malee@tech.com", "Maintenance"),
+            ("สุพัตรา ใจดี", "supatra@tech.com","Field Team A"),
         };
 
-        var models = new[] { "GRG-H22N", "GRG-H22NL", "GRG-H68N", "GRG-C6", "GRG-S90N" };
-        var causes = new[] { "Hardware failure", "Wear and tear", "Power surge damage", "Physical damage", "Software conflict" };
+        TicketPartLine Line(int ticketId, Part p, int qty, string lineType) => new()
+        { TicketId = ticketId, PartId = p.Id, PartNo = p.PartNo, Quantity = qty, LineType = lineType };
 
-        // Ticket 1 — Received (เบิกแล้ว ช่างได้รับแล้ว)
+        // Ticket 1 — เบิก (ช่างได้รับของแล้ว)
         var p1 = parts[2];
         var tk1 = new Ticket
         {
-            TechId = techs[0].Item1, TechName = techs[0].Item2, TechEmail = techs[0].Item3,
-            TechPhone = techs[0].Item4, TechDept = techs[0].Item5,
-            RequestedPartNo = p1.PartNo, ApprovedPartNo = p1.PartNo,
-            MachineModel = models[0], FaultySerialNo = "SN-OLD-001", FaultyPartNo = p1.PartNo,
-            Description = "Card reader ไม่ดึงบัตร ATM เนื่องจากหัวอ่านสกปรก",
-            MainCause = causes[0], LogisticsCost = 250m,
-            Status = "Received", CreatedAt = DateTime.Now.AddDays(-30),
-            ReceivedAt = DateTime.Now.AddDays(-28),
+            ExternalTicketNo = "ASV-DEMO-001", TechName = techs[0].Item1, TechEmail = techs[0].Item2, TechDept = techs[0].Item3,
+            Status = "เบิก", WithdrawAddress = "สาขาสยาม กทม.",
+            ApproverName = "admin@atm.com", ApprovedAt = DateTime.Now.AddDays(-29),
+            CreatedAt = DateTime.Now.AddDays(-30), UpdatedAt = DateTime.Now.AddDays(-28),
         };
         _context.Tickets.Add(tk1);
         _context.SaveChanges();
+        _context.TicketPartLines.Add(Line(tk1.TicketId, p1, 1, "Withdraw"));
+        _context.SaveChanges();
         _stock.AdjustStock(p1.PartNo, locDhl.Id, -1, "Good",
-            "Issue", "Ticket", tk1.TicketId.ToString(), techs[0].Item2, "เบิกให้ช่าง " + techs[0].Item2);
+            "Issue", "Ticket", tk1.TicketId.ToString(), techs[0].Item1, "เบิกให้ช่าง " + techs[0].Item1);
         _context.SaveChanges();
 
-        // Ticket 2 — Approved (อนุมัติแล้ว รอช่างรับ)
+        // Ticket 2 — เดินทาง (admin อนุมัติแล้ว รอช่างรับ)
         var p2 = parts[5];
         var tk2 = new Ticket
         {
-            TechId = techs[1].Item1, TechName = techs[1].Item2, TechEmail = techs[1].Item3,
-            TechPhone = techs[1].Item4, TechDept = techs[1].Item5,
-            RequestedPartNo = p2.PartNo, ApprovedPartNo = p2.PartNo,
-            MachineModel = models[1], FaultySerialNo = "SN-OLD-002",
-            Description = "Printer ไม่พิมพ์สลิป กระดาษติดบ่อย",
-            MainCause = causes[1], LogisticsCost = 0m,
-            Status = "Approved", CreatedAt = DateTime.Now.AddDays(-5),
+            ExternalTicketNo = "ASV-DEMO-002", TechName = techs[1].Item1, TechEmail = techs[1].Item2, TechDept = techs[1].Item3,
+            Status = "เดินทาง", WithdrawAddress = "สาขาลาดพร้าว กทม.",
+            ApproverName = "admin@atm.com", ApprovedAt = DateTime.Now.AddDays(-4),
+            CreatedAt = DateTime.Now.AddDays(-5), UpdatedAt = DateTime.Now.AddDays(-4),
         };
         _context.Tickets.Add(tk2);
         _context.SaveChanges();
+        _context.TicketPartLines.Add(Line(tk2.TicketId, p2, 1, "Withdraw"));
+        _context.SaveChanges();
         _stock.AdjustStock(p2.PartNo, locDhl.Id, -1, "Good",
-            "Issue", "Ticket", tk2.TicketId.ToString(), techs[1].Item2, "อนุมัติเบิก");
+            "Issue", "Ticket", tk2.TicketId.ToString(), techs[1].Item1, "อนุมัติเบิก");
         _context.SaveChanges();
 
-        // Ticket 3 — Pending (รอ admin อนุมัติ)
+        // Ticket 3 — รอ (รอ admin อนุมัติ)
         var p3 = parts[8];
         var tk3 = new Ticket
         {
-            TechId = techs[2].Item1, TechName = techs[2].Item2, TechEmail = techs[2].Item3,
-            TechPhone = techs[2].Item4, TechDept = techs[2].Item5,
-            RequestedPartNo = p3.PartNo,
-            MachineModel = models[2],
-            Description = "EPP keyboard บางปุ่มไม่ทำงาน",
-            Status = "Pending", CreatedAt = DateTime.Now.AddDays(-2),
-            DueDate = DateTime.Now.AddDays(5),
+            ExternalTicketNo = "ASV-DEMO-003", TechName = techs[2].Item1, TechEmail = techs[2].Item2, TechDept = techs[2].Item3,
+            Status = "รอ", WithdrawAddress = "สาขาบางนา กทม.",
+            CreatedAt = DateTime.Now.AddDays(-2), UpdatedAt = DateTime.Now.AddDays(-2),
         };
         _context.Tickets.Add(tk3);
         _context.SaveChanges();
+        _context.TicketPartLines.Add(Line(tk3.TicketId, p3, 1, "Withdraw"));
+        _context.SaveChanges();
 
-        // Ticket 4 — Received (ยืม — มี DueDate)
+        // Ticket 4 — รอ (ขาคืน — ช่างส่งคำขอคืนแล้ว รอจัดส่ง)
         var p4 = parts[12];
         var tk4 = new Ticket
         {
-            TechId = techs[3].Item1, TechName = techs[3].Item2, TechEmail = techs[3].Item3,
-            TechPhone = techs[3].Item4, TechDept = techs[3].Item5,
-            RequestedPartNo = p4.PartNo, ApprovedPartNo = p4.PartNo,
-            MachineModel = models[3],
-            Description = "ยืม LCD monitor สำรองระหว่างรอซ่อม",
-            MainCause = causes[2],
-            Status = "Received", CreatedAt = DateTime.Now.AddDays(-10),
-            ReceivedAt = DateTime.Now.AddDays(-9),
-            DueDate = DateTime.Now.AddDays(5),
+            ExternalTicketNo = "ASV-DEMO-004", TechName = techs[3].Item1, TechEmail = techs[3].Item2, TechDept = techs[3].Item3,
+            Status = "รอ", WithdrawAddress = "สาขารามคำแหง กทม.", ReturnAddress = "DHL Hub รามคำแหง",
+            ApproverName = "admin@atm.com", ApprovedAt = DateTime.Now.AddDays(-9),
+            CreatedAt = DateTime.Now.AddDays(-10), UpdatedAt = DateTime.Now.AddDays(-1),
         };
         _context.Tickets.Add(tk4);
         _context.SaveChanges();
+        _context.TicketPartLines.Add(Line(tk4.TicketId, p4, 1, "Withdraw"));
+        _context.TicketPartLines.Add(Line(tk4.TicketId, p4, 1, "Return"));
+        _context.SaveChanges();
         _stock.AdjustStock(p4.PartNo, locDhl.Id, -1, "Good",
-            "Issue", "Ticket", tk4.TicketId.ToString(), techs[3].Item2, "ยืมชั่วคราว");
+            "Issue", "Ticket", tk4.TicketId.ToString(), techs[3].Item1, "เบิกให้ช่าง " + techs[3].Item1);
         _context.SaveChanges();
 
-        // Ticket 5 — Pending เกิน DueDate (overdue loan)
+        // Ticket 5 — คืน (จบขาคืนแล้ว)
         var p5 = parts[15];
         var tk5 = new Ticket
         {
-            TechId = techs[4].Item1, TechName = techs[4].Item2, TechEmail = techs[4].Item3,
-            TechPhone = techs[4].Item4, TechDept = techs[4].Item5,
-            RequestedPartNo = p5.PartNo, ApprovedPartNo = p5.PartNo,
-            MachineModel = models[4],
-            Description = "Power supply board เสีย เครื่องไม่ติด",
-            MainCause = causes[3],
-            Status = "Received", CreatedAt = DateTime.Now.AddDays(-20),
-            ReceivedAt = DateTime.Now.AddDays(-19),
-            DueDate = DateTime.Now.AddDays(-3), // overdue!
+            ExternalTicketNo = "ASV-DEMO-005", TechName = techs[4].Item1, TechEmail = techs[4].Item2, TechDept = techs[4].Item3,
+            Status = "คืน", WithdrawAddress = "สาขาสีลม กทม.", ReturnAddress = "DHL Hub สีลม",
+            ApproverName = "admin@atm.com", ApprovedAt = DateTime.Now.AddDays(-19),
+            CreatedAt = DateTime.Now.AddDays(-20), UpdatedAt = DateTime.Now.AddDays(-3),
         };
         _context.Tickets.Add(tk5);
         _context.SaveChanges();
+        _context.TicketPartLines.Add(Line(tk5.TicketId, p5, 1, "Withdraw"));
+        _context.TicketPartLines.Add(Line(tk5.TicketId, p5, 1, "Return"));
+        _context.SaveChanges();
         _stock.AdjustStock(p5.PartNo, locDhl.Id, -1, "Good",
-            "Issue", "Ticket", tk5.TicketId.ToString(), techs[4].Item2, "ยืม overdue");
+            "Issue", "Ticket", tk5.TicketId.ToString(), techs[4].Item1, "เบิกให้ช่าง " + techs[4].Item1);
         _context.SaveChanges();
 
         // ── Return ─────────────────────────────────────────────────────────
@@ -247,13 +238,13 @@ public class DemoController : ControllerBase
             SourceType     = "Technician",
             LocationFromId = locOl.Id,
             LocationToId   = locScrap.Id,
-            ReturnedBy     = techs[0].Item2,
+            ReturnedBy     = techs[0].Item1,
             CreatedAt      = DateTime.Now.AddDays(-25),
         };
         _context.ReturnRequests.Add(ret1);
         _context.SaveChanges();
         _stock.AdjustStock(p1.PartNo, locScrap.Id, 1, "Defective",
-            "Return", "Ticket", tk1.TicketId.ToString(), techs[0].Item2, "คืนอะไหล่ชำรุด");
+            "Return", "Ticket", tk1.TicketId.ToString(), techs[0].Item1, "คืนอะไหล่ชำรุด");
         _context.SaveChanges();
 
         var summary = new
@@ -276,6 +267,7 @@ public class DemoController : ControllerBase
     public IActionResult Clear()
     {
         _context.ReturnRequests.RemoveRange(_context.ReturnRequests);
+        _context.TicketPartLines.RemoveRange(_context.TicketPartLines);
         _context.Tickets.RemoveRange(_context.Tickets);
         _context.GoodsReceiptLines.RemoveRange(_context.GoodsReceiptLines);
         _context.GoodsReceipts.RemoveRange(_context.GoodsReceipts);

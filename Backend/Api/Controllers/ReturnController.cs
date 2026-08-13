@@ -39,57 +39,54 @@ public class ReturnController : ControllerBase
         return Ok(result);
     }
 
-    // GET /api/Return/on-hand — tickets received by techs that have NOT yet been returned (FR-RT-03)
+    // GET /api/Return/on-hand — tickets currently withdrawn (เบิก) by techs, not yet returned
     [HttpGet("on-hand")]
     public IActionResult GetOnHand()
     {
-        var returnedTicketIds = _context.ReturnRequests.Select(r => r.TicketId).ToHashSet();
-
         var onHand = _context.Tickets
-            .Where(t => t.Status == "Received" && !returnedTicketIds.Contains(t.TicketId))
-            .OrderBy(t => t.ReceivedAt)
+            .Where(t => t.Status == "เบิก")
+            .OrderBy(t => t.UpdatedAt)
             .ToList();
 
-        var partMap = _context.Parts.ToDictionary(p => p.PartNo, p => p.PartName);
+        var lines = _context.TicketPartLines
+            .Where(l => onHand.Select(t => t.TicketId).Contains(l.TicketId) && l.LineType == "Withdraw")
+            .ToList();
 
         var result = onHand.Select(t => new
         {
-            t.TicketId, t.TechName, t.TechDept, t.TechPhone,
-            t.ApprovedPartNo, t.ReceivedAt, t.DueDate,
-            partName  = t.ApprovedPartNo != null ? partMap.GetValueOrDefault(t.ApprovedPartNo, t.ApprovedPartNo) : null,
-            isOverdue = t.DueDate.HasValue && DateTime.Now > t.DueDate.Value
+            t.TicketId, t.ExternalTicketNo, t.TechName, t.TechDept,
+            lines = lines.Where(l => l.TicketId == t.TicketId).Select(l => new { l.PartNo, l.Quantity })
         });
 
         return Ok(result);
     }
 
-    // POST /api/Return
+    // POST /api/Return — warehouse-side return of a part previously withdrawn on a Ticket
     [HttpPost]
     public IActionResult Create([FromBody] ReturnCreateDto dto)
     {
         var ticket = _context.Tickets.FirstOrDefault(t => t.TicketId == dto.TicketId);
         if (ticket == null) return NotFound(new { message = "Ticket not found." });
-        if (ticket.Status != "Received")
-            return BadRequest(new { message = "Only parts from a Received ticket can be returned." });
+        if (ticket.Status != "เบิก")
+            return BadRequest(new { message = "Only parts from a withdrawn (เบิก) ticket can be returned." });
 
-        if (_context.ReturnRequests.Any(r => r.TicketId == dto.TicketId))
-            return BadRequest(new { message = "This ticket has already been returned." });
-
-        // FR-RT-02 rule #1: PartNo must match the ticket's approved part...
-        bool isMatch = dto.PartNo == ticket.ApprovedPartNo;
+        // FR-RT-02 rule #1: PartNo must match one of the ticket's withdrawn parts...
+        var withdrawnPartNos = _context.TicketPartLines
+            .Where(l => l.TicketId == dto.TicketId && l.LineType == "Withdraw")
+            .Select(l => l.PartNo)
+            .ToHashSet();
+        bool isMatch = withdrawnPartNos.Contains(dto.PartNo);
         // ...rule #2 exception: parts in the same EquivalentGroup (FR1-02) are interchangeable
         bool isEquivalent = false;
-        if (!isMatch && ticket.ApprovedPartNo != null)
+        if (!isMatch)
         {
-            // Legacy pairwise check
             isEquivalent = _context.EquivalentParts.Any(e =>
-                e.OriginalPartNo == ticket.ApprovedPartNo && e.EquivalentPartNo == dto.PartNo);
+                withdrawnPartNos.Contains(e.OriginalPartNo) && e.EquivalentPartNo == dto.PartNo);
 
-            // Group-based check (FR1-02)
             if (!isEquivalent)
             {
                 var groupIdsWithApproved = _context.EquivalentGroupMembers
-                    .Where(m => m.PartNo == ticket.ApprovedPartNo)
+                    .Where(m => withdrawnPartNos.Contains(m.PartNo))
                     .Select(m => m.GroupId)
                     .ToHashSet();
 
@@ -100,7 +97,7 @@ public class ReturnController : ControllerBase
         }
 
         if (!isMatch && !isEquivalent)
-            return BadRequest(new { message = $"Part {dto.PartNo} does not match the part issued on this ticket and is not a registered equivalent." });
+            return BadRequest(new { message = $"Part {dto.PartNo} does not match a part withdrawn on this ticket and is not a registered equivalent." });
 
         var toLocation = _context.Locations.FirstOrDefault(l => l.Id == dto.LocationToId);
         if (toLocation == null) return BadRequest(new { message = "Target location not found." });
