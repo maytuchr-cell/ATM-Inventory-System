@@ -452,7 +452,8 @@ tbody tr:last-child td { border-bottom: none; }
 
 /* ── Responsive ── */
 @media (max-width: 768px) {
-  .sidebar { transform: translateX(-100%); }
+  .sidebar { width: var(--sidebar-w); transform: translateX(-100%); transition: transform var(--sidebar-transition); }
+  .sidebar.mobile-open { transform: translateX(0); box-shadow: 0 0 0 2000px rgba(0,0,0,.35); }
   .main-content { margin-left: 0; }
   .form-grid-2, .form-grid-3 { grid-template-columns: 1fr; }
   .page-body { padding: 16px; }

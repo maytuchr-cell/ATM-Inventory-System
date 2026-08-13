@@ -17,6 +17,10 @@
         .badge-pending  .badge-dot { background:var(--yellow); }
         .badge-approved { background:var(--orange-light); color:var(--orange); }
         .badge-approved .badge-dot { background:var(--orange); }
+        .badge-teal     { background:#e0f5f3; color:#0f8a7e; }
+        .badge-teal     .badge-dot { background:#0f8a7e; }
+        [data-theme="dark"] .badge-teal { background:rgba(15,138,126,.18); color:#4fd6c6; }
+        [data-theme="dark"] .badge-teal .badge-dot { background:#4fd6c6; }
         .badge-success  { background:var(--green-light);  color:var(--green); }
         .badge-success  .badge-dot { background:var(--green); }
         .badge-danger   { background:var(--red-light);    color:var(--red);   }
@@ -26,12 +30,21 @@
         .badge-dot { width:6px; height:6px; border-radius:50%; flex-shrink:0; }
 
         /* Action buttons inside table */
-        .btn-approve { background:var(--green-light); color:var(--green); border:1.5px solid transparent; width:100%; justify-content:center; padding:7px; margin-bottom:5px; border-radius:8px; font-family:inherit; font-size:12px; font-weight:600; cursor:pointer; display:flex; align-items:center; gap:5px; transition:all .15s; }
+        .btn-approve { background:var(--green-light); color:var(--green); border:1.5px solid transparent; padding:6px 10px; border-radius:7px; font-family:inherit; font-size:11.5px; font-weight:600; cursor:pointer; display:inline-flex; align-items:center; gap:4px; transition:all .15s; }
         .btn-approve:hover { background:var(--green); color:#fff; }
-        .btn-reject  { background:var(--red-light);   color:var(--red);   border:1.5px solid transparent; width:100%; justify-content:center; padding:7px; margin-bottom:5px; border-radius:8px; font-family:inherit; font-size:12px; font-weight:600; cursor:pointer; display:flex; align-items:center; gap:5px; transition:all .15s; }
+        .btn-reject  { background:var(--red-light);   color:var(--red);   border:1.5px solid transparent; padding:6px 10px; border-radius:7px; font-family:inherit; font-size:11.5px; font-weight:600; cursor:pointer; display:inline-flex; align-items:center; gap:4px; transition:all .15s; }
         .btn-reject:hover  { background:var(--red);   color:#fff; }
-        .btn-cancel  { background:var(--bg-subtle);    color:var(--text-secondary); border:1.5px solid var(--border); width:100%; justify-content:center; padding:7px; border-radius:8px; font-family:inherit; font-size:12px; font-weight:600; cursor:pointer; display:flex; align-items:center; gap:5px; transition:all .15s; }
-        .btn-cancel:hover  { background:var(--text-secondary); color:#fff; }
+        .btn-cancel  { background:none; color:var(--text-muted); border:none; padding:4px 2px; font-family:inherit; font-size:11px; font-weight:600; cursor:pointer; text-decoration:underline; text-underline-offset:2px; transition:color .15s; }
+        .btn-cancel:hover  { color:var(--red); }
+        .ticket-action-row { display:flex; gap:6px; flex-wrap:wrap; align-items:center; }
+
+        /* Ticket toolbar (search + status filter + refresh) */
+        .tkt-toolbar { display:flex; flex-wrap:wrap; gap:8px; align-items:center; }
+        .tkt-status-filter { padding:5px 8px; border:1px solid var(--border); border-radius:7px; font-size:12px; background:var(--surface); color:var(--text); }
+        .btn-refresh { background:var(--bg-subtle); color:var(--text-secondary); border:1px solid var(--border); border-radius:7px; padding:5px 10px; font-size:12px; font-weight:600; cursor:pointer; font-family:inherit; display:inline-flex; align-items:center; gap:5px; transition:all .15s; }
+        .btn-refresh:hover { background:var(--orange-light); color:var(--orange); border-color:var(--orange); }
+        .btn-refresh.spinning svg { animation: spin .7s linear infinite; }
+        @keyframes spin { to { transform: rotate(360deg); } }
 
         .select-part { width:100%; padding:7px 10px; margin-bottom:7px; border-radius:8px; background:var(--bg-input); color:var(--text-primary); border:1.5px solid var(--border); font-family:inherit; font-size:13px; transition:.2s; outline:none; }
         .select-part:focus { border-color:var(--orange); box-shadow:0 0 0 3px var(--orange-ring); }
@@ -144,12 +157,30 @@
                 <div id="inv-zones-wrap" style="padding:0 20px 20px;"></div>
             </div>
 
-            <!-- Withdrawal Requests -->
+            <!-- Tickets: เบิก / คืน -->
             <div class="card">
-                <div class="section-head">
+                <div class="section-head" style="flex-wrap:wrap;gap:8px;">
                     <div class="section-accent"></div>
-                    <span class="section-title" data-i18n="tkt.section">Withdrawal Requests</span>
+                    <span class="section-title">Tickets — เบิก / คืนอะไหล่</span>
                     <span class="section-count" id="tickets-count">—</span>
+                    <div class="tkt-toolbar" style="margin-left:auto;">
+                        <input id="tkt-search" type="text" placeholder="🔍 ค้นหา Ticket / ช่าง…"
+                            oninput="renderTicketsTable()"
+                            style="padding:5px 10px;border:1px solid var(--border);border-radius:7px;font-size:12px;background:var(--surface);color:var(--text);outline:none;width:180px;">
+                        <select id="tkt-status-filter" class="tkt-status-filter" onchange="renderTicketsTable()">
+                            <option value="">ทุกสถานะ</option>
+                            <option value="รอ">รอ</option>
+                            <option value="เดินทาง">เดินทาง</option>
+                            <option value="เบิก">เบิก</option>
+                            <option value="คืน">คืน</option>
+                            <option value="Reject">Reject</option>
+                            <option value="Cancel">Cancel</option>
+                        </select>
+                        <button class="btn-refresh" id="tkt-refresh-btn" onclick="fetchTickets()">
+                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
+                            Refresh
+                        </button>
+                    </div>
                 </div>
                 <div class="tbl-wrap">
                     <table>
@@ -220,12 +251,16 @@
     window.onload = async function () { await fetchParts(); await fetchTickets(); fetchDashboard(); };
 
     async function fetchTickets() {
+        const btn = document.getElementById('tkt-refresh-btn');
+        btn?.classList.add('spinning');
         try {
             cachedTickets = await api.tickets.getAll();
             renderTicketsTable();
         } catch (e) {
             document.getElementById('ticketsTableBody').innerHTML =
                 `<tr><td colspan="7" class="empty-state" style="color:var(--red)">${t('error.connect')}</td></tr>`;
+        } finally {
+            btn?.classList.remove('spinning');
         }
     }
 
@@ -400,23 +435,39 @@
 
     /* ── Tickets ── */
     const STATUS_BADGE = {
-        "รอ":      { cls: "badge-pending",  dot: true },
-        "เดินทาง": { cls: "badge-approved", dot: true },
-        "เบิก":    { cls: "badge-success",  dot: true },
-        "คืน":     { cls: "badge-success",  dot: true },
-        "Reject":  { cls: "badge-danger",   dot: true },
-        "Cancel":  { cls: "badge-muted",    dot: true },
+        "รอ":      { cls: "badge-pending"  },
+        "เดินทาง": { cls: "badge-approved" },
+        "เบิก":    { cls: "badge-teal"     },
+        "คืน":     { cls: "badge-success"  },
+        "Reject":  { cls: "badge-danger"   },
+        "Cancel":  { cls: "badge-muted"    },
     };
 
     function renderTicketsTable() {
-        document.getElementById('tickets-count').textContent = cachedTickets.length + ' ' + (getLang()==='th' ? 'ตั๋ว' : 'tickets');
+        const search = (document.getElementById('tkt-search')?.value || '').trim().toLowerCase();
+        const statusF = document.getElementById('tkt-status-filter')?.value || '';
+
+        const rows = cachedTickets.filter(tk => {
+            if (statusF && tk.status !== statusF) return false;
+            if (search) {
+                const hay = `${tk.externalTicketNo} ${tk.techName} ${tk.techDept}`.toLowerCase();
+                if (!hay.includes(search)) return false;
+            }
+            return true;
+        });
+
+        document.getElementById('tickets-count').textContent = rows.length + ' / ' + cachedTickets.length + ' ' + (getLang()==='th' ? 'ตั๋ว' : 'tickets');
         const tbody = document.getElementById("ticketsTableBody");
         tbody.innerHTML = "";
         if (!cachedTickets.length) {
             tbody.innerHTML = `<tr><td colspan="7" class="empty-state">🎉 ${t('tkt.none')}</td></tr>`;
             return;
         }
-        cachedTickets.forEach(tk => {
+        if (!rows.length) {
+            tbody.innerHTML = `<tr><td colspan="7" class="empty-state">ไม่พบ Ticket ที่ตรงกับตัวกรอง</td></tr>`;
+            return;
+        }
+        rows.forEach(tk => {
             const b = STATUS_BADGE[tk.status] || STATUS_BADGE["รอ"];
             const badge = `<span class="badge ${b.cls}"><span class="badge-dot"></span>${tk.status}</span>`;
 
@@ -432,7 +483,7 @@
             let action;
             if (tk.status === "รอ" && tk.phase === "withdraw") {
                 action = `
-                    <div style="display:flex;flex-direction:column;gap:0;">
+                    <div class="ticket-action-row">
                         <button class="btn-approve" onclick="approveTicket(${tk.ticketId})">
                             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
                             Approve
@@ -441,7 +492,7 @@
                             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
                             Reject
                         </button>
-                        <button class="btn-cancel" onclick="cancelTicket(${tk.ticketId})">Cancel Ticket</button>
+                        <button class="btn-cancel" onclick="cancelTicket(${tk.ticketId})">Cancel</button>
                     </div>`;
             } else if (!["Reject", "Cancel", "คืน"].includes(tk.status)) {
                 // Still open (return leg in progress, or in transit) — Admin can only Cancel outright.

@@ -93,15 +93,33 @@
     applyTheme(current === 'dark' ? 'light' : 'dark');
   };
 
-  // ── Sidebar collapse ───────────────────────────────────────────────────────
+  // ── Sidebar collapse (desktop: icon-only width) / open (mobile: off-canvas) ──
+  const isMobile = () => window.matchMedia('(max-width: 768px)').matches;
+
   window.toggleSidebar = function() {
     const sidebar = document.querySelector('.sidebar');
+    const btn = document.getElementById('hamburger-btn');
+    if (isMobile()) {
+      const open = sidebar.classList.toggle('mobile-open');
+      if (btn) btn.innerHTML = open ? '✕' : '☰';
+      return;
+    }
     const collapsed = sidebar.classList.toggle('collapsed');
     localStorage.setItem('sidebarCollapsed', collapsed ? '1' : '0');
-    // update hamburger icon
-    const btn = document.getElementById('hamburger-btn');
     if (btn) btn.innerHTML = collapsed ? '☰' : '✕';
   };
+
+  // Tapping a nav link, or the page behind the off-canvas sidebar, closes it on mobile.
+  document.addEventListener('click', e => {
+    if (!isMobile()) return;
+    const sidebar = document.querySelector('.sidebar');
+    if (!sidebar || !sidebar.classList.contains('mobile-open')) return;
+    if (sidebar.contains(e.target)) {
+      if (e.target.closest('.sidebar-nav-item')) toggleSidebar();
+      return;
+    }
+    toggleSidebar();
+  });
 
   // ── Group accordion ────────────────────────────────────────────────────────
   window.toggleNavGroup = function(groupKey) {
@@ -212,7 +230,7 @@
             <img src="assets/logo.png" alt="Logo" style="width:100%;max-width:148px;height:auto;object-fit:contain;">
           </div>
           <button class="hamburger-btn" id="hamburger-btn" onclick="toggleSidebar()" title="Toggle sidebar">
-            ${isCollapsed ? '☰' : '✕'}
+            ${isMobile() || isCollapsed ? '☰' : '✕'}
           </button>
         </div>
 

@@ -1,5 +1,8 @@
-/* ── Centralized API client ── */
-const API_BASE = 'http://localhost:5128/api';
+/* ── Centralized API client ──
+   Uses the page's own hostname so this works both from the PC (localhost) and from a phone
+   on the same network hitting the PC's LAN IP — only the port differs (backend runs on 5128).
+   Falls back to localhost when hostname is unavailable (e.g. file:// or a sandboxed preview frame). */
+const API_BASE = `http://${location.hostname || 'localhost'}:5128/api`;
 
 async function apiFetch(path, options = {}) {
   const url = API_BASE + path;
