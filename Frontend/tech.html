@@ -48,6 +48,11 @@
         .tk-modal-close:hover { color:var(--text-primary); background:var(--bg-subtle); }
         .tk-modal-body { padding:22px 24px; }
 
+        .tk-tabs { display:flex; gap:4px; border-bottom:1px solid var(--border); margin-bottom:0; }
+        .tk-tab { background:none; border:none; padding:10px 16px; font-family:inherit; font-size:13px; font-weight:600; color:var(--text-secondary); cursor:pointer; border-bottom:2.5px solid transparent; margin-bottom:-1px; transition:color .15s,border-color .15s; }
+        .tk-tab:hover { color:var(--text-primary); }
+        .tk-tab.active { color:var(--orange); border-bottom-color:var(--orange); }
+
         .tk-readonly-box { background:var(--bg-subtle); border:1px solid var(--border); border-radius:10px; padding:14px 16px; margin-bottom:18px; }
         .tk-readonly-grid { display:grid; grid-template-columns:1fr 1fr; gap:10px 16px; }
         .tk-readonly-field label { font-size:10.5px; font-weight:700; letter-spacing:.4px; text-transform:uppercase; color:var(--text-muted); display:block; margin-bottom:2px; }
@@ -85,25 +90,14 @@
                 <div class="card-body">
                     <div class="section-head">
                         <div class="section-accent"></div>
-                        <span class="section-title">My Tickets</span>
+                        <span class="section-title" id="tickets-section-title">Ticket ของฉัน</span>
                         <span class="section-count" id="tickets-count">—</span>
                     </div>
-                    <div class="tbl-wrap">
-                        <table>
-                            <thead>
-                                <tr>
-                                    <th style="width:14%">Ticket</th>
-                                    <th style="width:30%">Parts</th>
-                                    <th style="width:14%">Phase</th>
-                                    <th style="width:18%">Status</th>
-                                    <th style="width:24%">Action</th>
-                                </tr>
-                            </thead>
-                            <tbody id="ticketsTableBody">
-                                <tr><td colspan="5" class="empty-state">กำลังโหลด...</td></tr>
-                            </tbody>
-                        </table>
+                    <div class="tk-tabs">
+                        <button class="tk-tab active" id="tabActive" onclick="switchTab('active')">Ticket ของฉัน</button>
+                        <button class="tk-tab" id="tabHistory" onclick="switchTab('history')">ประวัติการเบิก</button>
                     </div>
+                    <div class="tbl-wrap" id="ticketsTableWrap"></div>
                 </div>
             </div>
         </div><!-- /page-body -->
@@ -209,8 +203,8 @@
             cachedTickets = all.filter(t => t.techEmail === currentEmail);
             renderTicketsTable();
         } catch (e) {
-            document.getElementById('ticketsTableBody').innerHTML =
-                `<tr><td colspan="5" class="empty-state" style="color:var(--red)">${t('error.connect')}</td></tr>`;
+            document.getElementById('ticketsTableWrap').innerHTML =
+                `<div class="empty-state" style="color:var(--red);padding:20px;">${t('error.connect')}</div>`;
         }
     }
 
@@ -224,45 +218,110 @@
         'Reject':  { cls: 'badge-danger',  label: 'Reject' },
         'Cancel':  { cls: 'badge-muted',   label: 'Cancel' },
     };
+    // Active leg: still needs the tech (or Admin) to do something. History: the Ticket is done —
+    // either fully returned, or terminated (Reject/Cancel).
+    const TERMINAL_STATUSES = ['คืน', 'Reject', 'Cancel'];
+
+    let activeTab = 'active';
+    function switchTab(tab) {
+        activeTab = tab;
+        document.getElementById('tabActive').classList.toggle('active', tab === 'active');
+        document.getElementById('tabHistory').classList.toggle('active', tab === 'history');
+        document.getElementById('tickets-section-title').textContent = tab === 'active' ? 'Ticket ของฉัน' : 'ประวัติการเบิก';
+        renderTicketsTable();
+    }
+
+    function partsSummaryHtml(tk) {
+        return tk.lines.length
+            ? tk.lines.map(l => `<div style="font-size:12px;">${l.partName} <span class="text-muted">×${l.quantity}</span> <span style="font-size:10px;color:var(--text-muted)">(${l.lineType === 'Withdraw' ? 'เบิก' : 'คืน'})</span></div>`).join('')
+            : `<span class="text-muted">—</span>`;
+    }
 
     function renderTicketsTable() {
-        document.getElementById('tickets-count').textContent = cachedTickets.length + ' tickets';
-        const tbody = document.getElementById('ticketsTableBody');
-        tbody.innerHTML = '';
-        if (!cachedTickets.length) {
-            tbody.innerHTML = `<tr><td colspan="5" class="empty-state">ไม่มี Ticket</td></tr>`;
-            return;
-        }
-        cachedTickets.forEach(tk => {
-            const b = STATUS_BADGE[tk.status] || STATUS_BADGE[null];
-            const badge = `<span class="badge ${b.cls}"><span class="badge-dot"></span>${b.label}</span>`;
-            const phaseLabel = tk.phase ? (tk.phase === 'withdraw' ? 'ขาเบิก' : 'ขาคืน') : '<span class="text-muted">—</span>';
-            const partsSummary = tk.lines.length
-                ? tk.lines.map(l => `<div style="font-size:12px;">${l.partName} <span class="text-muted">×${l.quantity}</span></div>`).join('')
-                : `<span class="text-muted">—</span>`;
+        const rows = cachedTickets.filter(tk => TERMINAL_STATUSES.includes(tk.status) === (activeTab === 'history'));
+        document.getElementById('tickets-count').textContent = rows.length + ' tickets';
+        const wrap = document.getElementById('ticketsTableWrap');
 
-            let action = `<span class="text-muted">—</span>`;
-            if (tk.status === null) {
-                action = `<button class="btn-withdraw" onclick="openWithdrawModal(${tk.ticketId})">📤 เบิก</button>`;
-            } else if (tk.status === 'เดินทาง' && tk.phase === 'withdraw') {
-                action = `<button class="btn-return" onclick="confirmReceive(${tk.ticketId})">✅ ยืนยันรับของ</button>`;
-            } else if (tk.status === 'เบิก' && tk.phase === 'withdraw') {
-                action = `<button class="btn-return" onclick="openReturnModal(${tk.ticketId})">📥 คืน</button>`;
-            } else if (tk.status === 'รอ' && tk.phase === 'return') {
-                action = `<button class="btn-ship" onclick="markShipped(${tk.ticketId})">🚚 จัดส่งแล้ว</button>`;
-            } else if (tk.status === 'รอ' && tk.phase === 'withdraw') {
-                action = `<span class="text-muted" style="font-size:12px;">รอ Admin อนุมัติ</span>`;
+        if (activeTab === 'active') {
+            let body = '';
+            if (!rows.length) {
+                body = `<tr><td colspan="5" class="empty-state">ไม่มี Ticket ที่ต้องดำเนินการ</td></tr>`;
+            } else {
+                rows.forEach(tk => {
+                    const b = STATUS_BADGE[tk.status] || STATUS_BADGE[null];
+                    const badge = `<span class="badge ${b.cls}"><span class="badge-dot"></span>${b.label}</span>`;
+                    const phaseLabel = tk.phase ? (tk.phase === 'withdraw' ? 'ขาเบิก' : 'ขาคืน') : '<span class="text-muted">—</span>';
+
+                    let action = `<span class="text-muted">—</span>`;
+                    if (tk.status === null) {
+                        action = `<button class="btn-withdraw" onclick="openWithdrawModal(${tk.ticketId})">📤 เบิก</button>`;
+                    } else if (tk.status === 'เดินทาง' && tk.phase === 'withdraw') {
+                        action = `<button class="btn-return" onclick="confirmReceive(${tk.ticketId})">✅ ยืนยันรับของ</button>`;
+                    } else if (tk.status === 'เบิก' && tk.phase === 'withdraw') {
+                        action = `<button class="btn-return" onclick="openReturnModal(${tk.ticketId})">📥 คืน</button>`;
+                    } else if (tk.status === 'รอ' && tk.phase === 'return') {
+                        action = `<button class="btn-ship" onclick="markShipped(${tk.ticketId})">🚚 จัดส่งแล้ว</button>`;
+                    } else if (tk.status === 'รอ' && tk.phase === 'withdraw') {
+                        action = `<span class="text-muted" style="font-size:12px;">รอ Admin อนุมัติ</span>`;
+                    } else if (tk.status === 'เดินทาง' && tk.phase === 'return') {
+                        action = `<span class="text-muted" style="font-size:12px;">รอถึง DHL</span>`;
+                    }
+
+                    body += `
+                        <tr>
+                            <td><span class="id-chip ticket-id">${tk.externalTicketNo}</span></td>
+                            <td>${partsSummaryHtml(tk)}</td>
+                            <td>${phaseLabel}</td>
+                            <td>${badge}</td>
+                            <td>${action}</td>
+                        </tr>`;
+                });
             }
-
-            tbody.innerHTML += `
-                <tr>
-                    <td><span class="id-chip ticket-id">${tk.externalTicketNo}</span></td>
-                    <td>${partsSummary}</td>
-                    <td>${phaseLabel}</td>
-                    <td>${badge}</td>
-                    <td>${action}</td>
-                </tr>`;
-        });
+            wrap.innerHTML = `
+                <table>
+                    <thead>
+                        <tr>
+                            <th style="width:14%">Ticket</th>
+                            <th style="width:30%">Parts</th>
+                            <th style="width:14%">Phase</th>
+                            <th style="width:18%">Status</th>
+                            <th style="width:24%">Action</th>
+                        </tr>
+                    </thead>
+                    <tbody>${body}</tbody>
+                </table>`;
+        } else {
+            let body = '';
+            if (!rows.length) {
+                body = `<tr><td colspan="4" class="empty-state">ยังไม่มีประวัติการเบิก</td></tr>`;
+            } else {
+                rows.sort((a, b) => new Date(b.updatedAt) - new Date(a.updatedAt));
+                rows.forEach(tk => {
+                    const b = STATUS_BADGE[tk.status] || STATUS_BADGE[null];
+                    const badge = `<span class="badge ${b.cls}"><span class="badge-dot"></span>${b.label}</span>`;
+                    const dt = new Date(tk.updatedAt).toLocaleString('th-TH', { dateStyle: 'medium', timeStyle: 'short' });
+                    body += `
+                        <tr>
+                            <td><span class="id-chip ticket-id">${tk.externalTicketNo}</span></td>
+                            <td>${partsSummaryHtml(tk)}</td>
+                            <td>${badge}</td>
+                            <td style="font-size:12.5px;color:var(--text-secondary);">${dt}</td>
+                        </tr>`;
+                });
+            }
+            wrap.innerHTML = `
+                <table>
+                    <thead>
+                        <tr>
+                            <th style="width:16%">Ticket</th>
+                            <th style="width:36%">Parts</th>
+                            <th style="width:20%">Status</th>
+                            <th style="width:28%">วันที่/เวลา</th>
+                        </tr>
+                    </thead>
+                    <tbody>${body}</tbody>
+                </table>`;
+        }
     }
 
     /* ── Part-line row builder (shared by withdraw / return forms) ── */
