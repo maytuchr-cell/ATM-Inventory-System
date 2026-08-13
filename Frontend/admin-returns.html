@@ -5,6 +5,16 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Returns — ATM Inventory</title>
   <link rel="stylesheet" href="shared/styles.css">
+  <style>
+    .badge-teal { background:#e0f5f3; color:#0f8a7e; }
+    .badge-teal .badge-dot { background:#0f8a7e; }
+    [data-theme="dark"] .badge-teal { background:rgba(15,138,126,.18); color:#4fd6c6; }
+    [data-theme="dark"] .badge-teal .badge-dot { background:#4fd6c6; }
+    .badge-approved { background:var(--orange-light); color:var(--orange); }
+    .badge-approved .badge-dot { background:var(--orange); }
+    .btn-confirm { background:var(--green-light); color:var(--green); border:1.5px solid transparent; padding:6px 10px; border-radius:7px; font-family:inherit; font-size:11.5px; font-weight:600; cursor:pointer; display:inline-flex; align-items:center; gap:4px; }
+    .btn-confirm:hover { background:var(--green); color:#fff; }
+  </style>
 </head>
 <body>
   <div class="app-layout">
@@ -12,17 +22,17 @@
     <div class="main-content">
       <div class="topbar">
         <div>
-          <div class="topbar-title" data-i18n="ret.title">Return Part</div>
-          <div class="topbar-sub"   data-i18n="ret.sub">Track and process parts returned by technicians</div>
+          <div class="topbar-title" data-i18n="ret.title">Returns</div>
+          <div class="topbar-sub">ขาคืนของ Ticket ที่ช่างส่งของกลับมา — ยืนยันเมื่อของถึง DHL</div>
         </div>
       </div>
 
       <div class="page-body">
-        <!-- On-hand tracking (FR-RT-03) -->
+        <!-- Return legs in progress: รอ (waiting to ship) / เดินทาง (in transit — confirm here) -->
         <div class="card">
           <div class="section-head" style="display:flex;align-items:center;gap:10px;margin-bottom:20px;padding:24px 24px 0;">
             <div class="section-accent" style="width:4px;height:22px;background:var(--orange);border-radius:2px;"></div>
-            <span class="section-title" style="font-size:16px;font-weight:700;" data-i18n="ret.onhand.title">Technician On-Hand Parts</span>
+            <span class="section-title" style="font-size:16px;font-weight:700;">กำลังคืน (รอ / เดินทาง)</span>
             <span class="section-count" id="onhand-count">—</span>
           </div>
           <div class="tbl-wrap" style="padding:0 24px 24px;">
@@ -31,19 +41,20 @@
                 <tr>
                   <th data-i18n="ret.col.ticket">Ticket</th>
                   <th data-i18n="ret.col.tech">Technician</th>
-                  <th data-i18n="ret.col.part">Part</th>
-                  <th data-i18n="ret.col.due">Due Date</th>
+                  <th data-i18n="ret.col.part">Parts (คืน)</th>
+                  <th>Return Address</th>
                   <th data-i18n="col.status">Status</th>
+                  <th>Action</th>
                 </tr>
               </thead>
               <tbody id="onhand-tbody">
-                <tr><td colspan="5" class="empty-state" data-i18n="connecting">Connecting…</td></tr>
+                <tr><td colspan="6" class="empty-state" data-i18n="connecting">Connecting…</td></tr>
               </tbody>
             </table>
           </div>
         </div>
 
-        <!-- Return History -->
+        <!-- Return History: closed (สถานะ คืน) -->
         <div class="card">
           <div class="section-head" style="display:flex;align-items:center;gap:10px;margin-bottom:20px;padding:24px 24px 0;">
             <div class="section-accent" style="width:4px;height:22px;background:var(--orange);border-radius:2px;"></div>
@@ -55,15 +66,13 @@
                 <tr>
                   <th data-i18n="ret.col.ticket">Ticket</th>
                   <th data-i18n="ret.col.tech">Technician</th>
-                  <th data-i18n="ret.col.part">Part</th>
-                  <th data-i18n="ret.col.condition">Condition</th>
-                  <th data-i18n="ret.col.source">Source</th>
-                  <th data-i18n="ret.col.to">Returned To</th>
-                  <th data-i18n="ret.col.date">Date</th>
+                  <th data-i18n="ret.col.part">Parts (คืน)</th>
+                  <th>Return Address</th>
+                  <th data-i18n="ret.col.date">Updated</th>
                 </tr>
               </thead>
               <tbody id="history-tbody">
-                <tr><td colspan="7" class="empty-state" data-i18n="connecting">Connecting…</td></tr>
+                <tr><td colspan="5" class="empty-state" data-i18n="connecting">Connecting…</td></tr>
               </tbody>
             </table>
           </div>

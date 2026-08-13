@@ -131,6 +131,10 @@
                             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
                             Refresh
                         </button>
+                        <button class="btn-refresh" onclick="openSyncModal()" title="จำลอง Ticket ใหม่จาก Aservice — ยังไม่มี integration จริง">
+                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+                            Sync Ticket
+                        </button>
                     </div>
                 </div>
                 <div class="tbl-wrap">
@@ -156,6 +160,24 @@
         </div><!-- /page-body -->
     </div><!-- /main-content -->
 </div><!-- /app-layout -->
+
+<!-- Sync Ticket modal (stands in for the real Aservice integration) -->
+<div class="reason-overlay" id="syncOverlay">
+    <div class="reason-modal">
+        <h3>Sync Ticket ใหม่</h3>
+        <p>จำลองการ sync Ticket จาก Aservice (ยังไม่มี integration จริง — ใช้สำหรับทดสอบ)</p>
+        <div style="display:flex;flex-direction:column;gap:10px;">
+            <input id="syncExternalNo" type="text" placeholder="External Ticket No. เช่น ASV-100999" class="select-part" style="margin-bottom:0;">
+            <input id="syncTechName" type="text" placeholder="ชื่อช่าง" class="select-part" style="margin-bottom:0;">
+            <input id="syncTechEmail" type="email" placeholder="อีเมลช่าง เช่น tech@atm.com" class="select-part" style="margin-bottom:0;">
+            <input id="syncTechDept" type="text" placeholder="Zone / แผนก" class="select-part" style="margin-bottom:0;">
+        </div>
+        <div class="reason-modal-actions">
+            <button class="btn-cancel" style="width:auto;padding:8px 16px;" onclick="closeSyncModal()">Cancel</button>
+            <button class="btn-approve" style="width:auto;padding:8px 16px;" onclick="submitSync()">Sync</button>
+        </div>
+    </div>
+</div>
 
 <!-- Reject reason modal -->
 <div class="reason-overlay" id="reasonOverlay">
@@ -302,6 +324,34 @@
         } catch (e) { showToast?.(e.message || t('toast.error'), 'error'); }
     }
 
+    /* ── Sync Ticket (stands in for the real Aservice integration) ── */
+    function openSyncModal() {
+        document.getElementById('syncExternalNo').value = '';
+        document.getElementById('syncTechName').value = '';
+        document.getElementById('syncTechEmail').value = '';
+        document.getElementById('syncTechDept').value = '';
+        document.getElementById('syncOverlay').classList.add('open');
+    }
+    function closeSyncModal() {
+        document.getElementById('syncOverlay').classList.remove('open');
+    }
+    async function submitSync() {
+        const externalTicketNo = document.getElementById('syncExternalNo').value.trim();
+        const techName  = document.getElementById('syncTechName').value.trim();
+        const techEmail = document.getElementById('syncTechEmail').value.trim();
+        const techDept  = document.getElementById('syncTechDept').value.trim();
+        if (!externalTicketNo || !techName || !techEmail) {
+            showToast?.('กรอก External Ticket No., ชื่อช่าง และอีเมลให้ครบ', 'error');
+            return;
+        }
+        try {
+            await api.tickets.sync({ externalTicketNo, techName, techEmail, techDept });
+            closeSyncModal();
+            await fetchTickets();
+            showToast?.('Synced.', 'success');
+        } catch (e) { showToast?.(e.message || t('toast.error'), 'error'); }
+    }
+
     function openRejectModal(id) {
         rejectTargetId = id;
         document.getElementById('reasonInput').value = '';
@@ -410,7 +460,10 @@
     function closeDetail(e) {
         if (e.target === document.getElementById('detailOverlay')) closeDetailModal();
     }
-    document.addEventListener('keydown', e => { if (e.key === 'Escape') closeDetailModal(); });
+    document.addEventListener('keydown', e => {
+        if (e.key !== 'Escape') return;
+        closeDetailModal(); closeReasonModal(); closeSyncModal();
+    });
 </script>
 </body>
 </html>
