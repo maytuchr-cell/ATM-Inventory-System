@@ -59,8 +59,19 @@
         .tk-readonly-field span  { font-size:13.5px; color:var(--text-secondary); font-weight:500; }
 
         .tk-section-label { font-size:11px; font-weight:700; letter-spacing:.6px; text-transform:uppercase; color:var(--orange); margin-bottom:10px; display:block; }
-        .tk-line-row { display:flex; gap:8px; align-items:center; margin-bottom:8px; }
-        .tk-line-row input[type=text] { flex:2; padding:8px 10px; border-radius:8px; background:var(--bg-input); color:var(--text-primary); border:1.5px solid var(--border); font-family:inherit; font-size:13px; outline:none; min-width:0; }
+        .tk-line-row { display:flex; gap:8px; align-items:flex-start; margin-bottom:8px; }
+        .tk-part-picker { flex:2; position:relative; min-width:0; }
+        .tk-part-picker input[type=text] { width:100%; padding:8px 28px 8px 10px; border-radius:8px; background:var(--bg-input); color:var(--text-primary); border:1.5px solid var(--border); font-family:inherit; font-size:13px; outline:none; box-sizing:border-box; }
+        .tk-part-picker input[type=text]:focus { border-color:var(--orange); }
+        .tk-part-picker .tk-part-caret { position:absolute; right:9px; top:9px; pointer-events:none; color:var(--text-muted); font-size:11px; }
+        .tk-part-dropdown { display:none; position:absolute; left:0; right:0; top:calc(100% + 4px); background:var(--bg-card); border:1.5px solid var(--border); border-radius:8px; max-height:220px; overflow-y:auto; z-index:30; box-shadow:0 8px 24px rgba(0,0,0,.15); }
+        .tk-part-dropdown.open { display:block; }
+        .tk-part-option { padding:8px 10px; font-size:12.5px; cursor:pointer; border-bottom:1px solid var(--border); }
+        .tk-part-option:last-child { border-bottom:none; }
+        .tk-part-option:hover, .tk-part-option.active { background:var(--orange-light); color:var(--orange); }
+        .tk-part-option .tk-part-no { font-size:10.5px; color:var(--text-muted); display:block; margin-top:1px; }
+        .tk-part-option:hover .tk-part-no, .tk-part-option.active .tk-part-no { color:var(--orange); opacity:.75; }
+        .tk-part-empty { padding:10px; font-size:12px; color:var(--text-muted); text-align:center; }
         .tk-line-row input[type=number] { flex:0 0 70px; padding:8px 8px; border-radius:8px; background:var(--bg-input); color:var(--text-primary); border:1.5px solid var(--border); font-family:inherit; font-size:13px; outline:none; text-align:center; }
         .tk-line-row .tk-remove { flex:0 0 auto; background:none; border:none; color:var(--red); cursor:pointer; font-size:15px; padding:4px 6px; }
         .btn-add-line { background:var(--bg-subtle); color:var(--text-secondary); border:1.5px dashed var(--border); width:100%; padding:8px; border-radius:8px; font-family:inherit; font-size:12.5px; font-weight:600; cursor:pointer; margin-top:2px; }
@@ -358,37 +369,67 @@
 
     /* ── Part-line row builder (shared by withdraw / return forms) ──
        Plain <select> became unusable once the real parts catalog (500+ items) loaded — every
-       row was a scroll-fest. Swapped for a text input + <datalist> so typing filters as you go;
-       the datalist option text is "PartName (PartNo)" and partNoFromLabel() pulls the PartNo
-       back out when reading the form (native datalist has no separate value/label pair). ── */
+       row was a scroll-fest. Native <datalist> was tried next but mobile browser support for it
+       is inconsistent (several don't render suggestions at all), so this is a small custom
+       combobox instead: a text input that filters cachedParts as you type, plus a dropdown list
+       you tap/click to pick from. The chosen PartNo is stamped onto the input's
+       `data-partno` attribute — collectLines() reads that directly rather than re-parsing text,
+       so a stale/edited-but-not-reselected label can't silently submit the wrong part. ── */
     function partLabel(p) { return `${p.partName} (${p.partNo})`; }
-    function partNoFromLabel(label) {
-        const m = /\(([^()]+)\)\s*$/.exec(label || '');
-        if (m && cachedParts.some(p => p.partNo === m[1])) return m[1];
-        const exact = cachedParts.find(p => partLabel(p) === label);
-        return exact ? exact.partNo : null;
-    }
-    function ensurePartsDatalist() {
-        if (document.getElementById('partsDatalist')) return;
-        const dl = document.createElement('datalist');
-        dl.id = 'partsDatalist';
-        document.body.appendChild(dl);
-    }
-    function refreshPartsDatalist() {
-        ensurePartsDatalist();
-        document.getElementById('partsDatalist').innerHTML =
-            cachedParts.map(p => `<option value="${partLabel(p)}">`).join('');
-    }
+
     function lineRowHtml(prefix, idx, partNo, qty) {
         const selected = cachedParts.find(p => p.partNo === partNo);
+        const val = selected ? partLabel(selected) : '';
+        const dataAttr = selected ? ` data-partno="${selected.partNo}"` : '';
         return `<div class="tk-line-row" id="${prefix}-row-${idx}">
-            <input type="text" id="${prefix}-part-${idx}" list="partsDatalist" placeholder="พิมพ์ชื่ออะไหล่เพื่อค้นหา..." value="${selected ? partLabel(selected) : ''}" autocomplete="off">
+            <div class="tk-part-picker">
+                <input type="text" id="${prefix}-part-${idx}"${dataAttr}
+                    placeholder="พิมพ์ชื่ออะไหล่เพื่อค้นหา..." autocomplete="off" value="${val}"
+                    oninput="onPartInput('${prefix}', ${idx})"
+                    onfocus="onPartInput('${prefix}', ${idx})">
+                <span class="tk-part-caret">▾</span>
+                <div class="tk-part-dropdown" id="${prefix}-dropdown-${idx}"></div>
+            </div>
             <input type="number" id="${prefix}-qty-${idx}" min="1" value="${qty || 1}">
             <button type="button" class="tk-remove" onclick="removeLine('${prefix}', ${idx})">✕</button>
         </div>`;
     }
+
+    function onPartInput(prefix, idx) {
+        const input = document.getElementById(`${prefix}-part-${idx}`);
+        const dropdown = document.getElementById(`${prefix}-dropdown-${idx}`);
+        input.removeAttribute('data-partno'); // any prior selection is void until re-picked
+        const q = input.value.trim().toLowerCase();
+        const matches = (q
+            ? cachedParts.filter(p => p.partName.toLowerCase().includes(q) || p.partNo.toLowerCase().includes(q))
+            : cachedParts
+        ).slice(0, 40);
+
+        closeAllPartDropdowns(dropdown);
+        dropdown.innerHTML = matches.length
+            ? matches.map(p => `
+                <div class="tk-part-option" onclick="selectPart('${prefix}', ${idx}, '${p.partNo.replace(/'/g, "\\'")}')">
+                    ${p.partName}<span class="tk-part-no">${p.partNo}</span>
+                </div>`).join('')
+            : `<div class="tk-part-empty">ไม่พบอะไหล่ที่ตรงกับ "${input.value}"</div>`;
+        dropdown.classList.add('open');
+    }
+    function selectPart(prefix, idx, partNo) {
+        const part = cachedParts.find(p => p.partNo === partNo);
+        if (!part) return;
+        const input = document.getElementById(`${prefix}-part-${idx}`);
+        input.value = partLabel(part);
+        input.dataset.partno = partNo;
+        document.getElementById(`${prefix}-dropdown-${idx}`).classList.remove('open');
+    }
+    function closeAllPartDropdowns(except) {
+        document.querySelectorAll('.tk-part-dropdown.open').forEach(d => { if (d !== except) d.classList.remove('open'); });
+    }
+    document.addEventListener('click', e => {
+        if (!e.target.closest('.tk-part-picker')) closeAllPartDropdowns(null);
+    });
+
     function addLine(kind) {
-        refreshPartsDatalist();
         if (kind === 'withdraw') {
             wdLineCount++;
             document.getElementById('wdLines').insertAdjacentHTML('beforeend', lineRowHtml('wd', wdLineCount));
@@ -409,7 +450,7 @@
             const partInp = document.getElementById(`${prefix}-part-${i}`);
             const qtyInp  = document.getElementById(`${prefix}-qty-${i}`);
             if (!partInp) continue;
-            const partNo = partNoFromLabel(partInp.value);
+            const partNo = partInp.dataset.partno || null;
             const quantity = parseInt(qtyInp.value, 10) || 0;
             if (partNo && quantity > 0) lines.push({ partNo, quantity });
         }
@@ -470,7 +511,6 @@
         document.getElementById('rtAddress').value = '';
         document.getElementById('rtLines').innerHTML = '';
         rtLineCount = 0;
-        refreshPartsDatalist();
         // pre-fill one row per withdrawn part, defaulting qty to what was withdrawn (partial return allowed)
         withdrawn.forEach(l => {
             rtLineCount++;
