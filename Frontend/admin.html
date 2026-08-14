@@ -38,6 +38,17 @@
         .stale-row { display:flex; justify-content:space-between; align-items:center; padding:7px 0; border-bottom:1px solid var(--border); font-size:12.5px; }
         .stale-row:last-child { border-bottom:none; }
         .stale-days { font-weight:700; color:var(--red); font-size:12px; }
+
+        /* Top technicians bars (reuses the status-bar-row layout, wider label column) */
+        .tech-bar-row { display:grid; grid-template-columns:110px 1fr 28px; align-items:center; gap:10px; margin-bottom:10px; font-size:12.5px; }
+        .tech-bar-row span:first-child { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+
+        /* Return-rate summary */
+        .returnrate-num { font-size:36px; font-weight:800; color:var(--green); line-height:1; }
+        .returnrate-sub { font-size:12.5px; color:var(--text-secondary); margin-top:4px; }
+        .returnrate-track { height:10px; border-radius:5px; background:var(--bg-subtle); overflow:hidden; margin-top:14px; }
+        .returnrate-fill { height:100%; border-radius:5px; background:var(--green); transition:width .3s; }
+        .returnrate-legend { display:flex; justify-content:space-between; font-size:11.5px; color:var(--text-muted); margin-top:6px; }
     </style>
 </head>
 <body>
@@ -94,6 +105,25 @@
                         <span class="section-count" id="stale-count">—</span>
                     </div>
                     <div id="stale-list" style="padding:0 20px 20px;"></div>
+                </div>
+            </div>
+
+            <!-- Ticket people & completion overview -->
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;margin-bottom:28px;">
+                <div class="card" style="margin-bottom:0;">
+                    <div class="section-head">
+                        <div class="section-accent"></div>
+                        <span class="section-title">ช่างที่เบิกบ่อยที่สุด</span>
+                        <span class="section-count" id="toptech-count">—</span>
+                    </div>
+                    <div id="toptech-list" style="padding:0 20px 20px;"></div>
+                </div>
+                <div class="card" style="margin-bottom:0;">
+                    <div class="section-head">
+                        <div class="section-accent"></div>
+                        <span class="section-title">อัตราการคืนสำเร็จ</span>
+                    </div>
+                    <div id="returnrate-body" style="padding:0 20px 20px;"></div>
                 </div>
             </div>
 
@@ -170,6 +200,8 @@
             renderActionCards(tickets);
             renderStatusBreakdown(tickets);
             renderStaleTickets(tickets);
+            renderTopTechnicians(tickets);
+            renderReturnRate(tickets);
         } catch (e) { console.error(e); }
     }
 
@@ -218,6 +250,42 @@
                 <span>${t.externalTicketNo} — ${t.techName}<span style="color:var(--text-muted);"> (${t.status})</span></span>
                 <span class="stale-days">${t.daysStale} วัน</span>
             </div>`).join('');
+    }
+
+    function renderTopTechnicians(tickets) {
+        const counts = {};
+        tickets.forEach(t => { counts[t.techName] = (counts[t.techName] || 0) + 1; });
+        const top = Object.entries(counts).sort((a, b) => b[1] - a[1]).slice(0, 5);
+
+        document.getElementById('toptech-count').textContent = Object.keys(counts).length + ' คน';
+        const el = document.getElementById('toptech-list');
+        if (!top.length) {
+            el.innerHTML = `<span style="color:var(--text-muted)">—</span>`;
+            return;
+        }
+        const max = top[0][1];
+        el.innerHTML = top.map(([name, count]) => `
+            <div class="tech-bar-row">
+                <span title="${name}">${name}</span>
+                <div class="status-bar-track"><div class="status-bar-fill" style="width:${Math.round((count / max) * 100)}%;background:var(--orange);"></div></div>
+                <span class="status-bar-count">${count}</span>
+            </div>`).join('');
+    }
+
+    // "Eligible" = a ticket that actually took stock out at some point — either currently
+    // holding it (เบิก) or already past that on the return leg (phase === 'return', any
+    // status). Reject/Cancel on the withdraw leg never touched stock, so they don't count.
+    function renderReturnRate(tickets) {
+        const eligible = tickets.filter(t => t.status === 'เบิก' || t.phase === 'return');
+        const completed = eligible.filter(t => t.status === 'คืน');
+        const pct = eligible.length ? Math.round((completed.length / eligible.length) * 100) : 0;
+
+        document.getElementById('returnrate-body').innerHTML = `
+            <div class="returnrate-num">${pct}%</div>
+            <div class="returnrate-sub">${completed.length} จาก ${eligible.length} ใบที่เบิกไปแล้ว คืนสำเร็จ</div>
+            <div class="returnrate-track"><div class="returnrate-fill" style="width:${pct}%;"></div></div>
+            <div class="returnrate-legend"><span>คืนแล้ว ${completed.length}</span><span>ยังไม่คืน ${eligible.length - completed.length}</span></div>
+        `;
     }
 
     /* ── Dashboard widgets ── */
