@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Tech Workspace — ATM Inventory</title>
-    <link rel="stylesheet" href="shared/styles.css?v=7">
+    <link rel="stylesheet" href="shared/styles.css?v=8">
     <style>
         .section-head { display:flex; align-items:center; gap:10px; margin-bottom:20px; }
         .section-accent { width:4px; height:22px; background:var(--orange); border-radius:2px; }
@@ -73,6 +73,7 @@
         .tk-part-option:hover .tk-part-no, .tk-part-option.active .tk-part-no { color:var(--orange); opacity:.75; }
         .tk-part-empty { padding:10px; font-size:12px; color:var(--text-muted); text-align:center; }
         .tk-line-row input[type=number] { flex:0 0 70px; padding:8px 8px; border-radius:8px; background:var(--bg-input); color:var(--text-primary); border:1.5px solid var(--border); font-family:inherit; font-size:13px; outline:none; text-align:center; }
+        .tk-line-row select.tk-condition { flex:0 0 92px; padding:8px 6px; border-radius:8px; background:var(--bg-input); color:var(--text-primary); border:1.5px solid var(--border); font-family:inherit; font-size:12.5px; outline:none; }
         .tk-line-row .tk-remove { flex:0 0 auto; background:none; border:none; color:var(--red); cursor:pointer; font-size:15px; padding:4px 6px; }
         .btn-add-line { background:var(--bg-subtle); color:var(--text-secondary); border:1.5px dashed var(--border); width:100%; padding:8px; border-radius:8px; font-family:inherit; font-size:12.5px; font-weight:600; cursor:pointer; margin-top:2px; }
         .btn-add-line:hover { border-color:var(--orange); color:var(--orange); }
@@ -222,10 +223,10 @@
     </div>
 </div>
 
-<script src="shared/translations.js?v=7"></script>
-<script src="shared/toast.js?v=7"></script>
-<script src="shared/api.js?v=7"></script>
-<script src="shared/layout.js?v=7"></script>
+<script src="shared/translations.js?v=8"></script>
+<script src="shared/toast.js?v=8"></script>
+<script src="shared/api.js?v=8"></script>
+<script src="shared/layout.js?v=8"></script>
 <script>
     /* Status: รอ / เดินทาง / เบิก / คืน / Reject / Cancel   (null = ยังไม่เริ่มเบิก) */
     const currentEmail = localStorage.getItem('userEmail') || 'tech@atm.com';
@@ -281,9 +282,10 @@
         renderTicketsTable();
     }
 
+    const CONDITION_LABEL = { Good: 'ของดี', Defective: 'ของเสีย', Lost: 'สูญหาย' };
     function partsSummaryHtml(tk) {
         return tk.lines.length
-            ? tk.lines.map(l => `<div style="font-size:12px;">${l.partName} <span class="text-muted">×${l.quantity}</span> <span style="font-size:10px;color:var(--text-muted)">(${l.lineType === 'Withdraw' ? 'เบิก' : 'คืน'})</span></div>`).join('')
+            ? tk.lines.map(l => `<div style="font-size:12px;">${l.partName} <span class="text-muted">×${l.quantity}</span> <span style="font-size:10px;color:var(--text-muted)">(${l.lineType === 'Withdraw' ? 'เบิก' : 'คืน'}${l.condition ? ' — ' + CONDITION_LABEL[l.condition] : ''})</span></div>`).join('')
             : `<span class="text-muted">—</span>`;
     }
 
@@ -386,10 +388,21 @@
        so a stale/edited-but-not-reselected label can't silently submit the wrong part. ── */
     function partLabel(p) { return `${p.partName} (${p.partNo})`; }
 
-    function lineRowHtml(prefix, idx, partNo, qty) {
+    const CONDITION_OPTIONS = [
+        { value: 'Good',      label: 'ของดี' },
+        { value: 'Defective', label: 'ของเสีย' },
+        { value: 'Lost',      label: 'สูญหาย' },
+    ];
+    function lineRowHtml(prefix, idx, partNo, qty, condition) {
         const selected = cachedParts.find(p => p.partNo === partNo);
         const val = selected ? partLabel(selected) : '';
         const dataAttr = selected ? ` data-partno="${selected.partNo}"` : '';
+        // Condition only applies to a Return line (prefix "rt") — Withdraw doesn't know the
+        // part's condition yet, that's decided when it comes back.
+        const conditionHtml = prefix === 'rt'
+            ? `<select class="tk-condition" id="${prefix}-cond-${idx}">${CONDITION_OPTIONS.map(o =>
+                `<option value="${o.value}" ${o.value === (condition || 'Good') ? 'selected' : ''}>${o.label}</option>`).join('')}</select>`
+            : '';
         return `<div class="tk-line-row" id="${prefix}-row-${idx}">
             <div class="tk-part-picker">
                 <input type="text" id="${prefix}-part-${idx}"${dataAttr}
@@ -400,6 +413,7 @@
                 <div class="tk-part-dropdown" id="${prefix}-dropdown-${idx}"></div>
             </div>
             <input type="number" id="${prefix}-qty-${idx}" min="1" value="${qty || 1}">
+            ${conditionHtml}
             <button type="button" class="tk-remove" onclick="removeLine('${prefix}', ${idx})">✕</button>
         </div>`;
     }
@@ -461,7 +475,13 @@
             if (!partInp) continue;
             const partNo = partInp.dataset.partno || null;
             const quantity = parseInt(qtyInp.value, 10) || 0;
-            if (partNo && quantity > 0) lines.push({ partNo, quantity });
+            if (!partNo || quantity <= 0) continue;
+            const line = { partNo, quantity };
+            if (prefix === 'rt') {
+                const condInp = document.getElementById(`${prefix}-cond-${i}`);
+                line.condition = condInp?.value || 'Good';
+            }
+            lines.push(line);
         }
         return lines;
     }

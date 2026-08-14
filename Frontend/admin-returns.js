@@ -22,10 +22,12 @@ async function fetchTickets() {
     }
 }
 
+const CONDITION_LABEL = { Good: 'ของดี', Defective: 'ของเสีย', Lost: 'สูญหาย' };
+const CONDITION_COLOR = { Good: 'var(--green)', Defective: 'var(--orange)', Lost: 'var(--red)' };
 function returnLinesHtml(tk) {
     const lines = tk.lines.filter(l => l.lineType === 'Return');
     return lines.length
-        ? lines.map(l => `${l.partName} <span style="color:var(--text-muted)">×${l.quantity}</span>`).join('<br>')
+        ? lines.map(l => `${l.partName} <span style="color:var(--text-muted)">×${l.quantity}</span>${l.condition ? ` <span style="color:${CONDITION_COLOR[l.condition]};font-size:11px;font-weight:600;">${CONDITION_LABEL[l.condition]}</span>` : ''}`).join('<br>')
         : `<span style="color:var(--text-muted)">—</span>`;
 }
 

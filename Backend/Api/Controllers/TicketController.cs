@@ -49,7 +49,7 @@ public class TicketController : ControllerBase
                 phase = Phase(t.ReturnAddress, tLines),
                 lines = tLines.Select(l => new
                 {
-                    l.TicketPartLineId, l.PartId, l.PartNo, l.Quantity, l.LineType,
+                    l.TicketPartLineId, l.PartId, l.PartNo, l.Quantity, l.LineType, l.Condition,
                     partName = partMap.GetValueOrDefault(l.PartId, l.PartNo)
                 })
             };
@@ -242,13 +242,16 @@ public class TicketController : ControllerBase
         if (dto.Lines == null || dto.Lines.Count == 0) return BadRequest(new { message = "Select at least one part." });
         if (string.IsNullOrWhiteSpace(dto.Address)) return BadRequest(new { message = "Address is required." });
 
+        var validConditions = new[] { "Good", "Defective", "Lost" };
         foreach (var l in dto.Lines)
         {
+            if (string.IsNullOrWhiteSpace(l.Condition) || !validConditions.Contains(l.Condition))
+                return BadRequest(new { message = $"Condition for {l.PartNo} must be Good, Defective, or Lost." });
             var part = _context.Parts.FirstOrDefault(p => p.PartNo == l.PartNo);
             if (part == null) return BadRequest(new { message = $"Part {l.PartNo} not found." });
             _context.TicketPartLines.Add(new TicketPartLine
             {
-                TicketId = id, PartId = part.Id, PartNo = l.PartNo, Quantity = l.Quantity, LineType = "Return"
+                TicketId = id, PartId = part.Id, PartNo = l.PartNo, Quantity = l.Quantity, LineType = "Return", Condition = l.Condition
             });
         }
 
@@ -288,12 +291,16 @@ public class TicketController : ControllerBase
 
         foreach (var line in returnLines)
         {
+            // Lost means the part never actually came back — nothing to add to stock, it's a
+            // write-off (covers both a genuinely missing part and a non-circulating "baby part").
+            if (line.Condition == "Lost") continue;
+
             try
             {
                 _stock.AdjustStock(
-                    partNo: line.PartNo, locationId: mainWh?.Id ?? 0, qtyDelta: line.Quantity, condition: "Good",
+                    partNo: line.PartNo, locationId: mainWh?.Id ?? 0, qtyDelta: line.Quantity, condition: line.Condition ?? "Good",
                     movementType: "Return", refType: "Ticket", refId: id.ToString(),
-                    userName: ticket.TechName, remarks: $"Returned for ticket {ticket.ExternalTicketNo}");
+                    userName: ticket.TechName, remarks: $"Returned ({line.Condition}) for ticket {ticket.ExternalTicketNo}");
             }
             catch (InvalidOperationException ex)
             {
@@ -355,6 +362,7 @@ public class LineDto
 {
     public string PartNo { get; set; } = string.Empty;
     public int Quantity { get; set; }
+    public string? Condition { get; set; } // Return lines only: Good | Defective | Lost
 }
 
 public class RejectDto

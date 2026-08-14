@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Tickets — ATM Inventory</title>
-    <link rel="stylesheet" href="shared/styles.css?v=7">
+    <link rel="stylesheet" href="shared/styles.css?v=8">
     <style>
         /* Page-specific overrides */
         .section-head { display:flex; align-items:center; gap:10px; margin-bottom:20px; }
@@ -223,13 +223,14 @@
     </div>
 </div>
 
-<script src="shared/translations.js?v=7"></script>
-<script src="shared/toast.js?v=7"></script>
-<script src="shared/api.js?v=7"></script>
-<script src="shared/layout.js?v=7"></script>
+<script src="shared/translations.js?v=8"></script>
+<script src="shared/toast.js?v=8"></script>
+<script src="shared/api.js?v=8"></script>
+<script src="shared/layout.js?v=8"></script>
 <script>
     let cachedTickets = [];
     let rejectTargetId = null;
+    const CONDITION_LABEL = { Good: 'ของดี', Defective: 'ของเสีย', Lost: 'สูญหาย' };
 
     /* ── Init ── */
     initLayout();
@@ -294,7 +295,7 @@
             const canSubstitute = tk.status === "รอ" && tk.phase === "withdraw";
             const partsSummary = tk.lines.map(l => `
                 <div style="font-size:12px;display:flex;align-items:center;gap:5px;">
-                    <span>${l.partName} <span style="color:var(--text-muted)">×${l.quantity}</span> <span style="font-size:10px;color:var(--text-muted)">(${l.lineType === 'Withdraw' ? 'เบิก' : 'คืน'})</span></span>
+                    <span>${l.partName} <span style="color:var(--text-muted)">×${l.quantity}</span> <span style="font-size:10px;color:var(--text-muted)">(${l.lineType === 'Withdraw' ? 'เบิก' : 'คืน'}${l.condition ? ' — ' + CONDITION_LABEL[l.condition] : ''})</span></span>
                     ${canSubstitute && l.lineType === 'Withdraw'
                         ? `<button class="btn-substitute" title="เปลี่ยนเป็นอะไหล่เทียบเคียง" onclick="openSubstituteModal(${tk.ticketId}, ${l.ticketPartLineId}, '${l.partNo}', '${(l.partName || '').replace(/'/g, "\\'")}')">🔄</button>`
                         : ''}
@@ -455,7 +456,7 @@
         const withdrawLines = tk.lines.filter(l => l.lineType === 'Withdraw');
         const returnLines   = tk.lines.filter(l => l.lineType === 'Return');
         const lineListHtml = list => list.length
-            ? list.map(l => `<div style="display:flex;justify-content:space-between;padding:4px 0;border-bottom:1px solid var(--border);"><span>${l.partName}</span><span class="fw-600">×${l.quantity}</span></div>`).join('')
+            ? list.map(l => `<div style="display:flex;justify-content:space-between;padding:4px 0;border-bottom:1px solid var(--border);"><span>${l.partName}${l.condition ? ` <span style="color:var(--text-muted);font-size:11px;">(${CONDITION_LABEL[l.condition]})</span>` : ''}</span><span class="fw-600">×${l.quantity}</span></div>`).join('')
             : `<span class="detail-empty">—</span>`;
 
         document.getElementById('detailTitle').textContent =

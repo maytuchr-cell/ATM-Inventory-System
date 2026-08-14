@@ -143,7 +143,8 @@ public class DemoController : ControllerBase
         };
 
         TicketPartLine Line(int ticketId, Part p, int qty, string lineType) => new()
-        { TicketId = ticketId, PartId = p.Id, PartNo = p.PartNo, Quantity = qty, LineType = lineType };
+        { TicketId = ticketId, PartId = p.Id, PartNo = p.PartNo, Quantity = qty, LineType = lineType,
+          Condition = lineType == "Return" ? "Good" : null };
 
         // Ticket 1 — เบิก (ช่างได้รับของแล้ว)
         var p1 = parts[2];

@@ -206,6 +206,21 @@ using (var scope = app.Services.CreateScope())
                     CONSTRAINT FK_TicketPartLines_Tickets FOREIGN KEY (TicketId) REFERENCES Tickets (TicketId) ON DELETE CASCADE,
                     CONSTRAINT FK_TicketPartLines_Parts FOREIGN KEY (PartId) REFERENCES Parts (Id) ON DELETE RESTRICT
                 );");
+
+            // Condition (Good/Defective/Lost) added after TicketPartLines already existed on some DBs.
+            var tplCols = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            using (var cmd = context.Database.GetDbConnection().CreateCommand())
+            {
+                if (cmd.Connection!.State != System.Data.ConnectionState.Open) cmd.Connection.Open();
+                cmd.CommandText = "PRAGMA table_info(TicketPartLines);";
+                using var reader = cmd.ExecuteReader();
+                while (reader.Read()) tplCols.Add(reader.GetString(1));
+            }
+            if (!tplCols.Contains("Condition"))
+            {
+                context.Database.ExecuteSqlRaw("ALTER TABLE TicketPartLines ADD COLUMN Condition TEXT NULL;");
+                Console.WriteLine("✅ Migration: added TicketPartLines.Condition");
+            }
         }
         catch (Exception mex) { Console.WriteLine($"⚠ Tickets/TicketPartLines migration skipped: {mex.Message}"); }
 
@@ -1115,7 +1130,7 @@ using (var scope = app.Services.CreateScope())
                     if (returnAddr != null)
                         context.TicketPartLines.Add(new TicketPartLine
                         { TicketId = ticket.TicketId, PartId = context.Parts.First(p => p.PartNo == partNo).Id,
-                          PartNo = partNo, Quantity = 1, LineType = "Return" });
+                          PartNo = partNo, Quantity = 1, LineType = "Return", Condition = "Good" });
                     context.SaveChanges();
                 }
             }

@@ -15,5 +15,10 @@ public class TicketPartLine
 
     public string LineType { get; set; } = "Withdraw"; // Withdraw | Return
 
+    // Only meaningful on a Return line — the tech states what shape the part came back in.
+    // Good/Defective land in the matching PartStock bucket; Lost means it never physically came
+    // back (missing, or a non-circulating "baby part") so no stock is added at confirm-return.
+    public string? Condition { get; set; } // Good | Defective | Lost
+
     public DateTime CreatedAt { get; set; } = DateTime.Now;
 }
