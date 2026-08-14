@@ -282,7 +282,7 @@
         renderTicketsTable();
     }
 
-    const CONDITION_LABEL = { Good: 'ของดี', Defective: 'ของเสีย', Lost: 'สูญหาย' };
+    const CONDITION_LABEL = { Good: 'ของดี', Bad: 'ของเสีย', Lost: 'สูญหาย' };
     function partsSummaryHtml(tk) {
         return tk.lines.length
             ? tk.lines.map(l => `<div style="font-size:12px;">${l.partName} <span class="text-muted">×${l.quantity}</span> <span style="font-size:10px;color:var(--text-muted)">(${l.lineType === 'Withdraw' ? 'เบิก' : 'คืน'}${l.condition ? ' — ' + CONDITION_LABEL[l.condition] : ''})</span></div>`).join('')
@@ -390,7 +390,7 @@
 
     const CONDITION_OPTIONS = [
         { value: 'Good',      label: 'ของดี' },
-        { value: 'Defective', label: 'ของเสีย' },
+        { value: 'Bad',       label: 'ของเสีย' },
         { value: 'Lost',      label: 'สูญหาย' },
     ];
     function lineRowHtml(prefix, idx, partNo, qty, condition) {

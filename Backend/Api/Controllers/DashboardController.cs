@@ -56,7 +56,7 @@ public class DashboardController : ControllerBase
                 locationId   = g.Key,
                 locationName = locMap.GetValueOrDefault(g.Key, "—"),
                 goodQty      = g.Sum(s => s.GoodQty),
-                defectiveQty = g.Sum(s => s.DefectiveQty),
+                badQty = g.Sum(s => s.BadQty),
             });
 
         return Ok(grouped);

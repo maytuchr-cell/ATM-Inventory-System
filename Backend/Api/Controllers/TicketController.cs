@@ -242,11 +242,11 @@ public class TicketController : ControllerBase
         if (dto.Lines == null || dto.Lines.Count == 0) return BadRequest(new { message = "Select at least one part." });
         if (string.IsNullOrWhiteSpace(dto.Address)) return BadRequest(new { message = "Address is required." });
 
-        var validConditions = new[] { "Good", "Defective", "Lost" };
+        var validConditions = new[] { "Good", "Bad", "Lost" };
         foreach (var l in dto.Lines)
         {
             if (string.IsNullOrWhiteSpace(l.Condition) || !validConditions.Contains(l.Condition))
-                return BadRequest(new { message = $"Condition for {l.PartNo} must be Good, Defective, or Lost." });
+                return BadRequest(new { message = $"Condition for {l.PartNo} must be Good, Bad, or Lost." });
             var part = _context.Parts.FirstOrDefault(p => p.PartNo == l.PartNo);
             if (part == null) return BadRequest(new { message = $"Part {l.PartNo} not found." });
             _context.TicketPartLines.Add(new TicketPartLine
@@ -362,7 +362,7 @@ public class LineDto
 {
     public string PartNo { get; set; } = string.Empty;
     public int Quantity { get; set; }
-    public string? Condition { get; set; } // Return lines only: Good | Defective | Lost
+    public string? Condition { get; set; } // Return lines only: Good | Bad | Lost
 }
 
 public class RejectDto

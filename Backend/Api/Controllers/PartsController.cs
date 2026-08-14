@@ -81,7 +81,7 @@ public class PartsController : ControllerBase
             .Select(s => new {
                 locationId = s.LocationId,
                 location = s.Location == null ? null : s.Location.Name,
-                s.GoodQty, s.DefectiveQty
+                s.GoodQty, s.BadQty
             })
             .ToList();
 

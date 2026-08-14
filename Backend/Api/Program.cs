@@ -130,8 +130,38 @@ using (var scope = app.Services.CreateScope())
                 context.Database.ExecuteSqlRaw("ALTER TABLE PartStocks ADD COLUMN RowVersion TEXT NOT NULL DEFAULT '';");
                 Console.WriteLine("✅ Migration: added PartStocks.RowVersion");
             }
+            if (psCols.Contains("DefectiveQty") && !psCols.Contains("BadQty"))
+            {
+                context.Database.ExecuteSqlRaw("ALTER TABLE PartStocks RENAME COLUMN DefectiveQty TO BadQty;");
+                Console.WriteLine("✅ Migration: renamed PartStocks.DefectiveQty to BadQty");
+            }
         }
         catch (Exception mex) { Console.WriteLine($"⚠ PartStock columns migration skipped: {mex.Message}"); }
+
+        // ── Lightweight migration: rename "Defective" condition value to "Bad" wherever it
+        //    was stored, and rename DefectiveQty columns that still linger under the old name ──
+        if (isSqlite) try
+        {
+            foreach (var tbl in new[] { "GoodsReceiptLines", "ReturnRequests", "StockTransfers",
+                                         "StockMovements", "PartUnits", "TicketPartLines" })
+            {
+                var cols = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                using (var cmd = context.Database.GetDbConnection().CreateCommand())
+                {
+                    if (cmd.Connection!.State != System.Data.ConnectionState.Open) cmd.Connection.Open();
+                    cmd.CommandText = $"PRAGMA table_info({tbl});";
+                    using var reader = cmd.ExecuteReader();
+                    while (reader.Read()) cols.Add(reader.GetString(1));
+                }
+                if (cols.Contains("Condition"))
+                {
+                    var updated = context.Database.ExecuteSqlRaw(
+                        $"UPDATE {tbl} SET Condition = 'Bad' WHERE Condition = 'Defective';");
+                    if (updated > 0) Console.WriteLine($"✅ Migration: updated {updated} {tbl}.Condition rows from Defective to Bad");
+                }
+            }
+        }
+        catch (Exception mex) { Console.WriteLine($"⚠ Defective→Bad condition-value migration skipped: {mex.Message}"); }
 
         // ── Lightweight migration: create PartUnit table on existing DBs (EnsureCreated only
         //    builds tables for a brand-new DB, so add it here for databases created earlier) ──
@@ -207,7 +237,7 @@ using (var scope = app.Services.CreateScope())
                     CONSTRAINT FK_TicketPartLines_Parts FOREIGN KEY (PartId) REFERENCES Parts (Id) ON DELETE RESTRICT
                 );");
 
-            // Condition (Good/Defective/Lost) added after TicketPartLines already existed on some DBs.
+            // Condition (Good/Bad/Lost) added after TicketPartLines already existed on some DBs.
             var tplCols = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             using (var cmd = context.Database.GetDbConnection().CreateCommand())
             {
@@ -1009,7 +1039,7 @@ using (var scope = app.Services.CreateScope())
                     PartId = part.Id,
                     LocationId = mainWh.Id,
                     GoodQty = 0,
-                    DefectiveQty = 0
+                    BadQty = 0
                 });
             }
             context.SaveChanges();
@@ -1191,7 +1221,7 @@ using (var scope = app.Services.CreateScope())
                 new GoodsReceiptLine { GoodsReceiptId = gr1.Id, PartId = DemoPartId("ATM-001"), PartNo = "ATM-001", Qty = 1, Condition = "Good",      SerialNo = "SN-DISP-001" },
                 new GoodsReceiptLine { GoodsReceiptId = gr1.Id, PartId = DemoPartId("ATM-002"), PartNo = "ATM-002", Qty = 1, Condition = "Good",      SerialNo = "SN-BNA-001"  },
                 new GoodsReceiptLine { GoodsReceiptId = gr1.Id, PartId = DemoPartId("ATM-004"), PartNo = "ATM-004", Qty = 1, Condition = "Good",      SerialNo = "SN-CR-001"   },
-                new GoodsReceiptLine { GoodsReceiptId = gr1.Id, PartId = DemoPartId("ATM-006"), PartNo = "ATM-006", Qty = 1, Condition = "Defective", SerialNo = "SN-PRT-001"  }
+                new GoodsReceiptLine { GoodsReceiptId = gr1.Id, PartId = DemoPartId("ATM-006"), PartNo = "ATM-006", Qty = 1, Condition = "Bad",       SerialNo = "SN-PRT-001"  }
             );
 
             // GR movements in StockMovement ledger (with SerialNo)
@@ -1199,7 +1229,7 @@ using (var scope = app.Services.CreateScope())
                 new StockMovement { MovementType="GR", PartId=DemoPartId("ATM-001"), PartNo="ATM-001", ToLocationId=wh.Id, Qty=1, Condition="Good",      SerialNo="SN-DISP-001", RefType="GoodsReceipt", RefId=gr1.Id.ToString(), UserName="Admin", Remarks="Received from GRG", Timestamp=DateTime.Now.AddDays(-30) },
                 new StockMovement { MovementType="GR", PartId=DemoPartId("ATM-002"), PartNo="ATM-002", ToLocationId=wh.Id, Qty=1, Condition="Good",      SerialNo="SN-BNA-001",  RefType="GoodsReceipt", RefId=gr1.Id.ToString(), UserName="Admin", Remarks="Received from GRG", Timestamp=DateTime.Now.AddDays(-30) },
                 new StockMovement { MovementType="GR", PartId=DemoPartId("ATM-004"), PartNo="ATM-004", ToLocationId=wh.Id, Qty=1, Condition="Good",      SerialNo="SN-CR-001",   RefType="GoodsReceipt", RefId=gr1.Id.ToString(), UserName="Admin", Remarks="Received from GRG", Timestamp=DateTime.Now.AddDays(-30) },
-                new StockMovement { MovementType="GR", PartId=DemoPartId("ATM-006"), PartNo="ATM-006", ToLocationId=wh.Id, Qty=1, Condition="Defective", SerialNo="SN-PRT-001",  RefType="GoodsReceipt", RefId=gr1.Id.ToString(), UserName="Admin", Remarks="Received defective from GRG", Timestamp=DateTime.Now.AddDays(-30) }
+                new StockMovement { MovementType="GR", PartId=DemoPartId("ATM-006"), PartNo="ATM-006", ToLocationId=wh.Id, Qty=1, Condition="Bad",       SerialNo="SN-PRT-001",  RefType="GoodsReceipt", RefId=gr1.Id.ToString(), UserName="Admin", Remarks="Received bad unit from GRG", Timestamp=DateTime.Now.AddDays(-30) }
             );
             context.SaveChanges();
 
@@ -1219,19 +1249,19 @@ using (var scope = app.Services.CreateScope())
                 new StockMovement { MovementType="Transfer", PartId=DemoPartId("ATM-004"), PartNo="ATM-004", FromLocationId=wh.Id, ToLocationId=grg.Id, Qty=1, Condition="Good", SerialNo="SN-CR-001", RefType="StockTransfer", RefId="T-001", UserName="Admin", Remarks="Transferred to GRG Bangkok Hub", Timestamp=DateTime.Now.AddDays(-15) }
             );
 
-            // ── SN-PRT-001: Defective → Disposal ──
+            // ── SN-PRT-001: Bad → Disposal ──
             context.StockMovements.Add(
-                new StockMovement { MovementType="Disposal", PartId=DemoPartId("ATM-006"), PartNo="ATM-006", FromLocationId=wh.Id, ToLocationId=scrap.Id, Qty=1, Condition="Defective", SerialNo="SN-PRT-001", RefType="Disposal", RefId="D-001", UserName="Admin", Remarks="Unrepairable — sent to scrap", Timestamp=DateTime.Now.AddDays(-25) }
+                new StockMovement { MovementType="Disposal", PartId=DemoPartId("ATM-006"), PartNo="ATM-006", FromLocationId=wh.Id, ToLocationId=scrap.Id, Qty=1, Condition="Bad", SerialNo="SN-PRT-001", RefType="Disposal", RefId="D-001", UserName="Admin", Remarks="Unrepairable — sent to scrap", Timestamp=DateTime.Now.AddDays(-25) }
             );
 
             context.SaveChanges();
 
             // PartStock for demo parts so on-hand reconciles with the demo ledger above:
-            //  ATM-001 received→issued→returned = 1 in warehouse · ATM-004 transferred = 1 at GRG · ATM-006 disposed = 1 defective at Scrap
+            //  ATM-001 received→issued→returned = 1 in warehouse · ATM-004 transferred = 1 at GRG · ATM-006 disposed = 1 bad unit at Scrap
             context.PartStocks.AddRange(
-                new PartStock { PartId = DemoPartId("ATM-001"), LocationId = wh.Id,    GoodQty = 1, DefectiveQty = 0 },
-                new PartStock { PartId = DemoPartId("ATM-004"), LocationId = grg.Id,   GoodQty = 1, DefectiveQty = 0 },
-                new PartStock { PartId = DemoPartId("ATM-006"), LocationId = scrap.Id, GoodQty = 0, DefectiveQty = 1 }
+                new PartStock { PartId = DemoPartId("ATM-001"), LocationId = wh.Id,    GoodQty = 1, BadQty = 0 },
+                new PartStock { PartId = DemoPartId("ATM-004"), LocationId = grg.Id,   GoodQty = 1, BadQty = 0 },
+                new PartStock { PartId = DemoPartId("ATM-006"), LocationId = scrap.Id, GoodQty = 0, BadQty = 1 }
             );
             context.SaveChanges();
             Console.WriteLine("✅ Serial tracking demo data seeded. Try: SN-DISP-001, SN-BNA-001, SN-CR-001, SN-PRT-001");

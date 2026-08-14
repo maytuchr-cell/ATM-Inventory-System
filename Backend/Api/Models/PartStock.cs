@@ -6,7 +6,7 @@ public class PartStock
     public int PartId { get; set; }
     public int LocationId { get; set; }
     public int GoodQty { get; set; }
-    public int DefectiveQty { get; set; }
+    public int BadQty { get; set; }
     public DateTime UpdatedAt { get; set; } = DateTime.Now;   // when this stock row last changed
 
     // Optimistic-concurrency token — bumped on every save (see AppDbContext.SaveChanges).

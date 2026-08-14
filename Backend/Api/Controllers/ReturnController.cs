@@ -138,7 +138,7 @@ public class ReturnCreateDto
 {
     public int TicketId { get; set; }
     public string PartNo { get; set; } = string.Empty;
-    public string Condition { get; set; } = "Good"; // Good | Defective
+    public string Condition { get; set; } = "Good"; // Good | Bad
     public string SourceType { get; set; } = "Technician"; // Technician | GRG | LocalVendor
     public int LocationToId { get; set; }
     public string? ReturnedBy { get; set; }

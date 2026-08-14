@@ -12,7 +12,7 @@ public class PartUnit
     public int PartId { get; set; }
     public int? LocationId { get; set; }            // where this specific unit currently sits
     public string SerialNo { get; set; } = string.Empty;   // unique per unit
-    public string Condition { get; set; } = "Good"; // Good | Defective
+    public string Condition { get; set; } = "Good"; // Good | Bad
     public DateTime? ExpiryDate { get; set; }       // per-lot expiry of this unit
     public bool IsUnrepairable { get; set; }        // flagged for disposal
     public DateTime ReceivedAt { get; set; } = DateTime.Now;  // used to compute aging

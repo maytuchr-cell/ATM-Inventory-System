@@ -211,7 +211,7 @@ public class GoodsReceiptController : ControllerBase
             if (!int.TryParse(qtyStr, out int qty) || qty <= 0)
             { errors.Add($"Row {rowNum}: invalid Qty '{qtyStr}'."); continue; }
 
-            if (condition != "Good" && condition != "Defective") condition = "Good";
+            if (condition != "Good" && condition != "Bad") condition = "Good";
 
             var part = _context.Parts.FirstOrDefault(p => p.PartNo == partNo && p.IsActive);
             if (part == null) { errors.Add($"Row {rowNum}: Part '{partNo}' not found."); continue; }

@@ -7,7 +7,7 @@ public class StockTransfer
     public string PartNo { get; set; } = string.Empty; // snapshot
     public Part? Part { get; set; }
     public int Qty { get; set; }
-    public string Condition { get; set; } = "Good"; // Good | Defective
+    public string Condition { get; set; } = "Good"; // Good | Bad
     public int FromLocationId { get; set; }
     public int ToLocationId { get; set; }
     public string Status { get; set; } = "Pending"; // Pending|Approved|InTransit|Received

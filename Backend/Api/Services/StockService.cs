@@ -33,16 +33,16 @@ public class StockService
 
         if (stock == null)
         {
-            stock = new PartStock { PartId = part.Id, LocationId = locationId, GoodQty = 0, DefectiveQty = 0 };
+            stock = new PartStock { PartId = part.Id, LocationId = locationId, GoodQty = 0, BadQty = 0 };
             _context.Set<PartStock>().Add(stock);
         }
 
-        if (condition == "Defective")
-            stock.DefectiveQty += qtyDelta;
+        if (condition == "Bad")
+            stock.BadQty += qtyDelta;
         else
             stock.GoodQty += qtyDelta;
 
-        if (stock.GoodQty < 0 || stock.DefectiveQty < 0)
+        if (stock.GoodQty < 0 || stock.BadQty < 0)
             throw new InvalidOperationException($"Insufficient stock for {partNo} at location {locationId}.");
 
         stock.UpdatedAt = DateTime.Now;
@@ -87,8 +87,8 @@ public class StockService
             var from = FindStock(part.Id, fromLocationId.Value)
                 ?? throw new InvalidOperationException($"No stock for {partNo} at source location.");
 
-            if (condition == "Defective") from.DefectiveQty -= qty; else from.GoodQty -= qty;
-            if (from.GoodQty < 0 || from.DefectiveQty < 0)
+            if (condition == "Bad") from.BadQty -= qty; else from.GoodQty -= qty;
+            if (from.GoodQty < 0 || from.BadQty < 0)
                 throw new InvalidOperationException($"Insufficient stock for {partNo} at source location.");
             from.UpdatedAt = DateTime.Now;
         }
@@ -98,10 +98,10 @@ public class StockService
             var to = FindStock(part.Id, toLocationId.Value);
             if (to == null)
             {
-                to = new PartStock { PartId = part.Id, LocationId = toLocationId.Value, GoodQty = 0, DefectiveQty = 0 };
+                to = new PartStock { PartId = part.Id, LocationId = toLocationId.Value, GoodQty = 0, BadQty = 0 };
                 _context.Set<PartStock>().Add(to);
             }
-            if (condition == "Defective") to.DefectiveQty += qty; else to.GoodQty += qty;
+            if (condition == "Bad") to.BadQty += qty; else to.GoodQty += qty;
             to.UpdatedAt = DateTime.Now;
         }
 

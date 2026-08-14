@@ -22,8 +22,8 @@ async function fetchTickets() {
     }
 }
 
-const CONDITION_LABEL = { Good: 'ของดี', Defective: 'ของเสีย', Lost: 'สูญหาย' };
-const CONDITION_COLOR = { Good: 'var(--green)', Defective: 'var(--orange)', Lost: 'var(--red)' };
+const CONDITION_LABEL = { Good: 'ของดี', Bad: 'ของเสีย', Lost: 'สูญหาย' };
+const CONDITION_COLOR = { Good: 'var(--green)', Bad: 'var(--orange)', Lost: 'var(--red)' };
 function returnLinesHtml(tk) {
     const lines = tk.lines.filter(l => l.lineType === 'Return');
     return lines.length

@@ -46,7 +46,7 @@ public class AdminController : ControllerBase
         // SUM(PartStock.Good+Def) should equal SUM(Qty into) - SUM(Qty out of) the system.
         var onHand = _context.PartStocks
             .GroupBy(s => s.PartId)
-            .Select(g => new { PartId = g.Key, Qty = g.Sum(x => x.GoodQty + x.DefectiveQty) })
+            .Select(g => new { PartId = g.Key, Qty = g.Sum(x => x.GoodQty + x.BadQty) })
             .ToDictionary(x => x.PartId, x => x.Qty);
 
         var movedIn = _context.StockMovements.Where(m => m.ToLocationId != null)

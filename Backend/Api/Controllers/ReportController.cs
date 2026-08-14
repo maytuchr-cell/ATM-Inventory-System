@@ -46,7 +46,7 @@ public class ReportController : ControllerBase
         var parts = _context.Parts.ToList();
         var stockByPart = _context.PartStocks
             .GroupBy(s => s.PartId)
-            .ToDictionary(g => g.Key, g => g.Sum(s => s.GoodQty) + g.Sum(s => s.DefectiveQty));
+            .ToDictionary(g => g.Key, g => g.Sum(s => s.GoodQty) + g.Sum(s => s.BadQty));
 
         var result = parts.Select(p =>
         {

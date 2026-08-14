@@ -122,10 +122,10 @@ public class DemoController : ControllerBase
                 GoodsReceiptId = gr2.Id,
                 PartNo         = p.PartNo,
                 Qty            = qty,
-                Condition      = i % 7 == 0 ? "Defective" : "Good",
+                Condition      = i % 7 == 0 ? "Bad" : "Good",
                 Remarks        = i % 7 == 0 ? "กล่องบุบ ของชำรุด" : null,
             });
-            var cond = i % 7 == 0 ? "Defective" : "Good";
+            var cond = i % 7 == 0 ? "Bad" : "Good";
             _stock.AdjustStock(p.PartNo, locWh.Id, qty, cond,
                 "GR", "GoodsReceipt", gr2.Id.ToString(), "system", $"Local purchase via {gr2.ReceiptNo}");
         }
@@ -230,12 +230,12 @@ public class DemoController : ControllerBase
         _context.SaveChanges();
 
         // ── Return ─────────────────────────────────────────────────────────
-        // คืนจาก Ticket 1 (สภาพ Defective)
+        // คืนจาก Ticket 1 (สภาพ Bad)
         var ret1 = new ReturnRequest
         {
             TicketId       = tk1.TicketId,
             PartNo         = p1.PartNo,
-            Condition      = "Defective",
+            Condition      = "Bad",
             SourceType     = "Technician",
             LocationFromId = locOl.Id,
             LocationToId   = locScrap.Id,
@@ -244,7 +244,7 @@ public class DemoController : ControllerBase
         };
         _context.ReturnRequests.Add(ret1);
         _context.SaveChanges();
-        _stock.AdjustStock(p1.PartNo, locScrap.Id, 1, "Defective",
+        _stock.AdjustStock(p1.PartNo, locScrap.Id, 1, "Bad",
             "Return", "Ticket", tk1.TicketId.ToString(), techs[0].Item1, "คืนอะไหล่ชำรุด");
         _context.SaveChanges();
 
