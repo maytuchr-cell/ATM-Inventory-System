@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Equivalent Groups — ATM Inventory</title>
-  <link rel="stylesheet" href="shared/styles.css?v=5">
+  <link rel="stylesheet" href="shared/styles.css?v=6">
   <style>
     .group-card { border:1.5px solid var(--border); border-radius:12px; padding:18px 20px; margin-bottom:14px; background:var(--bg-card); }
     .group-header { display:flex; justify-content:space-between; align-items:center; gap:12px; }
@@ -17,6 +17,12 @@
     .add-member-row { display:flex; gap:8px; margin-top:10px; align-items:center; }
     .add-member-row input { flex:1; }
     .group-actions { display:flex; gap:6px; }
+
+    .import-stats { display:grid; grid-template-columns:1fr 1fr; gap:10px; margin:14px 0; }
+    .import-stat { background:var(--bg-subtle); border-radius:8px; padding:12px; text-align:center; }
+    .import-stat-num { font-size:22px; font-weight:800; color:var(--orange); }
+    .import-stat-label { font-size:11px; color:var(--text-secondary); margin-top:2px; }
+    .import-notfound { max-height:140px; overflow-y:auto; background:var(--bg-subtle); border-radius:8px; padding:10px; font-size:12px; font-family:monospace; color:var(--text-secondary); }
   </style>
 </head>
 <body>
@@ -29,6 +35,8 @@
           <div class="topbar-sub"   data-i18n="eg.sub">Define groups of interchangeable parts for return validation</div>
         </div>
         <div class="topbar-controls">
+          <input type="file" id="import-file-input" accept=".xlsx" style="display:none" onchange="handleImportFile(this)">
+          <button class="btn" onclick="document.getElementById('import-file-input').click()">📥 Import จาก Excel</button>
           <button class="btn btn-primary" onclick="openNewGroupModal()">+ <span data-i18n="eg.btn.newgroup">New Group</span></button>
         </div>
       </div>
@@ -65,10 +73,24 @@
     </div>
   </div>
 
-  <script src="shared/translations.js?v=5"></script>
-  <script src="shared/toast.js?v=5"></script>
-  <script src="shared/api.js?v=5"></script>
-  <script src="shared/layout.js?v=5"></script>
-  <script src="admin-equivalent-groups.js?v=5"></script>
+  <!-- Import result modal -->
+  <div class="modal-overlay" id="import-modal" style="display:none">
+    <div class="modal" style="max-width:460px">
+      <div class="modal-header">
+        <span>ผลการ Import</span>
+        <button class="modal-close" onclick="document.getElementById('import-modal').style.display='none'">✕</button>
+      </div>
+      <div class="modal-body" id="import-result-body"></div>
+      <div class="modal-footer">
+        <button class="btn btn-primary" onclick="document.getElementById('import-modal').style.display='none'">Close</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="shared/translations.js?v=6"></script>
+  <script src="shared/toast.js?v=6"></script>
+  <script src="shared/api.js?v=6"></script>
+  <script src="shared/layout.js?v=6"></script>
+  <script src="admin-equivalent-groups.js?v=6"></script>
 </body>
 </html>

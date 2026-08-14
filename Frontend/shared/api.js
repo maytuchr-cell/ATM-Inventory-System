@@ -33,6 +33,33 @@ async function apiFetch(path, options = {}) {
   return res.json();
 }
 
+// Same auth/error handling as apiFetch, but for multipart/form-data uploads — must NOT set
+// Content-Type manually, or the browser can't attach its own multipart boundary.
+async function apiUpload(path, formData) {
+  const url = API_BASE + path;
+  const token = localStorage.getItem('authToken');
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: { ...(token ? { 'Authorization': 'Bearer ' + token } : {}) },
+    body: formData
+  });
+  if (res.status === 401) {
+    localStorage.removeItem('authToken');
+    if (!location.pathname.endsWith('login.html')) location.href = 'login.html';
+    const err = new Error('Session expired. Please sign in again.');
+    err.status = 401;
+    throw err;
+  }
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    const err = new Error(body.message || `HTTP ${res.status}`);
+    err.status = res.status;
+    throw err;
+  }
+  if (res.status === 204) return null;
+  return res.json();
+}
+
 const api = {
   parts: {
     getAll:  (params = {}) => apiFetch('/Parts?' + new URLSearchParams(params)),
@@ -127,6 +154,7 @@ const api = {
     addMember:    (id, partNo) => apiFetch(`/EquivalentGroup/${id}/members`, { method: 'POST', body: JSON.stringify({ partNo }) }),
     removeMember: (id, memberId) => apiFetch(`/EquivalentGroup/${id}/members/${memberId}`, { method: 'DELETE' }),
     forPart:      (partNo)     => apiFetch(`/EquivalentGroup/for-part/${encodeURIComponent(partNo)}`),
+    importExcel:  (file)       => { const fd = new FormData(); fd.append('file', file); return apiUpload('/EquivalentGroup/import', fd); },
   },
   tracking: {
     bySerial: (sn) => apiFetch(`/Tracking/serial/${encodeURIComponent(sn)}`),

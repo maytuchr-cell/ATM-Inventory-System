@@ -120,6 +120,42 @@ async function addMember(groupId) {
     }
 }
 
+async function handleImportFile(input) {
+    const file = input.files[0];
+    input.value = ''; // allow re-selecting the same file next time
+    if (!file) return;
+    if (!file.name.toLowerCase().endsWith('.xlsx')) {
+        showToast('รองรับเฉพาะไฟล์ .xlsx', 'error');
+        return;
+    }
+    showToast('กำลัง Import...', 'info');
+    try {
+        const result = await api.equivalentGroups.importExcel(file);
+        showImportResult(result);
+        await fetchGroups();
+    } catch (e) {
+        showToast(e.message || 'Import failed.', 'error');
+    }
+}
+
+function showImportResult(r) {
+    document.getElementById('import-result-body').innerHTML = `
+        <div class="import-stats">
+            <div class="import-stat"><div class="import-stat-num">${r.groupsCreated}</div><div class="import-stat-label">กลุ่มใหม่</div></div>
+            <div class="import-stat"><div class="import-stat-num">${r.groupsMerged}</div><div class="import-stat-label">รวมเข้ากลุ่มเดิม</div></div>
+            <div class="import-stat"><div class="import-stat-num">${r.membersAdded}</div><div class="import-stat-label">อะไหล่ที่เพิ่ม</div></div>
+            <div class="import-stat"><div class="import-stat-num">${r.rowsProcessed}</div><div class="import-stat-label">แถวที่ประมวลผล</div></div>
+        </div>
+        ${r.notFoundCount > 0 ? `
+            <div style="font-size:12.5px;color:var(--text-secondary);margin-bottom:6px;">
+                ⚠ ${r.notFoundCount} Part No. ในไฟล์ไม่มีในระบบ (ข้ามไป) — ตัวอย่าง:
+            </div>
+            <div class="import-notfound">${r.notFoundSample.join(', ')}${r.notFoundCount > r.notFoundSample.length ? ', …' : ''}</div>
+        ` : `<div style="font-size:12.5px;color:var(--green);">Part No. ทุกตัวในไฟล์พบในระบบ ✓</div>`}
+    `;
+    document.getElementById('import-modal').style.display = 'flex';
+}
+
 async function removeMember(groupId, memberId) {
     try {
         await api.equivalentGroups.removeMember(groupId, memberId);

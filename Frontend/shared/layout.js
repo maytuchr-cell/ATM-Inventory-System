@@ -55,6 +55,7 @@
         { key: 'nav.locations',  href: 'admin-locations.html',  icon: 'weui:location-filled',        adminOnly: true },
         { key: 'nav.vendors',    href: 'admin-vendors.html',    icon: 'fa6-solid:warehouse',         adminOnly: true },
         { key: 'nav.atmmodels',  href: 'admin-atm-models.html', icon: 'streamline-plump:cog-solid',  adminOnly: true },
+        { key: 'nav.equivgroups', href: 'admin-equivalent-groups.html', icon: 'mdi:vector-link',      adminOnly: true },
       ]
     },
     {
