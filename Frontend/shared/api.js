@@ -74,6 +74,7 @@ const api = {
     submitReturn: (id, dto)      => apiFetch(`/Ticket/${id}/return`,    { method: 'PUT',  body: JSON.stringify(dto) }),
     ship:         (id)           => apiFetch(`/Ticket/${id}/ship`,      { method: 'PUT' }),
     confirmReturn:(id)           => apiFetch(`/Ticket/${id}/confirm-return`, { method: 'PUT' }),
+    substitutePart:(id, lineId, partNo) => apiFetch(`/Ticket/${id}/lines/${lineId}/substitute`, { method: 'PUT', body: JSON.stringify({ partNo }) }),
   },
   goodsReceipt: {
     getAll:  (params = {}) => apiFetch('/GoodsReceipt?' + new URLSearchParams(params)),
@@ -125,6 +126,7 @@ const api = {
     remove:       (id)         => apiFetch(`/EquivalentGroup/${id}`, { method: 'DELETE' }),
     addMember:    (id, partNo) => apiFetch(`/EquivalentGroup/${id}/members`, { method: 'POST', body: JSON.stringify({ partNo }) }),
     removeMember: (id, memberId) => apiFetch(`/EquivalentGroup/${id}/members/${memberId}`, { method: 'DELETE' }),
+    forPart:      (partNo)     => apiFetch(`/EquivalentGroup/for-part/${encodeURIComponent(partNo)}`),
   },
   tracking: {
     bySerial: (sn) => apiFetch(`/Tracking/serial/${encodeURIComponent(sn)}`),

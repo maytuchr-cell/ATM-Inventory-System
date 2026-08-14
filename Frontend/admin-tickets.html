@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Tickets — ATM Inventory</title>
-    <link rel="stylesheet" href="shared/styles.css?v=4">
+    <link rel="stylesheet" href="shared/styles.css?v=5">
     <style>
         /* Page-specific overrides */
         .section-head { display:flex; align-items:center; gap:10px; margin-bottom:20px; }
@@ -37,6 +37,12 @@
         .btn-cancel  { background:none; color:var(--text-muted); border:none; padding:4px 2px; font-family:inherit; font-size:11px; font-weight:600; cursor:pointer; text-decoration:underline; text-underline-offset:2px; transition:color .15s; }
         .btn-cancel:hover  { color:var(--red); }
         .ticket-action-row { display:flex; gap:6px; flex-wrap:wrap; align-items:center; }
+        .btn-substitute { background:none; border:none; cursor:pointer; font-size:12px; padding:1px 3px; border-radius:4px; line-height:1; opacity:.7; transition:all .15s; }
+        .btn-substitute:hover { opacity:1; background:var(--orange-light); }
+        .sub-option { padding:9px 10px; border:1.5px solid var(--border); border-radius:8px; cursor:pointer; margin-bottom:6px; font-size:12.5px; display:flex; justify-content:space-between; align-items:center; transition:all .15s; }
+        .sub-option:hover { border-color:var(--orange); background:var(--orange-light); }
+        .sub-option .sub-qty { font-size:11px; color:var(--text-muted); }
+        .sub-option .sub-qty.zero { color:var(--red); font-weight:600; }
 
         /* Ticket toolbar (search + status filter + refresh) */
         .tkt-toolbar { display:flex; flex-wrap:wrap; gap:8px; align-items:center; }
@@ -179,6 +185,18 @@
     </div>
 </div>
 
+<!-- Substitute equivalent part modal -->
+<div class="reason-overlay" id="subOverlay">
+    <div class="reason-modal">
+        <h3>เปลี่ยนเป็นอะไหล่เทียบเคียง</h3>
+        <p>อะไหล่ที่ขอ: <strong id="subOriginalPart">—</strong> — เลือกอะไหล่เทียบเคียงที่จะใช้แทน</p>
+        <div id="subOptionsList"></div>
+        <div class="reason-modal-actions">
+            <button class="btn-cancel" style="width:auto;padding:8px 16px;" onclick="closeSubstituteModal()">Cancel</button>
+        </div>
+    </div>
+</div>
+
 <!-- Reject reason modal -->
 <div class="reason-overlay" id="reasonOverlay">
     <div class="reason-modal">
@@ -205,10 +223,10 @@
     </div>
 </div>
 
-<script src="shared/translations.js?v=4"></script>
-<script src="shared/toast.js?v=4"></script>
-<script src="shared/api.js?v=4"></script>
-<script src="shared/layout.js?v=4"></script>
+<script src="shared/translations.js?v=5"></script>
+<script src="shared/toast.js?v=5"></script>
+<script src="shared/api.js?v=5"></script>
+<script src="shared/layout.js?v=5"></script>
 <script>
     let cachedTickets = [];
     let rejectTargetId = null;
@@ -272,8 +290,15 @@
             const b = STATUS_BADGE[tk.status] || STATUS_BADGE["รอ"];
             const badge = `<span class="badge ${b.cls}"><span class="badge-dot"></span>${tk.status}</span>`;
 
-            const partsSummary = tk.lines.map(l =>
-                `<div style="font-size:12px;">${l.partName} <span style="color:var(--text-muted)">×${l.quantity}</span> <span style="font-size:10px;color:var(--text-muted)">(${l.lineType === 'Withdraw' ? 'เบิก' : 'คืน'})</span></div>`
+            // Substituting to an equivalent part only makes sense before approval commits stock.
+            const canSubstitute = tk.status === "รอ" && tk.phase === "withdraw";
+            const partsSummary = tk.lines.map(l => `
+                <div style="font-size:12px;display:flex;align-items:center;gap:5px;">
+                    <span>${l.partName} <span style="color:var(--text-muted)">×${l.quantity}</span> <span style="font-size:10px;color:var(--text-muted)">(${l.lineType === 'Withdraw' ? 'เบิก' : 'คืน'})</span></span>
+                    ${canSubstitute && l.lineType === 'Withdraw'
+                        ? `<button class="btn-substitute" title="เปลี่ยนเป็นอะไหล่เทียบเคียง" onclick="openSubstituteModal(${tk.ticketId}, ${l.ticketPartLineId}, '${l.partNo}', '${(l.partName || '').replace(/'/g, "\\'")}')">🔄</button>`
+                        : ''}
+                </div>`
             ).join('');
 
             const phaseLabel = tk.phase === 'withdraw'
@@ -349,6 +374,44 @@
             closeSyncModal();
             await fetchTickets();
             showToast?.('Synced.', 'success');
+        } catch (e) { showToast?.(e.message || t('toast.error'), 'error'); }
+    }
+
+    /* ── Substitute equivalent part ── */
+    let subTarget = null; // { ticketId, lineId, partNo }
+    async function openSubstituteModal(ticketId, lineId, partNo, partName) {
+        subTarget = { ticketId, lineId, partNo };
+        document.getElementById('subOriginalPart').textContent = `${partName} (${partNo})`;
+        const list = document.getElementById('subOptionsList');
+        list.innerHTML = `<div style="text-align:center;color:var(--text-muted);padding:10px;font-size:12.5px;">กำลังโหลด...</div>`;
+        document.getElementById('subOverlay').classList.add('open');
+        try {
+            const options = await api.equivalentGroups.forPart(partNo);
+            if (!options.length) {
+                list.innerHTML = `<div style="text-align:center;color:var(--text-muted);padding:10px;font-size:12.5px;">ยังไม่มีอะไหล่เทียบเคียงที่ลงทะเบียนไว้สำหรับชิ้นนี้ — ตั้งค่าได้ที่หน้า Equivalent Groups</div>`;
+                return;
+            }
+            list.innerHTML = options.map(o => `
+                <div class="sub-option" onclick="confirmSubstitute('${o.partNo.replace(/'/g, "\\'")}')">
+                    <span>${o.partName} <span style="color:var(--text-muted);font-size:11px;">(${o.partNo})</span></span>
+                    <span class="sub-qty ${o.stockQuantity === 0 ? 'zero' : ''}">${o.stockQuantity} ชิ้น</span>
+                </div>`).join('');
+        } catch (e) {
+            list.innerHTML = `<div style="text-align:center;color:var(--red);padding:10px;font-size:12.5px;">${e.message || t('toast.error')}</div>`;
+        }
+    }
+    function closeSubstituteModal() {
+        document.getElementById('subOverlay').classList.remove('open');
+        subTarget = null;
+    }
+    async function confirmSubstitute(newPartNo) {
+        if (!subTarget) return;
+        if (!confirm(`เปลี่ยนอะไหล่เป็น ${newPartNo}?`)) return;
+        try {
+            await api.tickets.substitutePart(subTarget.ticketId, subTarget.lineId, newPartNo);
+            closeSubstituteModal();
+            await fetchTickets();
+            showToast?.('เปลี่ยนอะไหล่แล้ว', 'success');
         } catch (e) { showToast?.(e.message || t('toast.error'), 'error'); }
     }
 
@@ -462,7 +525,7 @@
     }
     document.addEventListener('keydown', e => {
         if (e.key !== 'Escape') return;
-        closeDetailModal(); closeReasonModal(); closeSyncModal();
+        closeDetailModal(); closeReasonModal(); closeSyncModal(); closeSubstituteModal();
     });
 </script>
 </body>

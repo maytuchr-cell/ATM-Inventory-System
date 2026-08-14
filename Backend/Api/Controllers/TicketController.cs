@@ -108,6 +108,36 @@ public class TicketController : ControllerBase
         return Ok(new { message = "Withdraw request submitted.", ticket });
     }
 
+    // PUT /api/Ticket/{id}/lines/{lineId}/substitute — Admin swaps a requested part for a
+    // registered equivalent (e.g. requested part is out of stock) before approving.
+    [HttpPut("{id}/lines/{lineId}/substitute")]
+    public IActionResult SubstitutePart(int id, int lineId, [FromBody] SubstituteDto dto)
+    {
+        var ticket = _context.Tickets.FirstOrDefault(t => t.TicketId == id);
+        if (ticket == null) return NotFound(new { message = "Ticket not found." });
+        if (ticket.Status != "รอ") return BadRequest(new { message = "Only a waiting ticket's parts can be substituted." });
+
+        var line = _context.TicketPartLines.FirstOrDefault(l => l.TicketPartLineId == lineId && l.TicketId == id);
+        if (line == null) return NotFound(new { message = "Line not found." });
+        if (line.LineType != "Withdraw") return BadRequest(new { message = "Only withdraw lines can be substituted." });
+
+        var newPart = _context.Parts.FirstOrDefault(p => p.PartNo == dto.PartNo && p.IsActive);
+        if (newPart == null) return BadRequest(new { message = "Part not found." });
+
+        var groupIds = _context.EquivalentGroupMembers.Where(m => m.PartNo == line.PartNo).Select(m => m.GroupId).ToHashSet();
+        var isEquivalent = groupIds.Any() && _context.EquivalentGroupMembers.Any(m => groupIds.Contains(m.GroupId) && m.PartNo == dto.PartNo);
+        if (!isEquivalent)
+            return BadRequest(new { message = $"{dto.PartNo} is not a registered equivalent of {line.PartNo}." });
+
+        var originalPartNo = line.PartNo;
+        line.PartId = newPart.Id;
+        line.PartNo = dto.PartNo;
+        ticket.UpdatedAt = DateTime.Now;
+        _context.SaveChanges();
+        _audit.Log(User, "Ticket", id.ToString(), "SUBSTITUTE_PART", null, new { ticket.TicketId, lineId, from = originalPartNo, to = dto.PartNo });
+        return Ok(new { message = "Substituted.", line });
+    }
+
     // PUT /api/Ticket/{id}/approve — Admin approves the withdraw request → เดินทาง
     [HttpPut("{id}/approve")]
     public IActionResult ApproveTicket(int id)
@@ -290,6 +320,11 @@ public class TicketController : ControllerBase
 
         return Ok(new { path = $"/uploads/{fileName}" });
     }
+}
+
+public class SubstituteDto
+{
+    public string PartNo { get; set; } = string.Empty;
 }
 
 public class SyncTicketDto

@@ -67,6 +67,33 @@ public class EquivalentGroupController : ControllerBase
         return Ok(new { message = "Deleted." });
     }
 
+    // GET /api/EquivalentGroup/for-part/{partNo} — other parts in the same equivalent group(s),
+    // for Admin to substitute in when the requested part is out of stock at Ticket-approval time.
+    [HttpGet("for-part/{partNo}")]
+    public IActionResult GetEquivalentsForPart(string partNo)
+    {
+        var groupIds = _context.EquivalentGroupMembers.Where(m => m.PartNo == partNo).Select(m => m.GroupId).ToHashSet();
+        if (!groupIds.Any()) return Ok(new List<object>());
+
+        var equivalentPartNos = _context.EquivalentGroupMembers
+            .Where(m => groupIds.Contains(m.GroupId) && m.PartNo != partNo)
+            .Select(m => m.PartNo)
+            .Distinct()
+            .ToList();
+
+        var stockByPartId = _context.PartStocks
+            .GroupBy(s => s.PartId)
+            .Select(g => new { PartId = g.Key, Qty = g.Sum(x => x.GoodQty) })
+            .ToDictionary(x => x.PartId, x => x.Qty);
+
+        var result = _context.Parts
+            .Where(p => equivalentPartNos.Contains(p.PartNo) && p.IsActive)
+            .ToList()
+            .Select(p => new { p.PartNo, p.PartName, stockQuantity = stockByPartId.GetValueOrDefault(p.Id, 0) });
+
+        return Ok(result);
+    }
+
     // POST /api/EquivalentGroup/{id}/members
     [HttpPost("{id}/members")]
     public IActionResult AddMember(int id, [FromBody] MemberDto dto)
