@@ -81,15 +81,25 @@ public class TicketController : ControllerBase
         return Ok(new { message = "Synced.", ticket });
     }
 
-    // PUT /api/Ticket/{id}/withdraw — technician submits the withdraw request (Form 1)
+    // PUT /api/Ticket/{id}/withdraw — technician submits the withdraw request (Form 1).
+    // Also handles resubmission after Admin Reject: a rejected ticket's old Withdraw lines and
+    // RejectReason are cleared and replaced with what the tech submits this time.
     [HttpPut("{id}/withdraw")]
     public IActionResult SubmitWithdraw(int id, [FromBody] SubmitLinesDto dto)
     {
         var ticket = _context.Tickets.FirstOrDefault(t => t.TicketId == id);
         if (ticket == null) return NotFound(new { message = "Ticket not found." });
-        if (ticket.Status != null) return BadRequest(new { message = "Ticket already has a withdraw request." });
+        if (ticket.Status != null && ticket.Status != "Reject")
+            return BadRequest(new { message = "Only a new ticket, or one Admin rejected, can submit a withdraw request." });
         if (dto.Lines == null || dto.Lines.Count == 0) return BadRequest(new { message = "Select at least one part." });
         if (string.IsNullOrWhiteSpace(dto.Address)) return BadRequest(new { message = "Address is required." });
+
+        if (ticket.Status == "Reject")
+        {
+            var oldLines = _context.TicketPartLines.Where(l => l.TicketId == id && l.LineType == "Withdraw");
+            _context.TicketPartLines.RemoveRange(oldLines);
+            ticket.RejectReason = null;
+        }
 
         foreach (var l in dto.Lines)
         {
