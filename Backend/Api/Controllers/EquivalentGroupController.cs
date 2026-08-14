@@ -96,8 +96,10 @@ public class EquivalentGroupController : ControllerBase
     }
 
     // POST /api/EquivalentGroup/import — bulk-create/merge equivalent groups from a GRG-style
-    // catalog Excel file. Looks for a "Part Number" column and a "Same part no." column
-    // (searched across the first 10 rows of the first sheet, so a blank title row is fine);
+    // catalog Excel file. Looks for a "Part Number" column and a "Same part no." column,
+    // searched across the first 10 rows of EVERY sheet (not just the first) — an admin adding
+    // an instructions/cover sheet ahead of the data is a reasonable thing to do, so the first
+    // sheet that actually has both headers wins, not necessarily sheet 1.
     // "Same part no." may list several PartNos, one per line within the cell. Cells that
     // Excel stored as numbers (leading-zero-free) are converted to text before matching.
     // Real GRG catalog files carry embedded part photos and can run 30-50MB, past Kestrel's
@@ -112,24 +114,28 @@ public class EquivalentGroupController : ControllerBase
             return BadRequest(new { message = "Only .xlsx files are supported." });
 
         using var stream = file.OpenReadStream();
-        IXLWorksheet ws;
         try
         {
             using var wb = new XLWorkbook(stream);
-            ws = wb.Worksheets.First();
 
+            IXLWorksheet? ws = null;
             int headerRow = -1, partNoCol = -1, sameCol = -1;
-            var lastRowScan = Math.Min(10, ws.LastRowUsed()?.RowNumber() ?? 1);
-            var lastColScan = ws.LastColumnUsed()?.ColumnNumber() ?? 1;
-            for (int r = 1; r <= lastRowScan && (partNoCol < 0 || sameCol < 0); r++)
-                for (int c = 1; c <= lastColScan; c++)
-                {
-                    var val = ws.Cell(r, c).GetString().Trim();
-                    if (val.Equals("Part Number", StringComparison.OrdinalIgnoreCase)) { partNoCol = c; headerRow = r; }
-                    if (val.Equals("Same part no.", StringComparison.OrdinalIgnoreCase)) sameCol = c;
-                }
-            if (partNoCol < 0 || sameCol < 0)
-                return BadRequest(new { message = "Could not find 'Part Number' and 'Same part no.' columns in the first 10 rows." });
+            foreach (var candidate in wb.Worksheets)
+            {
+                int r1 = -1, c1 = -1, c2 = -1;
+                var lastRowScan = Math.Min(10, candidate.LastRowUsed()?.RowNumber() ?? 1);
+                var lastColScan = candidate.LastColumnUsed()?.ColumnNumber() ?? 1;
+                for (int r = 1; r <= lastRowScan && (c1 < 0 || c2 < 0); r++)
+                    for (int c = 1; c <= lastColScan; c++)
+                    {
+                        var val = candidate.Cell(r, c).GetString().Trim();
+                        if (val.Equals("Part Number", StringComparison.OrdinalIgnoreCase)) { c1 = c; r1 = r; }
+                        if (val.Equals("Same part no.", StringComparison.OrdinalIgnoreCase)) c2 = c;
+                    }
+                if (c1 >= 0 && c2 >= 0) { ws = candidate; headerRow = r1; partNoCol = c1; sameCol = c2; break; }
+            }
+            if (ws == null)
+                return BadRequest(new { message = "Could not find a sheet with 'Part Number' and 'Same part no.' columns in its first 10 rows." });
 
             static string Norm(string s) => s.Trim().TrimStart('-').Trim();
 
