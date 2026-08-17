@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Tickets — ATM Inventory</title>
-    <link rel="stylesheet" href="shared/styles.css?v=16">
+    <link rel="stylesheet" href="shared/styles.css?v=17">
     <style>
         /* Page-specific overrides */
         .section-head { display:flex; align-items:center; gap:10px; margin-bottom:20px; }
@@ -292,10 +292,10 @@
     </div>
 </div>
 
-<script src="shared/translations.js?v=16"></script>
-<script src="shared/toast.js?v=16"></script>
-<script src="shared/api.js?v=16"></script>
-<script src="shared/layout.js?v=16"></script>
+<script src="shared/translations.js?v=17"></script>
+<script src="shared/toast.js?v=17"></script>
+<script src="shared/api.js?v=17"></script>
+<script src="shared/layout.js?v=17"></script>
 <script>
     let cachedTickets = [];
     let rejectTargetId = null;
@@ -477,14 +477,23 @@
 
             // Substituting to an equivalent part only makes sense before approval commits stock.
             const canSubstitute = tk.status === "รอ" && tk.phase === "withdraw";
-            const partsSummary = tk.lines.map(l => `
+            // Whether the central warehouse can actually fulfill every Withdraw line right now —
+            // gates the Approve button below so Admin can't approve a request stock can't cover.
+            const withdrawLines = tk.lines.filter(l => l.lineType === 'Withdraw');
+            const hasShortage = withdrawLines.some(l => (l.availableStock ?? 0) < l.quantity);
+            const partsSummary = tk.lines.map(l => {
+                const short = l.lineType === 'Withdraw' && (l.availableStock ?? 0) < l.quantity;
+                const stockNote = l.lineType === 'Withdraw'
+                    ? `<span style="font-size:10px;font-weight:600;color:${short ? 'var(--red)' : 'var(--text-muted)'}">${short ? `⚠ คงเหลือ ${l.availableStock ?? 0}` : `คงเหลือ ${l.availableStock ?? 0}`}</span>`
+                    : '';
+                return `
                 <div style="font-size:12px;display:flex;align-items:center;gap:5px;">
-                    <span>${l.partName} <span style="color:var(--text-muted)">×${l.quantity}</span> <span style="font-size:10px;color:var(--text-muted)">(${l.lineType === 'Withdraw' ? 'เบิก' : 'คืน'}${l.condition ? ' — ' + CONDITION_LABEL[l.condition] : ''})</span></span>
+                    <span>${l.partName} <span style="color:var(--text-muted)">×${l.quantity}</span> <span style="font-size:10px;color:var(--text-muted)">(${l.lineType === 'Withdraw' ? 'เบิก' : 'คืน'}${l.condition ? ' — ' + CONDITION_LABEL[l.condition] : ''})</span> ${stockNote}</span>
                     ${canSubstitute && l.lineType === 'Withdraw'
                         ? `<button class="btn-substitute" title="เปลี่ยนเป็นอะไหล่เทียบเคียง" onclick="openSubstituteModal(${tk.ticketId}, ${l.ticketPartLineId}, '${l.partNo}', '${(l.partName || '').replace(/'/g, "\\'")}')">🔄</button>`
                         : ''}
-                </div>`
-            ).join('');
+                </div>`;
+            }).join('');
 
             const phaseLabel = tk.phase === 'withdraw'
                 ? `<span style="font-size:11px;color:var(--text-secondary);">ขาเบิก</span>`
@@ -495,7 +504,7 @@
             if (tk.status === "รอ" && tk.phase === "withdraw") {
                 action = `
                     <div class="ticket-action-row">
-                        <button class="btn-approve" onclick="approveTicket(${tk.ticketId})">
+                        <button class="btn-approve" onclick="approveTicket(${tk.ticketId})" ${hasShortage ? 'disabled title="สต็อกในคลังไม่พอสำหรับอะไหล่บางรายการ"' : ''} style="${hasShortage ? 'opacity:.45;cursor:not-allowed;' : ''}">
                             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
                             Approve
                         </button>

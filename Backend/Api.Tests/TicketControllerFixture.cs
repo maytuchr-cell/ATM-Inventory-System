@@ -24,9 +24,16 @@ public static class TicketControllerFixture
             .Options;
         var context = new AppDbContext(options);
 
-        context.Parts.Add(new Part { PartNo = PartNo, PartName = "Test Part", IsActive = true });
+        var part = new Part { PartNo = PartNo, PartName = "Test Part", IsActive = true };
+        var mainWh = new Location { Code = "WH-RAT", Name = "Ratchaburana Warehouse", LocationType = "RATCHABURANA", IsActive = true };
+        context.Parts.Add(part);
         context.Locations.Add(new Location { Code = "OL-TECH", Name = "Technician Stock", LocationType = "OL_TECHNICIAN", IsActive = true });
-        context.Locations.Add(new Location { Code = "WH-RAT", Name = "Ratchaburana Warehouse", LocationType = "RATCHABURANA", IsActive = true });
+        context.Locations.Add(mainWh);
+        context.SaveChanges();
+
+        // Central warehouse starts stocked so approve/receive succeed by default — tests that
+        // care about the insufficient-stock path seed a smaller/zero quantity explicitly instead.
+        context.PartStocks.Add(new PartStock { PartId = part.Id, LocationId = mainWh.Id, GoodQty = 100, BadQty = 0 });
         context.SaveChanges();
 
         var stock = new StockService(context);

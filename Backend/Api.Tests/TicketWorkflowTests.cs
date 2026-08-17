@@ -76,9 +76,10 @@ public class TicketWorkflowTests
         var final = context.Tickets.First(t => t.TicketId == ticket.TicketId);
         Assert.Equal("คืน", final.Status);
 
+        // Fixture seeds 100 at WH-RAT; withdrawing 1 then returning 1 Good nets back to 100.
         var mainWh = context.Locations.First(l => l.Code == "WH-RAT");
         var stock = context.PartStocks.First(s => s.LocationId == mainWh.Id);
-        Assert.Equal(1, stock.GoodQty);
+        Assert.Equal(100, stock.GoodQty);
     }
 
     [Fact]
@@ -96,10 +97,10 @@ public class TicketWorkflowTests
         controller.MarkShipped(ticket.TicketId);
         controller.ConfirmReturnArrived(ticket.TicketId);
 
+        // Withdrawing 1 (100 -> 99) and a Lost return adds nothing back — stays at 99.
         var mainWh = context.Locations.First(l => l.Code == "WH-RAT");
-        var stock = context.PartStocks.FirstOrDefault(s => s.LocationId == mainWh.Id);
-        // No stock row should have been created at all — Lost is a pure write-off.
-        Assert.Null(stock);
+        var stock = context.PartStocks.First(s => s.LocationId == mainWh.Id);
+        Assert.Equal(99, stock.GoodQty);
         Assert.Equal("คืน", context.Tickets.First(t => t.TicketId == ticket.TicketId).Status);
     }
 
@@ -123,9 +124,10 @@ public class TicketWorkflowTests
         controller.MarkShipped(ticket.TicketId);
         controller.ConfirmReturnArrived(ticket.TicketId);
 
+        // Withdrew 3 (100 -> 97); returned 1 Good (97 -> 98), 1 Bad, 1 Lost (no change).
         var mainWh = context.Locations.First(l => l.Code == "WH-RAT");
         var stock = context.PartStocks.First(s => s.LocationId == mainWh.Id);
-        Assert.Equal(1, stock.GoodQty);
+        Assert.Equal(98, stock.GoodQty);
         Assert.Equal(1, stock.BadQty);
     }
 
@@ -167,6 +169,47 @@ public class TicketWorkflowTests
         });
 
         Assert.IsType<BadRequestObjectResult>(result);
+    }
+
+    [Fact]
+    public void ApproveTicket_WithInsufficientWarehouseStock_ReturnsBadRequest_AndReceiveActuallyMovesStock()
+    {
+        var (controller, context) = TicketControllerFixture.Create();
+        // Fixture seeds 100 GoodQty at WH-RAT by default — drop it below what's requested.
+        var mainWh = context.Locations.First(l => l.Code == "WH-RAT");
+        var stock = context.PartStocks.First(s => s.LocationId == mainWh.Id);
+        stock.GoodQty = 2;
+        context.SaveChanges();
+
+        controller.SyncFromAservice(new SyncTicketDto { ExternalTicketNo = "T13", TechName = "Tech" });
+        var ticket = context.Tickets.First(t => t.ExternalTicketNo == "T13");
+        controller.SubmitWithdraw(ticket.TicketId, new SubmitLinesDto
+        {
+            Lines = new() { new LineDto { PartNo = TicketControllerFixture.PartNo, Quantity = 5 } },
+            Address = "Addr"
+        });
+
+        var result = controller.ApproveTicket(ticket.TicketId);
+
+        Assert.IsType<BadRequestObjectResult>(result);
+        Assert.Equal("รอ", context.Tickets.First(t => t.TicketId == ticket.TicketId).Status);
+        Assert.Equal(2, context.PartStocks.First(s => s.LocationId == mainWh.Id).GoodQty); // untouched
+    }
+
+    [Fact]
+    public void ReceiveTicket_DeductsFromWarehouse_AndAddsToTechLocation()
+    {
+        var (controller, context) = TicketControllerFixture.Create();
+        var ticket = TicketControllerFixture.CreateReceivedTicket(controller, context, "T14", qty: 4);
+        Assert.Equal("เบิก", ticket.Status);
+
+        var mainWh  = context.Locations.First(l => l.Code == "WH-RAT");
+        var techLoc = context.Locations.First(l => l.LocationType == "OL_TECHNICIAN");
+        var whStock = context.PartStocks.First(s => s.LocationId == mainWh.Id);
+        var techStock = context.PartStocks.First(s => s.LocationId == techLoc.Id);
+
+        Assert.Equal(96, whStock.GoodQty); // seeded 100 - 4
+        Assert.Equal(4, techStock.GoodQty);
     }
 
     [Fact]

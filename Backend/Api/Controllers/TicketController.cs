@@ -46,6 +46,13 @@ public class TicketController : ControllerBase
             .ToList();
         var partMap = _context.Parts.ToDictionary(p => p.Id, p => p.PartName);
 
+        // Central-warehouse on-hand per part — shown next to each Withdraw line so Admin can see
+        // at a glance whether there's enough stock to approve, without opening Parts Master.
+        var mainWh = _context.Locations.FirstOrDefault(l => l.Code == "WH-RAT");
+        var stockByPartId = mainWh == null
+            ? new Dictionary<int, int>()
+            : _context.PartStocks.Where(s => s.LocationId == mainWh.Id).ToDictionary(s => s.PartId, s => s.GoodQty);
+
         var result = tickets.Select(t =>
         {
             var tLines = lines.Where(l => l.TicketId == t.TicketId).ToList();
@@ -58,7 +65,8 @@ public class TicketController : ControllerBase
                 lines = tLines.Select(l => new
                 {
                     l.TicketPartLineId, l.PartId, l.PartNo, l.Quantity, l.LineType, l.Condition,
-                    partName = partMap.GetValueOrDefault(l.PartId, l.PartNo)
+                    partName = partMap.GetValueOrDefault(l.PartId, l.PartNo),
+                    availableStock = l.LineType == "Withdraw" ? stockByPartId.GetValueOrDefault(l.PartId, 0) : (int?)null
                 }),
                 attachments = attachments.Where(a => a.TicketId == t.TicketId).Select(a => new
                 {
@@ -195,6 +203,23 @@ public class TicketController : ControllerBase
         if (ticket == null) return NotFound(new { message = "Ticket not found." });
         if (ticket.Status != "รอ") return BadRequest(new { message = "Only a waiting ticket can be approved." });
 
+        // Guard against approving a request the central warehouse can't actually fulfill — stock
+        // is only checked here (a live snapshot), not reserved; the real deduction happens at
+        // ReceiveTicket, which re-validates and will fail the same way if stock moved in between.
+        var mainWh = _context.Locations.FirstOrDefault(l => l.Code == "WH-RAT");
+        var withdrawLines = _context.TicketPartLines.Where(l => l.TicketId == id && l.LineType == "Withdraw").ToList();
+        var shortages = new List<string>();
+        foreach (var line in withdrawLines)
+        {
+            var part = _context.Parts.FirstOrDefault(p => p.PartNo == line.PartNo);
+            var available = part == null || mainWh == null ? 0
+                : _context.PartStocks.FirstOrDefault(s => s.PartId == part.Id && s.LocationId == mainWh.Id)?.GoodQty ?? 0;
+            if (available < line.Quantity)
+                shortages.Add($"{line.PartNo} (ต้องการ {line.Quantity}, คงเหลือ {available})");
+        }
+        if (shortages.Count > 0)
+            return BadRequest(new { message = $"สต็อกไม่พอสำหรับ: {string.Join(", ", shortages)}" });
+
         ticket.Status = "เดินทาง";
         ticket.ApproverName = User?.Identity?.Name ?? "admin";
         ticket.ApprovedAt = DateTime.Now;
@@ -249,11 +274,19 @@ public class TicketController : ControllerBase
 
         var withdrawLines = _context.TicketPartLines.Where(l => l.TicketId == id && l.LineType == "Withdraw").ToList();
         var techLoc = _context.Locations.FirstOrDefault(l => l.LocationType == "OL_TECHNICIAN");
+        var mainWh = _context.Locations.FirstOrDefault(l => l.Code == "WH-RAT");
 
         foreach (var line in withdrawLines)
         {
             try
             {
+                // Real transfer out of the central warehouse into the tech's on-hand bucket —
+                // previously this only added stock at the tech location and never actually
+                // deducted from the warehouse, so a part could be "withdrawn" indefinitely.
+                _stock.AdjustStock(
+                    partNo: line.PartNo, locationId: mainWh?.Id ?? 0, qtyDelta: -line.Quantity, condition: "Good",
+                    movementType: "Issue", refType: "Ticket", refId: id.ToString(),
+                    userName: ticket.TechName, remarks: $"Issued for ticket {ticket.ExternalTicketNo}");
                 _stock.AdjustStock(
                     partNo: line.PartNo, locationId: techLoc?.Id ?? 0, qtyDelta: line.Quantity, condition: "Good",
                     movementType: "Issue", refType: "Ticket", refId: id.ToString(),
