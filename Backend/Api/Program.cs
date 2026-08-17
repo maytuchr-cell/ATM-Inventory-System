@@ -186,6 +186,25 @@ using (var scope = app.Services.CreateScope())
         }
         catch (Exception mex) { Console.WriteLine($"⚠ PartUnit migration skipped: {mex.Message}"); }
 
+        // ── Lightweight migration: create TicketAttachments table on existing DBs (technician
+        //    photos attached to a withdraw/return submission) ──
+        if (isSqlite) try
+        {
+            context.Database.ExecuteSqlRaw(@"
+                CREATE TABLE IF NOT EXISTS TicketAttachments (
+                    TicketAttachmentId INTEGER NOT NULL CONSTRAINT PK_TicketAttachments PRIMARY KEY AUTOINCREMENT,
+                    TicketId INTEGER NOT NULL,
+                    Phase TEXT NOT NULL,
+                    FilePath TEXT NOT NULL,
+                    FileName TEXT NOT NULL,
+                    UploadedAt TEXT NOT NULL,
+                    CONSTRAINT FK_TicketAttachments_Tickets FOREIGN KEY (TicketId) REFERENCES Tickets (TicketId) ON DELETE CASCADE
+                );");
+            context.Database.ExecuteSqlRaw(
+                "CREATE INDEX IF NOT EXISTS IX_TicketAttachments_TicketId ON TicketAttachments (TicketId);");
+        }
+        catch (Exception mex) { Console.WriteLine($"⚠ TicketAttachments migration skipped: {mex.Message}"); }
+
         // ── Lightweight migration: rebuild Tickets on the new เบิก/ยืม/คืน schema, add
         //    TicketPartLines. Old Tickets rows used the single-part-request model — there is no
         //    lossless column mapping to the new multi-part/Aservice-sync model, so on an

@@ -102,6 +102,7 @@ const api = {
     ship:         (id)           => apiFetch(`/Ticket/${id}/ship`,      { method: 'PUT' }),
     confirmReturn:(id)           => apiFetch(`/Ticket/${id}/confirm-return`, { method: 'PUT' }),
     substitutePart:(id, lineId, partNo) => apiFetch(`/Ticket/${id}/lines/${lineId}/substitute`, { method: 'PUT', body: JSON.stringify({ partNo }) }),
+    uploadAttachment: (file) => { const fd = new FormData(); fd.append('file', file); return apiUpload('/Ticket/upload', fd); },
   },
   goodsReceipt: {
     getAll:  (params = {}) => apiFetch('/GoodsReceipt?' + new URLSearchParams(params)),

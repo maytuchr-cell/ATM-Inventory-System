@@ -11,12 +11,16 @@ public class TicketController : ControllerBase
     private readonly AppDbContext _context;
     private readonly StockService _stock;
     private readonly AuditService _audit;
+    private readonly IConfiguration _config;
+    private readonly IWebHostEnvironment _env;
 
-    public TicketController(AppDbContext context, StockService stock, AuditService audit)
+    public TicketController(AppDbContext context, StockService stock, AuditService audit, IConfiguration config, IWebHostEnvironment env)
     {
         _context = context;
         _stock = stock;
         _audit = audit;
+        _config = config;
+        _env = env;
     }
 
     // Derived, not stored — see dbFinal3.xlsx Ticket sheet remarks: Status carries dual meaning
@@ -36,6 +40,10 @@ public class TicketController : ControllerBase
         var lines = _context.TicketPartLines
             .Where(l => tickets.Select(t => t.TicketId).Contains(l.TicketId))
             .ToList();
+        var attachments = _context.TicketAttachments
+            .Where(a => tickets.Select(t => t.TicketId).Contains(a.TicketId))
+            .OrderBy(a => a.UploadedAt)
+            .ToList();
         var partMap = _context.Parts.ToDictionary(p => p.Id, p => p.PartName);
 
         var result = tickets.Select(t =>
@@ -51,6 +59,10 @@ public class TicketController : ControllerBase
                 {
                     l.TicketPartLineId, l.PartId, l.PartNo, l.Quantity, l.LineType, l.Condition,
                     partName = partMap.GetValueOrDefault(l.PartId, l.PartNo)
+                }),
+                attachments = attachments.Where(a => a.TicketId == t.TicketId).Select(a => new
+                {
+                    a.TicketAttachmentId, a.Phase, a.FilePath, a.FileName, a.UploadedAt
                 })
             };
         });
@@ -108,6 +120,14 @@ public class TicketController : ControllerBase
             _context.TicketPartLines.Add(new TicketPartLine
             {
                 TicketId = id, PartId = part.Id, PartNo = l.PartNo, Quantity = l.Quantity, LineType = "Withdraw"
+            });
+        }
+
+        foreach (var a in dto.Attachments ?? new())
+        {
+            _context.TicketAttachments.Add(new TicketAttachment
+            {
+                TicketId = id, Phase = "Withdraw", FilePath = a.FilePath, FileName = a.FileName
             });
         }
 
@@ -255,6 +275,14 @@ public class TicketController : ControllerBase
             });
         }
 
+        foreach (var a in dto.Attachments ?? new())
+        {
+            _context.TicketAttachments.Add(new TicketAttachment
+            {
+                TicketId = id, Phase = "Return", FilePath = a.FilePath, FileName = a.FileName
+            });
+        }
+
         ticket.Status = "รอ";
         ticket.ReturnAddress = dto.Address;
         ticket.UpdatedAt = DateTime.Now;
@@ -314,28 +342,38 @@ public class TicketController : ControllerBase
         return Ok(new { message = "Return confirmed.", ticket });
     }
 
-    // POST /api/Ticket/upload
+    // POST /api/Ticket/upload — technician attaches a photo to a withdraw/return submission.
+    // Called once per file from the frontend; the returned path is then included in the
+    // Attachments list sent to /withdraw or /return so it gets tied to the ticket.
     [HttpPost("upload")]
+    [RequestSizeLimit(10_000_000)]
     public async Task<IActionResult> UploadAttachment(IFormFile file)
     {
         if (file == null || file.Length == 0)
             return BadRequest(new { message = "No file provided." });
+        if (file.Length > 10_000_000)
+            return BadRequest(new { message = "File too large (max 10MB)." });
 
         var allowed = new[] { ".jpg", ".jpeg", ".png", ".gif", ".webp" };
         var ext = Path.GetExtension(file.FileName).ToLowerInvariant();
         if (!allowed.Contains(ext))
             return BadRequest(new { message = "Only image files are allowed." });
 
-        var uploads = Path.Combine(Directory.GetCurrentDirectory(), "wwwroot", "uploads");
+        // Same external asset folder that part images are served from (see Program.cs AssetPath /
+        // /assets static mapping) — kept outside the repo so uploads don't bloat git.
+        var assetRoot = _config["AssetPath"] ?? Path.Combine(_env.ContentRootPath, "wwwroot");
+        var uploads = Path.Combine(assetRoot, "tickets");
         Directory.CreateDirectory(uploads);
 
         var fileName = $"{Guid.NewGuid()}{ext}";
         var filePath = Path.Combine(uploads, fileName);
 
-        using var stream = new FileStream(filePath, FileMode.Create);
-        await file.CopyToAsync(stream);
+        using (var stream = new FileStream(filePath, FileMode.Create))
+        {
+            await file.CopyToAsync(stream);
+        }
 
-        return Ok(new { path = $"/uploads/{fileName}" });
+        return Ok(new { filePath = $"/assets/tickets/{fileName}", fileName = file.FileName });
     }
 }
 
@@ -356,6 +394,14 @@ public class SubmitLinesDto
 {
     public List<LineDto> Lines { get; set; } = new();
     public string Address { get; set; } = string.Empty;
+    // Paths returned by POST /api/Ticket/upload for photos the tech attached to this submission.
+    public List<AttachmentDto>? Attachments { get; set; }
+}
+
+public class AttachmentDto
+{
+    public string FilePath { get; set; } = string.Empty;
+    public string FileName { get; set; } = string.Empty;
 }
 
 public class LineDto

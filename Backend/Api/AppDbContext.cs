@@ -9,6 +9,7 @@ public class AppDbContext : DbContext
     public DbSet<Part> Parts { get; set; }
     public DbSet<Ticket> Tickets { get; set; }
     public DbSet<TicketPartLine> TicketPartLines { get; set; }
+    public DbSet<TicketAttachment> TicketAttachments { get; set; }
     public DbSet<Category> Categories { get; set; }
     public DbSet<Location> Locations { get; set; }
     public DbSet<Vendor> Vendors { get; set; }

@@ -75,6 +75,11 @@
         .tk-line-row input[type=number] { flex:0 0 70px; padding:8px 8px; border-radius:8px; background:var(--bg-input); color:var(--text-primary); border:1.5px solid var(--border); font-family:inherit; font-size:13px; outline:none; text-align:center; }
         .tk-line-row select.tk-condition { flex:0 0 92px; padding:8px 6px; border-radius:8px; background:var(--bg-input); color:var(--text-primary); border:1.5px solid var(--border); font-family:inherit; font-size:12.5px; outline:none; }
         .tk-line-row .tk-remove { flex:0 0 auto; background:none; border:none; color:var(--red); cursor:pointer; font-size:15px; padding:4px 6px; }
+        .tk-photo-preview { display:flex; flex-wrap:wrap; gap:8px; margin-top:10px; }
+        .tk-photo-thumb { position:relative; width:64px; height:64px; }
+        .tk-photo-thumb img { width:100%; height:100%; object-fit:cover; border-radius:8px; border:1.5px solid var(--border); }
+        .tk-photo-thumb .tk-photo-remove { position:absolute; top:-6px; right:-6px; width:18px; height:18px; border-radius:50%; background:var(--red); color:#fff; border:none; font-size:10px; cursor:pointer; line-height:1; display:flex; align-items:center; justify-content:center; }
+        .tk-photo-thumb .tk-photo-uploading { position:absolute; inset:0; background:rgba(0,0,0,.4); border-radius:8px; display:flex; align-items:center; justify-content:center; color:#fff; font-size:10px; }
         .btn-add-line { background:var(--bg-subtle); color:var(--text-secondary); border:1.5px dashed var(--border); width:100%; padding:8px; border-radius:8px; font-family:inherit; font-size:12.5px; font-weight:600; cursor:pointer; margin-top:2px; }
         .btn-add-line:hover { border-color:var(--orange); color:var(--orange); }
 
@@ -148,6 +153,11 @@
             <span class="tk-section-label" style="margin-top:18px;display:block;">ที่อยู่จัดส่ง</span>
             <textarea id="wdAddress" class="form-textarea" placeholder="กรอกที่อยู่สำหรับจัดส่งอะไหล่..." style="min-height:70px;"></textarea>
 
+            <span class="tk-section-label" style="margin-top:18px;display:block;">แนบรูปภาพ</span>
+            <input type="file" id="wdPhotoInput" accept="image/*" multiple style="display:none;" onchange="handlePhotoSelect('wd', this.files)">
+            <button type="button" class="btn-add-line" onclick="document.getElementById('wdPhotoInput').click()">📷 แนบรูปภาพ (เลือกได้หลายรูป)</button>
+            <div id="wdPhotoPreview" class="tk-photo-preview"></div>
+
             <div class="tk-modal-actions">
                 <button type="button" class="btn btn-ghost" onclick="closeWithdrawModal()">Cancel</button>
                 <button type="button" class="btn btn-primary" style="width:auto;margin-top:0;" onclick="submitWithdraw()">Submit</button>
@@ -184,6 +194,11 @@
             <span class="tk-section-label" style="margin-top:18px;display:block;">ที่อยู่ (จุดส่งคืน)</span>
             <textarea id="rtAddress" class="form-textarea" placeholder="กรอกที่อยู่ที่จะส่งของคืน..." style="min-height:70px;"></textarea>
 
+            <span class="tk-section-label" style="margin-top:18px;display:block;">แนบรูปภาพ</span>
+            <input type="file" id="rtPhotoInput" accept="image/*" multiple style="display:none;" onchange="handlePhotoSelect('rt', this.files)">
+            <button type="button" class="btn-add-line" onclick="document.getElementById('rtPhotoInput').click()">📷 แนบรูปภาพ (เลือกได้หลายรูป)</button>
+            <div id="rtPhotoPreview" class="tk-photo-preview"></div>
+
             <div class="tk-modal-actions">
                 <button type="button" class="btn btn-ghost" onclick="closeReturnModal()">Cancel</button>
                 <button type="button" class="btn btn-primary" style="width:auto;margin-top:0;" onclick="submitReturn()">Submit</button>
@@ -214,6 +229,11 @@
 
             <span class="tk-section-label" style="margin-top:18px;display:block;">ที่อยู่จัดส่ง</span>
             <textarea id="nrAddress" class="form-textarea" placeholder="กรอกที่อยู่สำหรับจัดส่งอะไหล่..." style="min-height:70px;"></textarea>
+
+            <span class="tk-section-label" style="margin-top:18px;display:block;">แนบรูปภาพ</span>
+            <input type="file" id="nrPhotoInput" accept="image/*" multiple style="display:none;" onchange="handlePhotoSelect('nr', this.files)">
+            <button type="button" class="btn-add-line" onclick="document.getElementById('nrPhotoInput').click()">📷 แนบรูปภาพ (เลือกได้หลายรูป)</button>
+            <div id="nrPhotoPreview" class="tk-photo-preview"></div>
 
             <div class="tk-modal-actions">
                 <button type="button" class="btn btn-ghost" onclick="closeNewRequestModal()">Cancel</button>
@@ -486,6 +506,40 @@
         return lines;
     }
 
+    /* ── Photo attachments (withdraw + return share this) ──
+       Files are held client-side until Submit, then uploaded one by one via
+       /Ticket/upload and the returned paths are sent along with the withdraw/return body. */
+    const photoFiles = { wd: [], rt: [], nr: [] };
+
+    function handlePhotoSelect(prefix, fileList) {
+        for (const f of fileList) {
+            if (!f.type.startsWith('image/')) continue;
+            photoFiles[prefix].push(f);
+        }
+        renderPhotoPreview(prefix);
+        document.getElementById(`${prefix}PhotoInput`).value = '';
+    }
+    function removePhoto(prefix, idx) {
+        photoFiles[prefix].splice(idx, 1);
+        renderPhotoPreview(prefix);
+    }
+    function renderPhotoPreview(prefix) {
+        const box = document.getElementById(`${prefix}PhotoPreview`);
+        box.innerHTML = photoFiles[prefix].map((f, i) => `
+            <div class="tk-photo-thumb">
+                <img src="${URL.createObjectURL(f)}" alt="${f.name}">
+                <button type="button" class="tk-photo-remove" onclick="removePhoto('${prefix}', ${i})">✕</button>
+            </div>`).join('');
+    }
+    async function uploadPendingPhotos(prefix) {
+        const attachments = [];
+        for (const f of photoFiles[prefix]) {
+            const res = await api.tickets.uploadAttachment(f);
+            attachments.push({ filePath: res.filePath, fileName: res.fileName });
+        }
+        return attachments;
+    }
+
     /* ── Withdraw form (also handles resubmit-after-Reject) ── */
     function openWithdrawModal(id) {
         const tk = cachedTickets.find(t => t.ticketId === id);
@@ -516,6 +570,8 @@
         } else {
             addLine('withdraw');
         }
+        photoFiles.wd = [];
+        renderPhotoPreview('wd');
         document.getElementById('withdrawOverlay').classList.add('open');
     }
     function closeWithdrawModal() {
@@ -528,7 +584,9 @@
         if (!lines.length) { showToast?.('เลือกอะไหล่อย่างน้อย 1 รายการ', 'error'); return; }
         if (!address) { showToast?.('กรุณากรอกที่อยู่จัดส่ง', 'error'); return; }
         try {
-            await api.tickets.submitWithdraw(activeTicketId, { lines, address });
+            const attachments = await uploadPendingPhotos('wd');
+            await api.tickets.submitWithdraw(activeTicketId, { lines, address, attachments });
+            photoFiles.wd = [];
             closeWithdrawModal();
             await fetchTickets();
             showToast?.('ส่งคำขอเบิกแล้ว รอ Admin อนุมัติ', 'success');
@@ -563,6 +621,8 @@
             document.getElementById('rtLines').insertAdjacentHTML('beforeend', lineRowHtml('rt', rtLineCount, l.partNo, l.quantity));
         });
         if (!withdrawn.length) addLine('return');
+        photoFiles.rt = [];
+        renderPhotoPreview('rt');
         document.getElementById('returnOverlay').classList.add('open');
     }
     function closeReturnModal() {
@@ -575,7 +635,9 @@
         if (!lines.length) { showToast?.('เลือกอะไหล่อย่างน้อย 1 รายการ', 'error'); return; }
         if (!address) { showToast?.('กรุณากรอกที่อยู่', 'error'); return; }
         try {
-            await api.tickets.submitReturn(activeTicketId, { lines, address });
+            const attachments = await uploadPendingPhotos('rt');
+            await api.tickets.submitReturn(activeTicketId, { lines, address, attachments });
+            photoFiles.rt = [];
             closeReturnModal();
             await fetchTickets();
             showToast?.('ส่งคำขอคืนแล้ว', 'success');
@@ -602,6 +664,8 @@
         document.getElementById('nrLines').innerHTML = '';
         nrLineCount = 0;
         addLine('new');
+        photoFiles.nr = [];
+        renderPhotoPreview('nr');
         document.getElementById('newRequestOverlay').classList.add('open');
     }
     function closeNewRequestModal() {
@@ -618,7 +682,9 @@
         try {
             const externalTicketNo = `SELF-${Date.now()}`;
             const synced = await api.tickets.sync({ externalTicketNo, techName, techEmail: currentEmail, techDept });
-            await api.tickets.submitWithdraw(synced.ticket.ticketId, { lines, address });
+            const attachments = await uploadPendingPhotos('nr');
+            await api.tickets.submitWithdraw(synced.ticket.ticketId, { lines, address, attachments });
+            photoFiles.nr = [];
             closeNewRequestModal();
             await fetchTickets();
             showToast?.('ส่งคำขอเบิกแล้ว รอ Admin อนุมัติ', 'success');

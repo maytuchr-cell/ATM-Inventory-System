@@ -446,6 +446,14 @@
     /* ── Ticket Detail Modal ── */
     const IMG_BASE = API_BASE.replace(/\/api$/, '');
 
+    function attachmentGalleryHtml(list) {
+        if (!list || !list.length) return `<span class="detail-empty">—</span>`;
+        return `<div style="display:flex;flex-wrap:wrap;gap:8px;">${list.map(a => `
+            <img src="${IMG_BASE}${a.filePath}" class="detail-img" alt="${a.fileName}"
+                 style="width:72px;height:72px;object-fit:cover;border-radius:8px;border:1px solid var(--border);cursor:pointer;"
+                 onclick="window.open('${IMG_BASE}${a.filePath}','_blank')">`).join('')}</div>`;
+    }
+
     function showDetail(id) {
         const tk = cachedTickets.find(t => t.ticketId === id);
         if (!tk) return;
@@ -492,6 +500,17 @@
                 <div class="detail-section-title">รายการอะไหล่ — คืน</div>
                 ${lineListHtml(returnLines)}
             </div>
+
+            ${(tk.attachments || []).length ? `
+            <hr class="detail-divider">
+            <div class="detail-section">
+                <div class="detail-section-title">รูปภาพแนบ — เบิก</div>
+                ${attachmentGalleryHtml(tk.attachments.filter(a => a.phase === 'Withdraw'))}
+            </div>
+            <div class="detail-section">
+                <div class="detail-section-title">รูปภาพแนบ — คืน</div>
+                ${attachmentGalleryHtml(tk.attachments.filter(a => a.phase === 'Return'))}
+            </div>` : ''}
 
             <hr class="detail-divider">
 
