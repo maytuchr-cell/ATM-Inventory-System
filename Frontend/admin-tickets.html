@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Tickets — ATM Inventory</title>
-    <link rel="stylesheet" href="shared/styles.css?v=11">
+    <link rel="stylesheet" href="shared/styles.css?v=12">
     <style>
         /* Page-specific overrides */
         .section-head { display:flex; align-items:center; gap:10px; margin-bottom:20px; }
@@ -95,6 +95,16 @@
         .detail-img { width:100%; border-radius:10px; border:1px solid var(--border); margin-top:4px; object-fit:contain; max-height:300px; cursor:zoom-in; }
         .detail-divider { border:none; border-top:1px solid var(--border); margin:16px 0; }
         .detail-empty { color:var(--text-muted); font-style:italic; font-size:13px; }
+
+        /* Page tabs — All Tickets / Returns */
+        .page-tabs { display:flex; gap:4px; border-bottom:1px solid var(--border); margin-bottom:20px; }
+        .page-tab { background:none; border:none; padding:10px 4px; margin-right:20px; font-family:inherit; font-size:13.5px; font-weight:600; color:var(--text-secondary); cursor:pointer; border-bottom:2.5px solid transparent; margin-bottom:-1px; transition:color .15s,border-color .15s; }
+        .page-tab:hover { color:var(--text-primary); }
+        .page-tab.active { color:var(--orange); border-bottom-color:var(--orange); }
+        .tab-panel { display:none; }
+        .tab-panel.active { display:block; }
+        .btn-confirm { background:var(--green-light); color:var(--green); border:1.5px solid transparent; padding:6px 10px; border-radius:7px; font-family:inherit; font-size:11.5px; font-weight:600; cursor:pointer; display:inline-flex; align-items:center; gap:4px; }
+        .btn-confirm:hover { background:var(--green); color:#fff; }
     </style>
 </head>
 <body>
@@ -114,7 +124,13 @@
         <!-- Page body -->
         <div class="page-body">
 
-            <!-- Tickets: เบิก / คืน -->
+            <div class="page-tabs">
+                <button class="page-tab active" id="tabBtnAll" onclick="switchTab('all')">ทุก Ticket</button>
+                <button class="page-tab" id="tabBtnReturns" onclick="switchTab('returns')">คืนอะไหล่ <span class="section-count" id="returns-badge-count" style="margin-left:4px;">—</span></button>
+            </div>
+
+            <!-- Tab: Tickets — เบิก / คืน (all) -->
+            <div class="tab-panel active" id="tabPanelAll">
             <div class="card">
                 <div class="section-head" style="flex-wrap:wrap;gap:8px;">
                     <div class="section-accent"></div>
@@ -162,6 +178,59 @@
                     </table>
                 </div>
             </div>
+            </div><!-- /tabPanelAll -->
+
+            <!-- Tab: Returns (moved in from the old admin-returns.html page) -->
+            <div class="tab-panel" id="tabPanelReturns">
+            <div class="card">
+                <div class="section-head" style="flex-wrap:wrap;gap:8px;">
+                    <div class="section-accent"></div>
+                    <span class="section-title">กำลังคืน (รอ / เดินทาง)</span>
+                    <span class="section-count" id="returns-onhand-count">—</span>
+                </div>
+                <div class="tbl-wrap">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Ticket</th>
+                                <th>Technician</th>
+                                <th>Parts (คืน)</th>
+                                <th>Return Address</th>
+                                <th>Status</th>
+                                <th>Action</th>
+                                <th>รายละเอียด</th>
+                            </tr>
+                        </thead>
+                        <tbody id="returns-onhand-tbody">
+                            <tr><td colspan="7" class="empty-state">Connecting…</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+            <div class="card">
+                <div class="section-head">
+                    <div class="section-accent"></div>
+                    <span class="section-title">ประวัติการคืน</span>
+                </div>
+                <div class="tbl-wrap">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Ticket</th>
+                                <th>Technician</th>
+                                <th>Parts (คืน)</th>
+                                <th>Return Address</th>
+                                <th>Updated</th>
+                                <th>รายละเอียด</th>
+                            </tr>
+                        </thead>
+                        <tbody id="returns-history-tbody">
+                            <tr><td colspan="6" class="empty-state">Connecting…</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+            </div><!-- /tabPanelReturns -->
 
         </div><!-- /page-body -->
     </div><!-- /main-content -->
@@ -223,21 +292,33 @@
     </div>
 </div>
 
-<script src="shared/translations.js?v=11"></script>
-<script src="shared/toast.js?v=11"></script>
-<script src="shared/api.js?v=11"></script>
-<script src="shared/layout.js?v=11"></script>
+<script src="shared/translations.js?v=12"></script>
+<script src="shared/toast.js?v=12"></script>
+<script src="shared/api.js?v=12"></script>
+<script src="shared/layout.js?v=12"></script>
 <script>
     let cachedTickets = [];
     let rejectTargetId = null;
     const CONDITION_LABEL = { Good: 'ของดี', Bad: 'ของเสีย', Lost: 'สูญหาย' };
+    const CONDITION_COLOR = { Good: 'var(--green)', Bad: 'var(--orange)', Lost: 'var(--red)' };
 
     /* ── Init ── */
     initLayout();
     applyLang();
-    function onLangChange() { renderTicketsTable(); }
+    function onLangChange() { renderTicketsTable(); renderReturnsInProgress(); renderReturnsHistory(); }
 
-    window.onload = function () { fetchTickets(); };
+    window.onload = function () {
+        fetchTickets();
+        const params = new URLSearchParams(location.search);
+        if (params.get('tab') === 'returns') switchTab('returns');
+    };
+
+    function switchTab(tab) {
+        document.getElementById('tabBtnAll').classList.toggle('active', tab === 'all');
+        document.getElementById('tabBtnReturns').classList.toggle('active', tab === 'returns');
+        document.getElementById('tabPanelAll').classList.toggle('active', tab === 'all');
+        document.getElementById('tabPanelReturns').classList.toggle('active', tab === 'returns');
+    }
 
     async function fetchTickets() {
         const btn = document.getElementById('tkt-refresh-btn');
@@ -245,11 +326,88 @@
         try {
             cachedTickets = await api.tickets.getAll();
             renderTicketsTable();
+            renderReturnsInProgress();
+            renderReturnsHistory();
         } catch (e) {
             document.getElementById('ticketsTableBody').innerHTML =
                 `<tr><td colspan="7" class="empty-state" style="color:var(--red)">${t('error.connect')}</td></tr>`;
+            document.getElementById('returns-onhand-tbody').innerHTML =
+                `<tr><td colspan="7" class="empty-state" style="color:var(--red)">${t('error.connect')}</td></tr>`;
+            document.getElementById('returns-history-tbody').innerHTML =
+                `<tr><td colspan="6" class="empty-state" style="color:var(--red)">${t('error.connect')}</td></tr>`;
         } finally {
             btn?.classList.remove('spinning');
+        }
+    }
+
+    /* ── Returns tab (moved in from the old admin-returns.html/js) ── */
+    function returnLinesHtml(tk) {
+        const lines = tk.lines.filter(l => l.lineType === 'Return');
+        return lines.length
+            ? lines.map(l => `${l.partName} <span style="color:var(--text-muted)">×${l.quantity}</span>${l.condition ? ` <span style="color:${CONDITION_COLOR[l.condition]};font-size:11px;font-weight:600;">${CONDITION_LABEL[l.condition]}</span>` : ''}`).join('<br>')
+            : `<span style="color:var(--text-muted)">—</span>`;
+    }
+
+    function renderReturnsInProgress() {
+        const rows = cachedTickets.filter(tk => tk.phase === 'return' && (tk.status === 'รอ' || tk.status === 'เดินทาง'));
+        const countLabel = rows.length + ' ' + (getLang() === 'th' ? 'รายการ' : 'items');
+        document.getElementById('returns-onhand-count').textContent = countLabel;
+        document.getElementById('returns-badge-count').textContent = rows.length;
+        const tbody = document.getElementById('returns-onhand-tbody');
+        if (!rows.length) {
+            tbody.innerHTML = `<tr><td colspan="7" class="empty-state">🎉 ไม่มีรายการคืนที่ค้างอยู่</td></tr>`;
+            return;
+        }
+        tbody.innerHTML = rows.map(tk => {
+            const badge = tk.status === 'เดินทาง'
+                ? `<span class="badge badge-approved"><span class="badge-dot"></span>รอถึง DHL</span>`
+                : `<span class="badge badge-pending"><span class="badge-dot"></span>รอช่างจัดส่ง</span>`;
+            const action = tk.status === 'เดินทาง'
+                ? `<button class="btn-confirm" onclick="confirmReturn(${tk.ticketId})">
+                     <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+                     คืนสำเร็จ
+                   </button>`
+                : `<span style="color:var(--text-muted);font-size:12px;">รอช่างจัดส่ง</span>`;
+            return `
+                <tr>
+                    <td><span class="id-chip ticket-id">${tk.externalTicketNo}</span></td>
+                    <td class="fw-600">${tk.techName}</td>
+                    <td>${returnLinesHtml(tk)}</td>
+                    <td>${tk.returnAddress || '—'}</td>
+                    <td>${badge}</td>
+                    <td>${action}</td>
+                    <td><button class="btn-detail" onclick="showDetail(${tk.ticketId})">🔍 ดูรายละเอียด</button></td>
+                </tr>`;
+        }).join('');
+    }
+
+    function renderReturnsHistory() {
+        const rows = cachedTickets.filter(tk => tk.status === 'คืน');
+        const tbody = document.getElementById('returns-history-tbody');
+        if (!rows.length) {
+            tbody.innerHTML = `<tr><td colspan="6" class="empty-state">ยังไม่มีประวัติการคืน</td></tr>`;
+            return;
+        }
+        const locale = getLang() === 'th' ? 'th-TH' : 'en-GB';
+        tbody.innerHTML = rows.map(tk => `
+            <tr>
+                <td><span class="id-chip">${tk.externalTicketNo}</span></td>
+                <td>${tk.techName || '—'}</td>
+                <td>${returnLinesHtml(tk)}</td>
+                <td>${tk.returnAddress || '—'}</td>
+                <td>${new Date(tk.updatedAt).toLocaleString(locale)}</td>
+                <td><button class="btn-detail" onclick="showDetail(${tk.ticketId})">🔍 ดูรายละเอียด</button></td>
+            </tr>`).join('');
+    }
+
+    async function confirmReturn(id) {
+        if (!confirm('ยืนยันว่าได้รับอีเมลแจ้งจาก DHL แล้วว่าของถึงคลัง? สถานะจะเปลี่ยนเป็น "คืน" และตัดสต็อกเข้าคลัง')) return;
+        try {
+            await api.tickets.confirmReturn(id);
+            await fetchTickets();
+            showToast?.('บันทึกคืนสำเร็จแล้ว', 'success');
+        } catch (e) {
+            showToast?.(e.message || t('toast.error'), 'error');
         }
     }
 

@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Admin Dashboard — ATM Inventory</title>
-    <link rel="stylesheet" href="shared/styles.css?v=11">
+    <link rel="stylesheet" href="shared/styles.css?v=12">
     <style>
         /* Page-specific overrides */
         .section-head { display:flex; align-items:center; gap:10px; margin-bottom:20px; }
@@ -78,7 +78,7 @@
                     </div>
                     <div class="action-card-arrow">→</div>
                 </a>
-                <a class="action-card transit" id="pendingReturnCard" href="admin-returns.html">
+                <a class="action-card transit" id="pendingReturnCard" href="admin-tickets.html?tab=returns">
                     <div class="action-card-icon">📦</div>
                     <div>
                         <div class="action-card-num" id="pendingReturnCount">—</div>
@@ -170,10 +170,10 @@
     </div><!-- /main-content -->
 </div><!-- /app-layout -->
 
-<script src="shared/translations.js?v=11"></script>
-<script src="shared/toast.js?v=11"></script>
-<script src="shared/api.js?v=11"></script>
-<script src="shared/layout.js?v=11"></script>
+<script src="shared/translations.js?v=12"></script>
+<script src="shared/toast.js?v=12"></script>
+<script src="shared/api.js?v=12"></script>
+<script src="shared/layout.js?v=12"></script>
 <script>
     /* ── Init ── */
     initLayout();
