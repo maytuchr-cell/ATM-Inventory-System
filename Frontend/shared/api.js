@@ -99,6 +99,7 @@ const api = {
     cancel:       (id)           => apiFetch(`/Ticket/${id}/cancel`,    { method: 'PUT' }),
     receive:      (id)           => apiFetch(`/Ticket/${id}/receive`,   { method: 'PUT' }),
     submitReturn: (id, dto)      => apiFetch(`/Ticket/${id}/return`,    { method: 'PUT',  body: JSON.stringify(dto) }),
+    approveReturn:(id)           => apiFetch(`/Ticket/${id}/approve-return`, { method: 'PUT' }),
     ship:         (id)           => apiFetch(`/Ticket/${id}/ship`,      { method: 'PUT' }),
     confirmReturn:(id)           => apiFetch(`/Ticket/${id}/confirm-return`, { method: 'PUT' }),
     substitutePart:(id, lineId, partNo) => apiFetch(`/Ticket/${id}/lines/${lineId}/substitute`, { method: 'PUT', body: JSON.stringify({ partNo }) }),

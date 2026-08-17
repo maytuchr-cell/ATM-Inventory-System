@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Tickets — ATM Inventory</title>
-    <link rel="stylesheet" href="shared/styles.css?v=12">
+    <link rel="stylesheet" href="shared/styles.css?v=13">
     <style>
         /* Page-specific overrides */
         .section-head { display:flex; align-items:center; gap:10px; margin-bottom:20px; }
@@ -292,10 +292,10 @@
     </div>
 </div>
 
-<script src="shared/translations.js?v=12"></script>
-<script src="shared/toast.js?v=12"></script>
-<script src="shared/api.js?v=12"></script>
-<script src="shared/layout.js?v=12"></script>
+<script src="shared/translations.js?v=13"></script>
+<script src="shared/toast.js?v=13"></script>
+<script src="shared/api.js?v=13"></script>
+<script src="shared/layout.js?v=13"></script>
 <script>
     let cachedTickets = [];
     let rejectTargetId = null;
@@ -349,7 +349,7 @@
     }
 
     function renderReturnsInProgress() {
-        const rows = cachedTickets.filter(tk => tk.phase === 'return' && (tk.status === 'รอ' || tk.status === 'เดินทาง'));
+        const rows = cachedTickets.filter(tk => tk.phase === 'return' && ['รอ', 'อนุมัติคืน', 'เดินทาง'].includes(tk.status));
         const countLabel = rows.length + ' ' + (getLang() === 'th' ? 'รายการ' : 'items');
         document.getElementById('returns-onhand-count').textContent = countLabel;
         document.getElementById('returns-badge-count').textContent = rows.length;
@@ -358,16 +358,30 @@
             tbody.innerHTML = `<tr><td colspan="7" class="empty-state">🎉 ไม่มีรายการคืนที่ค้างอยู่</td></tr>`;
             return;
         }
+        // 3 steps: รอ (tech submitted, awaiting Admin review) → อนุมัติคืน (Admin confirmed, tech
+        // can now ship) → เดินทาง (tech shipped, waiting to reach DHL — Admin closes it out here).
+        const STEP = {
+            'รอ':        { badge: 'badge-pending',  badgeLabel: 'รอ Admin ยืนยัน' },
+            'อนุมัติคืน': { badge: 'badge-approved', badgeLabel: 'รอช่างจัดส่ง' },
+            'เดินทาง':   { badge: 'badge-approved', badgeLabel: 'รอถึง DHL' },
+        };
         tbody.innerHTML = rows.map(tk => {
-            const badge = tk.status === 'เดินทาง'
-                ? `<span class="badge badge-approved"><span class="badge-dot"></span>รอถึง DHL</span>`
-                : `<span class="badge badge-pending"><span class="badge-dot"></span>รอช่างจัดส่ง</span>`;
-            const action = tk.status === 'เดินทาง'
-                ? `<button class="btn-confirm" onclick="confirmReturn(${tk.ticketId})">
-                     <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
-                     คืนสำเร็จ
-                   </button>`
-                : `<span style="color:var(--text-muted);font-size:12px;">รอช่างจัดส่ง</span>`;
+            const s = STEP[tk.status];
+            const badge = `<span class="badge ${s.badge}"><span class="badge-dot"></span>${s.badgeLabel}</span>`;
+            let action;
+            if (tk.status === 'รอ') {
+                action = `<button class="btn-confirm" onclick="approveReturn(${tk.ticketId})">
+                             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+                             ยืนยัน
+                           </button>`;
+            } else if (tk.status === 'เดินทาง') {
+                action = `<button class="btn-confirm" onclick="confirmReturn(${tk.ticketId})">
+                             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+                             คืนสำเร็จ
+                           </button>`;
+            } else {
+                action = `<span style="color:var(--text-muted);font-size:12px;">รอช่างจัดส่ง</span>`;
+            }
             return `
                 <tr>
                     <td><span class="id-chip ticket-id">${tk.externalTicketNo}</span></td>
@@ -379,6 +393,17 @@
                     <td><button class="btn-detail" onclick="showDetail(${tk.ticketId})">🔍 ดูรายละเอียด</button></td>
                 </tr>`;
         }).join('');
+    }
+
+    async function approveReturn(id) {
+        if (!confirm('ยืนยันคำขอคืนนี้? ช่างจะสามารถกด "จัดส่งแล้ว" ได้หลังจากนี้')) return;
+        try {
+            await api.tickets.approveReturn(id);
+            await fetchTickets();
+            showToast?.('ยืนยันคำขอคืนแล้ว', 'success');
+        } catch (e) {
+            showToast?.(e.message || t('toast.error'), 'error');
+        }
     }
 
     function renderReturnsHistory() {
@@ -413,12 +438,13 @@
 
     /* ── Tickets ── */
     const STATUS_BADGE = {
-        "รอ":      { cls: "badge-pending"  },
-        "เดินทาง": { cls: "badge-approved" },
-        "เบิก":    { cls: "badge-teal"     },
-        "คืน":     { cls: "badge-success"  },
-        "Reject":  { cls: "badge-danger"   },
-        "Cancel":  { cls: "badge-muted"    },
+        "รอ":        { cls: "badge-pending"  },
+        "อนุมัติคืน": { cls: "badge-approved" },
+        "เดินทาง":   { cls: "badge-approved" },
+        "เบิก":      { cls: "badge-teal"     },
+        "คืน":       { cls: "badge-success"  },
+        "Reject":    { cls: "badge-danger"   },
+        "Cancel":    { cls: "badge-muted"    },
     };
 
     function renderTicketsTable() {

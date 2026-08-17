@@ -309,14 +309,32 @@ public class TicketController : ControllerBase
         return Ok(new { message = "Return request submitted.", ticket });
     }
 
-    // PUT /api/Ticket/{id}/ship — technician marks the return parcel as shipped → เดินทาง
+    // PUT /api/Ticket/{id}/approve-return — Admin reviews a submitted return request (parts,
+    // conditions, attached photos) and confirms it before the tech is allowed to ship it out.
+    [HttpPut("{id}/approve-return")]
+    public IActionResult ApproveReturn(int id)
+    {
+        var ticket = _context.Tickets.FirstOrDefault(t => t.TicketId == id);
+        if (ticket == null) return NotFound(new { message = "Ticket not found." });
+        if (ticket.Status != "รอ" || ticket.ReturnAddress == null)
+            return BadRequest(new { message = "Only a submitted return awaiting approval can be confirmed." });
+
+        ticket.Status = "อนุมัติคืน";
+        ticket.UpdatedAt = DateTime.Now;
+        _context.SaveChanges();
+        _audit.Log(User, "Ticket", id.ToString(), "APPROVE_RETURN", null, new { ticket.TicketId, ticket.Status });
+        return Ok(new { message = "Return approved.", ticket });
+    }
+
+    // PUT /api/Ticket/{id}/ship — technician marks the return parcel as shipped → เดินทาง.
+    // Only reachable after Admin has approved the return (อนุมัติคืน) — see ApproveReturn above.
     [HttpPut("{id}/ship")]
     public IActionResult MarkShipped(int id)
     {
         var ticket = _context.Tickets.FirstOrDefault(t => t.TicketId == id);
         if (ticket == null) return NotFound(new { message = "Ticket not found." });
-        if (ticket.Status != "รอ" || ticket.ReturnAddress == null)
-            return BadRequest(new { message = "Only a waiting return can be marked as shipped." });
+        if (ticket.Status != "อนุมัติคืน" || ticket.ReturnAddress == null)
+            return BadRequest(new { message = "Only an Admin-approved return can be marked as shipped." });
 
         ticket.Status = "เดินทาง";
         ticket.UpdatedAt = DateTime.Now;

@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Tech Workspace — ATM Inventory</title>
-    <link rel="stylesheet" href="shared/styles.css?v=12">
+    <link rel="stylesheet" href="shared/styles.css?v=13">
     <style>
         .section-head { display:flex; align-items:center; gap:10px; margin-bottom:20px; }
         .section-accent { width:4px; height:22px; background:var(--orange); border-radius:2px; }
@@ -243,10 +243,10 @@
     </div>
 </div>
 
-<script src="shared/translations.js?v=12"></script>
-<script src="shared/toast.js?v=12"></script>
-<script src="shared/api.js?v=12"></script>
-<script src="shared/layout.js?v=12"></script>
+<script src="shared/translations.js?v=13"></script>
+<script src="shared/toast.js?v=13"></script>
+<script src="shared/api.js?v=13"></script>
+<script src="shared/layout.js?v=13"></script>
 <script>
     /* Status: รอ / เดินทาง / เบิก / คืน / Reject / Cancel   (null = ยังไม่เริ่มเบิก) */
     const currentEmail = localStorage.getItem('userEmail') || 'tech@atm.com';
@@ -279,13 +279,14 @@
 
     /* ── Status badge helpers ── */
     const STATUS_BADGE = {
-        null:      { cls: 'badge-new',     label: 'ยังไม่เบิก' },
-        'รอ':      { cls: 'badge-pending', label: 'รอ' },
-        'เดินทาง': { cls: 'badge-transit', label: 'เดินทาง' },
-        'เบิก':    { cls: 'badge-success', label: 'เบิก' },
-        'คืน':     { cls: 'badge-success', label: 'คืน' },
-        'Reject':  { cls: 'badge-danger',  label: 'Reject' },
-        'Cancel':  { cls: 'badge-muted',   label: 'Cancel' },
+        null:        { cls: 'badge-new',     label: 'ยังไม่เบิก' },
+        'รอ':        { cls: 'badge-pending', label: 'รอ' },
+        'อนุมัติคืน': { cls: 'badge-transit', label: 'Admin อนุมัติแล้ว' },
+        'เดินทาง':   { cls: 'badge-transit', label: 'เดินทาง' },
+        'เบิก':      { cls: 'badge-success', label: 'เบิก' },
+        'คืน':       { cls: 'badge-success', label: 'คืน' },
+        'Reject':    { cls: 'badge-danger',  label: 'Reject' },
+        'Cancel':    { cls: 'badge-muted',   label: 'Cancel' },
     };
     // Active leg: still needs the tech (or Admin) to do something. History: the Ticket is done —
     // either fully returned, or terminated (Reject/Cancel).
@@ -331,8 +332,10 @@
                         action = `<button class="btn-return" onclick="confirmReceive(${tk.ticketId})">✅ ยืนยันรับของ</button>`;
                     } else if (tk.status === 'เบิก' && tk.phase === 'withdraw') {
                         action = `<button class="btn-return" onclick="openReturnModal(${tk.ticketId})">📥 คืน</button>`;
-                    } else if (tk.status === 'รอ' && tk.phase === 'return') {
+                    } else if (tk.status === 'อนุมัติคืน' && tk.phase === 'return') {
                         action = `<button class="btn-ship" onclick="markShipped(${tk.ticketId})">🚚 จัดส่งแล้ว</button>`;
+                    } else if (tk.status === 'รอ' && tk.phase === 'return') {
+                        action = `<span class="text-muted" style="font-size:12px;">รอ Admin ยืนยัน</span>`;
                     } else if (tk.status === 'รอ' && tk.phase === 'withdraw') {
                         action = `<span class="text-muted" style="font-size:12px;">รอ Admin อนุมัติ</span>`;
                     } else if (tk.status === 'เดินทาง' && tk.phase === 'return') {
