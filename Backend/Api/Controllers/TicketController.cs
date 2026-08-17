@@ -70,6 +70,25 @@ public class TicketController : ControllerBase
         return Ok(result);
     }
 
+    // DELETE /api/Ticket/{id} — cleanup for the self-service "New Request" flow, where a Ticket
+    // is sync'd first and the withdraw is submitted right after in the same client action. If the
+    // withdraw step fails (network error, validation, stale cache, etc.) the sync'd Ticket is
+    // otherwise orphaned forever with Status=null and no lines. Scoped tight — only deletes a
+    // Ticket that was never actually submitted — so it's safe to call from anywhere.
+    [HttpDelete("{id}")]
+    public IActionResult DeleteOrphanTicket(int id)
+    {
+        var ticket = _context.Tickets.FirstOrDefault(t => t.TicketId == id);
+        if (ticket == null) return NotFound(new { message = "Ticket not found." });
+        if (ticket.Status != null) return BadRequest(new { message = "Only a never-submitted ticket can be deleted." });
+        if (_context.TicketPartLines.Any(l => l.TicketId == id)) return BadRequest(new { message = "Only a never-submitted ticket can be deleted." });
+
+        _context.TicketAttachments.RemoveRange(_context.TicketAttachments.Where(a => a.TicketId == id));
+        _context.Tickets.Remove(ticket);
+        _context.SaveChanges();
+        return Ok(new { message = "Deleted." });
+    }
+
     // POST /api/Ticket/sync — upsert a ticket header from Aservice (dedupe by ExternalTicketNo).
     // Stands in for the real Aservice webhook/poll integration.
     [HttpPost("sync")]

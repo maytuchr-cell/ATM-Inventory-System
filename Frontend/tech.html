@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Tech Workspace — ATM Inventory</title>
-    <link rel="stylesheet" href="shared/styles.css?v=9">
+    <link rel="stylesheet" href="shared/styles.css?v=10">
     <style>
         .section-head { display:flex; align-items:center; gap:10px; margin-bottom:20px; }
         .section-accent { width:4px; height:22px; background:var(--orange); border-radius:2px; }
@@ -243,10 +243,10 @@
     </div>
 </div>
 
-<script src="shared/translations.js?v=9"></script>
-<script src="shared/toast.js?v=9"></script>
-<script src="shared/api.js?v=9"></script>
-<script src="shared/layout.js?v=9"></script>
+<script src="shared/translations.js?v=10"></script>
+<script src="shared/toast.js?v=10"></script>
+<script src="shared/api.js?v=10"></script>
+<script src="shared/layout.js?v=10"></script>
 <script>
     /* Status: รอ / เดินทาง / เบิก / คืน / Reject / Cancel   (null = ยังไม่เริ่มเบิก) */
     const currentEmail = localStorage.getItem('userEmail') || 'tech@atm.com';
@@ -679,16 +679,23 @@
         if (!techName) { showToast?.('กรอกชื่อช่าง', 'error'); return; }
         if (!lines.length) { showToast?.('เลือกอะไหล่อย่างน้อย 1 รายการ', 'error'); return; }
         if (!address) { showToast?.('กรุณากรอกที่อยู่จัดส่ง', 'error'); return; }
+        let syncedTicketId = null;
         try {
             const externalTicketNo = `SELF-${Date.now()}`;
             const synced = await api.tickets.sync({ externalTicketNo, techName, techEmail: currentEmail, techDept });
+            syncedTicketId = synced.ticket.ticketId;
             const attachments = await uploadPendingPhotos('nr');
-            await api.tickets.submitWithdraw(synced.ticket.ticketId, { lines, address, attachments });
+            await api.tickets.submitWithdraw(syncedTicketId, { lines, address, attachments });
             photoFiles.nr = [];
             closeNewRequestModal();
             await fetchTickets();
             showToast?.('ส่งคำขอเบิกแล้ว รอ Admin อนุมัติ', 'success');
-        } catch (e) { showToast?.(e.message || t('toast.error'), 'error'); }
+        } catch (e) {
+            // If sync succeeded but a later step (photo upload, withdraw) failed, don't leave a
+            // dangling empty ticket behind — clean it up so retrying doesn't pile up duplicates.
+            if (syncedTicketId) { try { await api.tickets.remove(syncedTicketId); } catch {} }
+            showToast?.(e.message || t('toast.error'), 'error');
+        }
     }
 
     document.addEventListener('keydown', e => {
