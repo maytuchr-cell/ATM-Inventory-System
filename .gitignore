@@ -24,3 +24,7 @@ Backend/Api/wwwroot/uploads/
 # IDE
 .vs/
 *.user
+
+# Test project build output
+Backend/Api.Tests/bin/
+Backend/Api.Tests/obj/
