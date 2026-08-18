@@ -243,6 +243,11 @@ using (var scope = app.Services.CreateScope())
                     "CREATE UNIQUE INDEX IF NOT EXISTS IX_Tickets_ExternalTicketNo ON Tickets (ExternalTicketNo);");
                 Console.WriteLine("✅ Migration: rebuilt Tickets on the เบิก/ยืม/คืน schema");
             }
+            if (!ticketCols.Contains("WithdrawDescription"))
+            {
+                context.Database.ExecuteSqlRaw("ALTER TABLE Tickets ADD COLUMN WithdrawDescription TEXT NULL;");
+                Console.WriteLine("✅ Migration: added Tickets.WithdrawDescription");
+            }
             context.Database.ExecuteSqlRaw(@"
                 CREATE TABLE IF NOT EXISTS TicketPartLines (
                     TicketPartLineId INTEGER NOT NULL CONSTRAINT PK_TicketPartLines PRIMARY KEY AUTOINCREMENT,

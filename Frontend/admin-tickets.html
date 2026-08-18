@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Tickets — ATM Inventory</title>
-    <link rel="stylesheet" href="shared/styles.css?v=19">
+    <link rel="stylesheet" href="shared/styles.css?v=20">
     <style>
         /* Page-specific overrides */
         .section-head { display:flex; align-items:center; gap:10px; margin-bottom:20px; }
@@ -294,10 +294,10 @@
     </div>
 </div>
 
-<script src="shared/translations.js?v=19"></script>
-<script src="shared/toast.js?v=19"></script>
-<script src="shared/api.js?v=19"></script>
-<script src="shared/layout.js?v=19"></script>
+<script src="shared/translations.js?v=20"></script>
+<script src="shared/toast.js?v=20"></script>
+<script src="shared/api.js?v=20"></script>
+<script src="shared/layout.js?v=20"></script>
 <script>
     let cachedTickets = [];
     let rejectTargetId = null;
@@ -710,6 +710,12 @@
             </div>
 
             <hr class="detail-divider">
+
+            ${tk.withdrawDescription ? `
+            <div class="detail-section">
+                <div class="detail-section-title">หมายเหตุ / อาการเสีย</div>
+                <div style="font-size:13px;color:var(--text-primary);background:var(--bg-subtle);border:1px solid var(--border);border-radius:8px;padding:10px 12px;white-space:pre-wrap;">${tk.withdrawDescription}</div>
+            </div>` : ''}
 
             <div class="detail-section">
                 <div class="detail-section-title">รายการอะไหล่ — เบิก</div>

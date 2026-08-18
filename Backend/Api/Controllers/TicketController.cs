@@ -60,7 +60,7 @@ public class TicketController : ControllerBase
             {
                 t.TicketId, t.ExternalTicketNo, t.TechEmail, t.TechName, t.TechDept,
                 t.Status, t.RejectReason, t.ApproverName, t.ApprovedAt,
-                t.WithdrawAddress, t.ReturnAddress, t.CreatedAt, t.UpdatedAt,
+                t.WithdrawAddress, t.ReturnAddress, t.WithdrawDescription, t.CreatedAt, t.UpdatedAt,
                 phase = Phase(t.ReturnAddress, tLines),
                 lines = tLines.Select(l => new
                 {
@@ -160,6 +160,7 @@ public class TicketController : ControllerBase
 
         ticket.Status = "รอ";
         ticket.WithdrawAddress = dto.Address;
+        ticket.WithdrawDescription = dto.Description;
         ticket.UpdatedAt = DateTime.Now;
         _context.SaveChanges();
         return Ok(new { message = "Withdraw request submitted.", ticket });
@@ -466,6 +467,8 @@ public class SubmitLinesDto
     public string Address { get; set; } = string.Empty;
     // Paths returned by POST /api/Ticket/upload for photos the tech attached to this submission.
     public List<AttachmentDto>? Attachments { get; set; }
+    // Withdraw only — free-text note on why these parts are needed (e.g. "Card reader เสีย").
+    public string? Description { get; set; }
 }
 
 public class AttachmentDto

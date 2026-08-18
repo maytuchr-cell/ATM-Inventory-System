@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Tech Workspace — ATM Inventory</title>
-    <link rel="stylesheet" href="shared/styles.css?v=19">
+    <link rel="stylesheet" href="shared/styles.css?v=20">
     <style>
         .section-head { display:flex; align-items:center; gap:10px; margin-bottom:20px; }
         .section-accent { width:4px; height:22px; background:var(--orange); border-radius:2px; }
@@ -150,6 +150,9 @@
             <div id="wdLines"></div>
             <button type="button" class="btn-add-line" onclick="addLine('withdraw')">+ เพิ่มอะไหล่</button>
 
+            <span class="tk-section-label" style="margin-top:18px;display:block;">หมายเหตุ / อาการเสีย</span>
+            <textarea id="wdDescription" class="form-textarea" placeholder="เช่น Card reader เสีย, ปลั๊ก Sensor ขาด..." style="min-height:60px;"></textarea>
+
             <span class="tk-section-label" style="margin-top:18px;display:block;">ที่อยู่จัดส่ง</span>
             <textarea id="wdAddress" class="form-textarea" placeholder="กรอกที่อยู่สำหรับจัดส่งอะไหล่..." style="min-height:70px;"></textarea>
 
@@ -227,6 +230,9 @@
             <div id="nrLines"></div>
             <button type="button" class="btn-add-line" onclick="addLine('new')">+ เพิ่มอะไหล่</button>
 
+            <span class="tk-section-label" style="margin-top:18px;display:block;">หมายเหตุ / อาการเสีย</span>
+            <textarea id="nrDescription" class="form-textarea" placeholder="เช่น Card reader เสีย, ปลั๊ก Sensor ขาด..." style="min-height:60px;"></textarea>
+
             <span class="tk-section-label" style="margin-top:18px;display:block;">ที่อยู่จัดส่ง</span>
             <textarea id="nrAddress" class="form-textarea" placeholder="กรอกที่อยู่สำหรับจัดส่งอะไหล่..." style="min-height:70px;"></textarea>
 
@@ -243,10 +249,10 @@
     </div>
 </div>
 
-<script src="shared/translations.js?v=19"></script>
-<script src="shared/toast.js?v=19"></script>
-<script src="shared/api.js?v=19"></script>
-<script src="shared/layout.js?v=19"></script>
+<script src="shared/translations.js?v=20"></script>
+<script src="shared/toast.js?v=20"></script>
+<script src="shared/api.js?v=20"></script>
+<script src="shared/layout.js?v=20"></script>
 <script>
     /* Status: รอ / เดินทาง / เบิก / คืน / Reject / Cancel   (null = ยังไม่เริ่มเบิก) */
     const currentEmail = localStorage.getItem('userEmail') || 'tech@atm.com';
@@ -562,6 +568,7 @@
         }
 
         document.getElementById('wdAddress').value = tk.status === 'Reject' ? (tk.withdrawAddress || '') : '';
+        document.getElementById('wdDescription').value = tk.status === 'Reject' ? (tk.withdrawDescription || '') : '';
         document.getElementById('wdLines').innerHTML = '';
         wdLineCount = 0;
         const priorLines = tk.status === 'Reject' ? tk.lines.filter(l => l.lineType === 'Withdraw') : [];
@@ -584,11 +591,12 @@
     async function submitWithdraw() {
         const lines = collectLines('wd', wdLineCount);
         const address = document.getElementById('wdAddress').value.trim();
+        const description = document.getElementById('wdDescription').value.trim();
         if (!lines.length) { showToast?.('เลือกอะไหล่อย่างน้อย 1 รายการ', 'error'); return; }
         if (!address) { showToast?.('กรุณากรอกที่อยู่จัดส่ง', 'error'); return; }
         try {
             const attachments = await uploadPendingPhotos('wd');
-            await api.tickets.submitWithdraw(activeTicketId, { lines, address, attachments });
+            await api.tickets.submitWithdraw(activeTicketId, { lines, address, description, attachments });
             photoFiles.wd = [];
             closeWithdrawModal();
             await fetchTickets();
@@ -664,6 +672,7 @@
         document.getElementById('nrTechName').value = last?.techName || '';
         document.getElementById('nrTechDept').value = last?.techDept || '';
         document.getElementById('nrAddress').value = '';
+        document.getElementById('nrDescription').value = '';
         document.getElementById('nrLines').innerHTML = '';
         nrLineCount = 0;
         addLine('new');
@@ -679,6 +688,7 @@
         const techDept = document.getElementById('nrTechDept').value.trim();
         const lines = collectLines('nr', nrLineCount);
         const address = document.getElementById('nrAddress').value.trim();
+        const description = document.getElementById('nrDescription').value.trim();
         if (!techName) { showToast?.('กรอกชื่อช่าง', 'error'); return; }
         if (!lines.length) { showToast?.('เลือกอะไหล่อย่างน้อย 1 รายการ', 'error'); return; }
         if (!address) { showToast?.('กรุณากรอกที่อยู่จัดส่ง', 'error'); return; }
@@ -688,7 +698,7 @@
             const synced = await api.tickets.sync({ externalTicketNo, techName, techEmail: currentEmail, techDept });
             syncedTicketId = synced.ticket.ticketId;
             const attachments = await uploadPendingPhotos('nr');
-            await api.tickets.submitWithdraw(syncedTicketId, { lines, address, attachments });
+            await api.tickets.submitWithdraw(syncedTicketId, { lines, address, description, attachments });
             photoFiles.nr = [];
             closeNewRequestModal();
             await fetchTickets();

@@ -24,6 +24,10 @@ public class Ticket
     public string? WithdrawAddress { get; set; }
     public string? ReturnAddress  { get; set; }
 
+    // Free-text note from the tech on why they need these parts (e.g. "Card reader เสีย,
+    // ปลั๊ก Sensor ขาด") — optional, shown to Admin alongside the withdraw request.
+    public string? WithdrawDescription { get; set; }
+
     public DateTime CreatedAt { get; set; } = DateTime.Now;
     public DateTime UpdatedAt { get; set; } = DateTime.Now;
 
