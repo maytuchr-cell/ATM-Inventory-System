@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Tech Workspace — ATM Inventory</title>
-    <link rel="stylesheet" href="shared/styles.css?v=25">
+    <link rel="stylesheet" href="shared/styles.css?v=26">
     <style>
         .section-head { display:flex; align-items:center; gap:10px; margin-bottom:20px; }
         .section-accent { width:4px; height:22px; background:var(--orange); border-radius:2px; }
@@ -249,10 +249,10 @@
     </div>
 </div>
 
-<script src="shared/translations.js?v=25"></script>
-<script src="shared/toast.js?v=25"></script>
-<script src="shared/api.js?v=25"></script>
-<script src="shared/layout.js?v=25"></script>
+<script src="shared/translations.js?v=26"></script>
+<script src="shared/toast.js?v=26"></script>
+<script src="shared/api.js?v=26"></script>
+<script src="shared/layout.js?v=26"></script>
 <script>
     /* Status: รอ / เดินทาง / เบิก / คืน / Reject / Cancel   (null = ยังไม่เริ่มเบิก) */
     const currentEmail = localStorage.getItem('userEmail') || 'tech@atm.com';
@@ -350,13 +350,21 @@
                         action = `<button class="btn-withdraw" onclick="openWithdrawModal(${tk.ticketId})">📝 แก้ไขและส่งใหม่</button>`;
                     }
 
+                    // Same Aservice Ticket can carry more than one independent ใบเบิก (e.g. the
+                    // job needs more parts while the first request is still open) — always
+                    // offered, regardless of this row's own status.
+                    const addlBtn = `<button class="btn-add-line" style="margin-top:4px;font-size:11px;padding:4px 8px;width:auto;" onclick="requestAdditionalWithdraw(${tk.ticketId})">➕ เบิกเพิ่ม (ใบใหม่)</button>`;
+                    const ticketLabel = tk.siblingCount > 1
+                        ? `<span class="id-chip ticket-id">${tk.externalTicketNo}</span><div class="text-muted" style="font-size:11px;margin-top:2px;">ใบที่ ${tk.siblingIndex} จาก ${tk.siblingCount}</div>`
+                        : `<span class="id-chip ticket-id">${tk.externalTicketNo}</span>`;
+
                     body += `
                         <tr>
-                            <td><span class="id-chip ticket-id">${tk.externalTicketNo}</span></td>
+                            <td>${ticketLabel}</td>
                             <td>${partsSummaryHtml(tk)}</td>
                             <td>${phaseLabel}</td>
                             <td>${badge}</td>
-                            <td>${action}</td>
+                            <td>${action}${addlBtn}</td>
                         </tr>`;
                 });
             }
@@ -547,6 +555,24 @@
             attachments.push({ filePath: res.filePath, fileName: res.fileName });
         }
         return attachments;
+    }
+
+    // Start another independent ใบเบิก under the same Aservice Ticket number as an existing row
+    // (e.g. the job needs more parts while the first request is still open). Creates a brand new
+    // Ticket row (own withdraw/return cycle, own status) then opens the withdraw form on it.
+    async function requestAdditionalWithdraw(fromTicketId) {
+        const src = cachedTickets.find(t => t.ticketId === fromTicketId);
+        if (!src) return;
+        try {
+            const res = await api.tickets.createAdditionalWithdraw({
+                externalTicketNo: src.externalTicketNo,
+                techName: src.techName,
+                techEmail: currentEmail,
+                techDept: src.techDept
+            });
+            await fetchTickets();
+            openWithdrawModal(res.ticket.ticketId);
+        } catch (e) { showToast?.(e.message || t('toast.error'), 'error'); }
     }
 
     /* ── Withdraw form (also handles resubmit-after-Reject) ── */

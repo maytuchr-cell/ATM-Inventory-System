@@ -240,7 +240,7 @@ using (var scope = app.Services.CreateScope())
                         UpdatedAt TEXT NOT NULL
                     );");
                 context.Database.ExecuteSqlRaw(
-                    "CREATE UNIQUE INDEX IF NOT EXISTS IX_Tickets_ExternalTicketNo ON Tickets (ExternalTicketNo);");
+                    "CREATE INDEX IF NOT EXISTS IX_Tickets_ExternalTicketNo ON Tickets (ExternalTicketNo);");
                 Console.WriteLine("✅ Migration: rebuilt Tickets on the เบิก/ยืม/คืน schema");
             }
             if (!ticketCols.Contains("WithdrawDescription"))
@@ -248,6 +248,24 @@ using (var scope = app.Services.CreateScope())
                 context.Database.ExecuteSqlRaw("ALTER TABLE Tickets ADD COLUMN WithdrawDescription TEXT NULL;");
                 Console.WriteLine("✅ Migration: added Tickets.WithdrawDescription");
             }
+            // One Aservice Ticket can now carry multiple independent ใบเบิก (withdraw slips) —
+            // drop the old unique index on ExternalTicketNo on DBs created before this, so a
+            // second/third withdraw under the same ticket number is no longer blocked.
+            try
+            {
+                using var cmd = context.Database.GetDbConnection().CreateCommand();
+                if (cmd.Connection!.State != System.Data.ConnectionState.Open) cmd.Connection.Open();
+                cmd.CommandText = "SELECT sql FROM sqlite_master WHERE type='index' AND name='IX_Tickets_ExternalTicketNo';";
+                var indexSql = cmd.ExecuteScalar() as string;
+                if (indexSql != null && indexSql.Contains("UNIQUE", StringComparison.OrdinalIgnoreCase))
+                {
+                    context.Database.ExecuteSqlRaw("DROP INDEX IX_Tickets_ExternalTicketNo;");
+                    context.Database.ExecuteSqlRaw(
+                        "CREATE INDEX IF NOT EXISTS IX_Tickets_ExternalTicketNo ON Tickets (ExternalTicketNo);");
+                    Console.WriteLine("✅ Migration: made Tickets.ExternalTicketNo non-unique (multi-withdraw support)");
+                }
+            }
+            catch (Exception mex) { Console.WriteLine($"⚠ ExternalTicketNo uniqueness migration skipped: {mex.Message}"); }
             context.Database.ExecuteSqlRaw(@"
                 CREATE TABLE IF NOT EXISTS TicketPartLines (
                     TicketPartLineId INTEGER NOT NULL CONSTRAINT PK_TicketPartLines PRIMARY KEY AUTOINCREMENT,

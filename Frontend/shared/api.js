@@ -94,6 +94,7 @@ const api = {
   tickets: {
     getAll:       ()             => apiFetch('/Ticket'),
     sync:         (data)         => apiFetch('/Ticket/sync',            { method: 'POST', body: JSON.stringify(data) }),
+    createAdditionalWithdraw: (data) => apiFetch('/Ticket/additional-withdraw', { method: 'POST', body: JSON.stringify(data) }),
     submitWithdraw: (id, dto)    => apiFetch(`/Ticket/${id}/withdraw`,   { method: 'PUT',  body: JSON.stringify(dto) }),
     approve:      (id)           => apiFetch(`/Ticket/${id}/approve`,   { method: 'PUT' }),
     reject:       (id, reason)   => apiFetch(`/Ticket/${id}/reject`,    { method: 'PUT',  body: JSON.stringify({ reason }) }),

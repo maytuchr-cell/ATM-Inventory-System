@@ -53,15 +53,25 @@ public class TicketController : ControllerBase
             ? new Dictionary<int, int>()
             : _context.PartStocks.Where(s => s.LocationId == mainWh.Id).ToDictionary(s => s.PartId, s => s.GoodQty);
 
+        // One Aservice Ticket can carry multiple independent ใบเบิก (see CreateAdditionalWithdraw)
+        // — number them ใบที่ 1..N in submission order so Admin/tech can tell them apart when the
+        // same ExternalTicketNo shows up on more than one row.
+        var siblingGroups = tickets
+            .GroupBy(t => t.ExternalTicketNo)
+            .ToDictionary(g => g.Key, g => g.OrderBy(t => t.CreatedAt).Select(t => t.TicketId).ToList());
+
         var result = tickets.Select(t =>
         {
             var tLines = lines.Where(l => l.TicketId == t.TicketId).ToList();
+            var siblings = siblingGroups[t.ExternalTicketNo];
             return new
             {
                 t.TicketId, t.ExternalTicketNo, t.TechEmail, t.TechName, t.TechDept,
                 t.Status, t.RejectReason, t.ApproverName, t.ApprovedAt,
                 t.WithdrawAddress, t.ReturnAddress, t.WithdrawDescription, t.CreatedAt, t.UpdatedAt,
                 phase = Phase(t.ReturnAddress, tLines),
+                siblingIndex = siblings.IndexOf(t.TicketId) + 1,
+                siblingCount = siblings.Count,
                 lines = tLines.Select(l => new
                 {
                     l.TicketPartLineId, l.PartId, l.PartNo, l.Quantity, l.LineType, l.Condition,
@@ -118,6 +128,35 @@ public class TicketController : ControllerBase
         _context.Tickets.Add(ticket);
         _context.SaveChanges();
         return Ok(new { message = "Synced.", ticket });
+    }
+
+    // POST /api/Ticket/additional-withdraw — tech requests another ใบเบิก (withdraw slip) under
+    // an Aservice Ticket number that's already been synced (e.g. the first ใบเบิก is still open,
+    // but the job needs more parts). Unlike /sync this deliberately does NOT dedupe — it always
+    // creates a new Ticket row with its own independent withdraw/return cycle, sharing only the
+    // ExternalTicketNo. See AppDbContext: ExternalTicketNo is intentionally non-unique for this.
+    [HttpPost("additional-withdraw")]
+    public IActionResult CreateAdditionalWithdraw([FromBody] SyncTicketDto dto)
+    {
+        if (string.IsNullOrWhiteSpace(dto.ExternalTicketNo))
+            return BadRequest(new { message = "External Ticket No. is required." });
+        if (!_context.Tickets.Any(t => t.ExternalTicketNo == dto.ExternalTicketNo))
+            return BadRequest(new { message = "ไม่พบ Ticket นี้ในระบบ — sync ใบแรกก่อนถึงจะขอเบิกเพิ่มได้" });
+
+        var ticket = new Ticket
+        {
+            ExternalTicketNo = dto.ExternalTicketNo,
+            TechEmail = dto.TechEmail ?? string.Empty,
+            TechName  = dto.TechName  ?? string.Empty,
+            TechDept  = dto.TechDept  ?? string.Empty,
+            Status    = null,
+            CreatedAt = DateTime.Now,
+            UpdatedAt = DateTime.Now
+        };
+        _context.Tickets.Add(ticket);
+        _context.SaveChanges();
+        _audit.Log(User, "Ticket", ticket.TicketId.ToString(), "ADDITIONAL_WITHDRAW", null, new { ticket.TicketId, ticket.ExternalTicketNo });
+        return Ok(new { message = "สร้างใบเบิกใหม่แล้ว", ticket });
     }
 
     // PUT /api/Ticket/{id}/withdraw — technician submits the withdraw request (Form 1).

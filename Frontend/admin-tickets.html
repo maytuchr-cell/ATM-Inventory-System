@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Tickets — ATM Inventory</title>
-    <link rel="stylesheet" href="shared/styles.css?v=25">
+    <link rel="stylesheet" href="shared/styles.css?v=26">
     <style>
         /* Page-specific overrides */
         .section-head { display:flex; align-items:center; gap:10px; margin-bottom:20px; }
@@ -294,10 +294,10 @@
     </div>
 </div>
 
-<script src="shared/translations.js?v=25"></script>
-<script src="shared/toast.js?v=25"></script>
-<script src="shared/api.js?v=25"></script>
-<script src="shared/layout.js?v=25"></script>
+<script src="shared/translations.js?v=26"></script>
+<script src="shared/toast.js?v=26"></script>
+<script src="shared/api.js?v=26"></script>
+<script src="shared/layout.js?v=26"></script>
 <script>
     let cachedTickets = [];
     let rejectTargetId = null;
@@ -384,9 +384,12 @@
             } else {
                 action = `<span style="color:var(--text-muted);font-size:12px;">รอช่างจัดส่ง</span>`;
             }
+            const ticketLabel = tk.siblingCount > 1
+                ? `<span class="id-chip ticket-id">${tk.externalTicketNo}</span><div style="font-size:11px;color:var(--text-muted);margin-top:2px;">ใบที่ ${tk.siblingIndex} จาก ${tk.siblingCount}</div>`
+                : `<span class="id-chip ticket-id">${tk.externalTicketNo}</span>`;
             return `
                 <tr>
-                    <td><span class="id-chip ticket-id">${tk.externalTicketNo}</span></td>
+                    <td>${ticketLabel}</td>
                     <td class="fw-600">${tk.techName}</td>
                     <td>${returnLinesHtml(tk)}</td>
                     <td>${tk.returnAddress || '—'}</td>
@@ -532,9 +535,13 @@
                 action = `<span style="color:var(--text-muted)">—</span>`;
             }
 
+            const ticketLabel = tk.siblingCount > 1
+                ? `<span class="id-chip ticket-id">${tk.externalTicketNo}</span><div style="font-size:11px;color:var(--text-muted);margin-top:2px;">ใบที่ ${tk.siblingIndex} จาก ${tk.siblingCount}</div>`
+                : `<span class="id-chip ticket-id">${tk.externalTicketNo}</span>`;
+
             tbody.innerHTML += `
                 <tr>
-                    <td><span class="id-chip ticket-id">${tk.externalTicketNo}</span></td>
+                    <td>${ticketLabel}</td>
                     <td class="fw-600">${tk.techName}<div class="fs-13" style="color:var(--text-secondary);font-weight:400;">${tk.techDept}</div></td>
                     <td>${phaseLabel}</td>
                     <td>${partsSummary}</td>

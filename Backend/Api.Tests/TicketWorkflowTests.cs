@@ -337,4 +337,61 @@ public class TicketWorkflowTests
 
         Assert.IsType<BadRequestObjectResult>(result);
     }
+
+    // ── Multiple ใบเบิก under one Aservice Ticket ───────────────────────────
+
+    [Fact]
+    public void CreateAdditionalWithdraw_OnKnownExternalTicketNo_CreatesIndependentSecondTicket()
+    {
+        var (controller, context) = TicketControllerFixture.Create();
+        controller.SyncFromAservice(new SyncTicketDto { ExternalTicketNo = "ASV-100", TechName = "Tech" });
+        var first = context.Tickets.First(t => t.ExternalTicketNo == "ASV-100");
+
+        var result = controller.CreateAdditionalWithdraw(new SyncTicketDto
+        {
+            ExternalTicketNo = "ASV-100", TechName = "Tech", TechDept = "Zone A"
+        });
+
+        Assert.IsType<OkObjectResult>(result);
+        var rows = context.Tickets.Where(t => t.ExternalTicketNo == "ASV-100").ToList();
+        Assert.Equal(2, rows.Count);
+        Assert.NotEqual(first.TicketId, rows.First(t => t.TicketId != first.TicketId).TicketId);
+        Assert.All(rows, t => Assert.Null(t.Status)); // both start fresh, independently withdrawable
+    }
+
+    [Fact]
+    public void CreateAdditionalWithdraw_OnUnknownExternalTicketNo_ReturnsBadRequest()
+    {
+        var (controller, _) = TicketControllerFixture.Create();
+
+        var result = controller.CreateAdditionalWithdraw(new SyncTicketDto
+        {
+            ExternalTicketNo = "NEVER-SYNCED", TechName = "Tech"
+        });
+
+        Assert.IsType<BadRequestObjectResult>(result);
+    }
+
+    [Fact]
+    public void SecondWithdrawSlip_ApprovedAndReceived_DoesNotAffectFirstSlipsStatus()
+    {
+        var (controller, context) = TicketControllerFixture.Create();
+        var first = TicketControllerFixture.CreateReceivedTicket(controller, context, "ASV-200", qty: 1);
+        Assert.Equal("เบิก", first.Status);
+
+        controller.CreateAdditionalWithdraw(new SyncTicketDto { ExternalTicketNo = "ASV-200", TechName = "Tech" });
+        var second = context.Tickets.First(t => t.ExternalTicketNo == "ASV-200" && t.TicketId != first.TicketId);
+        controller.SubmitWithdraw(second.TicketId, new SubmitLinesDto
+        {
+            Lines = new() { new LineDto { PartNo = TicketControllerFixture.PartNo, Quantity = 2 } },
+            Address = "Addr 2"
+        });
+
+        // First slip is already at เบิก (fully received) — submitting/approving the second slip
+        // must not touch it.
+        var firstAfter = context.Tickets.First(t => t.TicketId == first.TicketId);
+        Assert.Equal("เบิก", firstAfter.Status);
+        var secondAfter = context.Tickets.First(t => t.TicketId == second.TicketId);
+        Assert.Equal("รอ", secondAfter.Status);
+    }
 }
