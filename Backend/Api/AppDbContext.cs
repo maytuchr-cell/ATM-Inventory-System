@@ -7,6 +7,7 @@ public class AppDbContext : DbContext
     public AppDbContext(DbContextOptions<AppDbContext> options) : base(options) { }
 
     public DbSet<Part> Parts { get; set; }
+    public DbSet<PartImage> PartImages { get; set; }
     public DbSet<Ticket> Tickets { get; set; }
     public DbSet<TicketPartLine> TicketPartLines { get; set; }
     public DbSet<TicketAttachment> TicketAttachments { get; set; }

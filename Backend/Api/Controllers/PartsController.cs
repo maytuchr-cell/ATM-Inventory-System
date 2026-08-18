@@ -13,11 +13,27 @@ public class PartsController : ControllerBase
 {
     private readonly AppDbContext _context;
     private readonly StockService _stock;
+    private readonly IConfiguration _config;
+    private readonly IWebHostEnvironment _env;
 
-    public PartsController(AppDbContext context, StockService stock)
+    public PartsController(AppDbContext context, StockService stock, IConfiguration config, IWebHostEnvironment env)
     {
         _context = context;
         _stock = stock;
+        _config = config;
+        _env = env;
+    }
+
+    private Dictionary<int, List<object>> ImagesByPart(IEnumerable<int> partIds)
+    {
+        var ids = partIds.ToList();
+        return _context.PartImages
+            .Where(i => ids.Contains(i.PartId))
+            .OrderBy(i => i.SortOrder).ThenBy(i => i.PartImageId)
+            .GroupBy(i => i.PartId)
+            .ToDictionary(g => g.Key, g => g.Select(i => (object)new {
+                i.PartImageId, i.FilePath, i.FileName, i.SortOrder
+            }).ToList());
     }
 
     // On-hand total for each part = SUM(PartStock.GoodQty). Computed from PartStock,
@@ -67,6 +83,7 @@ public class PartsController : ControllerBase
         // on-hand totals from PartStock (source of truth)
         var stockTotals = StockTotals(parts.Select(p => p.Id));
         var (whStock, techStock) = StockByBucket(parts.Select(p => p.Id));
+        var images = ImagesByPart(parts.Select(p => p.Id));
 
         // attach known serial numbers from StockMovements
         var serialMap = _context.StockMovements
@@ -84,7 +101,8 @@ public class PartsController : ControllerBase
             p.MainUnit, p.Remark, p.ImagePath, p.Zone, p.DeviceType, p.AddedBy, p.Lot, p.Project, p.AddedDate,
             p.IsActive, p.CreatedAt, p.UpdatedAt,
             category = p.Category == null ? null : new { p.Category.Id, p.Category.Name },
-            serialNos = serialMap.ContainsKey(p.PartNo) ? serialMap[p.PartNo] : new List<string>()
+            serialNos = serialMap.ContainsKey(p.PartNo) ? serialMap[p.PartNo] : new List<string>(),
+            images = images.GetValueOrDefault(p.Id, new List<object>())
         });
 
         return Ok(result);
@@ -108,6 +126,11 @@ public class PartsController : ControllerBase
             })
             .ToList();
 
+        var images = _context.PartImages.Where(i => i.PartId == id)
+            .OrderBy(i => i.SortOrder).ThenBy(i => i.PartImageId)
+            .Select(i => new { i.PartImageId, i.FilePath, i.FileName, i.SortOrder })
+            .ToList();
+
         return Ok(new {
             part.Id, part.PartNo, part.PartName, part.OrderNumber, part.Unit, part.SerialNo,
             StockQuantity = byLocation.Sum(s => s.GoodQty),
@@ -115,8 +138,70 @@ public class PartsController : ControllerBase
             part.CostPerUnit, part.CatalogueRef, part.MainUnit, part.Remark, part.ImagePath, part.Zone, part.DeviceType, part.AddedBy, part.Lot, part.Project, part.AddedDate,
             part.IsActive, part.CreatedAt, part.UpdatedAt,
             category = part.Category == null ? null : new { part.Category.Id, part.Category.Name },
-            stockByLocation = byLocation
+            stockByLocation = byLocation,
+            images
         });
+    }
+
+    // POST /api/Parts/{id}/images — upload one photo to this part's gallery.
+    [Authorize(Policy = "CanWriteMasterData")]
+    [HttpPost("{id}/images")]
+    [RequestSizeLimit(10_000_000)]
+    public async Task<IActionResult> UploadImage(int id, IFormFile file)
+    {
+        var part = _context.Parts.FirstOrDefault(p => p.Id == id);
+        if (part == null) return NotFound();
+
+        if (file == null || file.Length == 0)
+            return BadRequest(new { message = "No file provided." });
+        if (file.Length > 10_000_000)
+            return BadRequest(new { message = "File too large (max 10MB)." });
+
+        var allowed = new[] { ".jpg", ".jpeg", ".png", ".gif", ".webp" };
+        var ext = Path.GetExtension(file.FileName).ToLowerInvariant();
+        if (!allowed.Contains(ext))
+            return BadRequest(new { message = "Only image files are allowed." });
+
+        var assetRoot = _config["AssetPath"] ?? Path.Combine(_env.ContentRootPath, "wwwroot");
+        var uploads = Path.Combine(assetRoot, "parts");
+        Directory.CreateDirectory(uploads);
+
+        var fileName = $"{Guid.NewGuid()}{ext}";
+        var filePath = Path.Combine(uploads, fileName);
+
+        using (var stream = new FileStream(filePath, FileMode.Create))
+        {
+            await file.CopyToAsync(stream);
+        }
+
+        var nextSort = _context.PartImages.Where(i => i.PartId == id).Select(i => (int?)i.SortOrder).Max() ?? -1;
+        var image = new PartImage
+        {
+            PartId = id,
+            FilePath = $"/assets/parts/{fileName}",
+            FileName = file.FileName,
+            SortOrder = nextSort + 1
+        };
+        _context.PartImages.Add(image);
+        _context.SaveChanges();
+
+        WriteAudit("Part", id.ToString(), "IMAGE_ADD", null, new { image.PartImageId, image.FilePath });
+        return Ok(new { image.PartImageId, image.FilePath, image.FileName, image.SortOrder });
+    }
+
+    // DELETE /api/Parts/{id}/images/{imageId}
+    [Authorize(Policy = "CanWriteMasterData")]
+    [HttpDelete("{id}/images/{imageId}")]
+    public IActionResult DeleteImage(int id, int imageId)
+    {
+        var image = _context.PartImages.FirstOrDefault(i => i.PartImageId == imageId && i.PartId == id);
+        if (image == null) return NotFound();
+
+        _context.PartImages.Remove(image);
+        _context.SaveChanges();
+
+        WriteAudit("Part", id.ToString(), "IMAGE_DELETE", new { image.PartImageId, image.FilePath }.ToString(), null);
+        return Ok(new { message = "Image removed." });
     }
 
     // GET /api/Parts/{id}/holders — which technician(s) currently have this part checked out,
@@ -312,7 +397,11 @@ public class PartsController : ControllerBase
         StockQuantity = _context.PartStocks.Where(s => s.PartId == p.Id).Sum(s => s.GoodQty),
         p.CategoryId, p.MinStock, p.MaxStock, p.ReorderPoint,
         p.CostPerUnit, p.CatalogueRef, p.MainUnit, p.Remark, p.ImagePath, p.Zone, p.DeviceType, p.AddedBy, p.Lot, p.Project, p.AddedDate,
-        p.IsActive, p.CreatedAt, p.UpdatedAt
+        p.IsActive, p.CreatedAt, p.UpdatedAt,
+        images = _context.PartImages.Where(i => i.PartId == p.Id)
+            .OrderBy(i => i.SortOrder).ThenBy(i => i.PartImageId)
+            .Select(i => new { i.PartImageId, i.FilePath, i.FileName, i.SortOrder })
+            .ToList()
     };
 
     private string CurrentUser() =>

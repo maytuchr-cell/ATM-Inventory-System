@@ -123,17 +123,21 @@ function renderTable() {
 }
 
 /* ── Part detail popup (catalog view) ── */
+let pdImages = [];
+let pdIndex = 0;
+
 function openPartDetail(id) {
   const p = allParts.find(x => x.id === id);
   if (!p) return;
   const catName = p.category?.name ?? (allCategories.find(c => c.id === p.categoryId)?.name ?? '—');
   const dash = v => (v == null || v === '') ? '—' : v;
 
-  const imgHtml = p.imagePath
-    ? `<img src="${IMG_BASE}${p.imagePath}" alt="${p.partName}"
-           style="max-width:100%;max-height:320px;object-fit:contain;border-radius:10px;border:1px solid var(--border);background:#fff"
-           onerror="this.parentElement.innerHTML='<div class=&quot;pd-noimg&quot;>'+t('parts.pd.noimg')+'</div>'">`
-    : `<div class="pd-noimg">${t('parts.pd.noimg')}</div>`;
+  // Prefer the multi-photo gallery; fall back to the single legacy ImagePath.
+  pdImages = (p.images && p.images.length)
+    ? p.images.map(i => i.filePath)
+    : (p.imagePath ? [p.imagePath] : []);
+  pdIndex = 0;
+  renderPdImage(p.partName);
 
   const rows = [
     ['parts.pd.partno', `<code>${p.partNo}</code>`],
@@ -148,14 +152,74 @@ function openPartDetail(id) {
       <div class="pd-value">${v}</div>
     </div>`).join('');
 
-  document.getElementById('pd-image').innerHTML = imgHtml;
   document.getElementById('pd-fields').innerHTML = rows;
   document.getElementById('pd-title').textContent = p.partNo;
   document.getElementById('part-detail-overlay').classList.remove('hidden');
 }
 
+function renderPdImage(partName) {
+  const box = document.getElementById('pd-image');
+  if (!pdImages.length) {
+    box.innerHTML = `<div class="pd-noimg">${t('parts.pd.noimg')}</div>`;
+    return;
+  }
+  const showArrows = pdImages.length > 1;
+  box.innerHTML = `
+    <div style="position:relative;width:100%;display:flex;align-items:center;justify-content:center;">
+      ${showArrows ? `<button type="button" class="pd-nav pd-nav-prev" onclick="pdPrev()" aria-label="Previous">‹</button>` : ''}
+      <img src="${IMG_BASE}${pdImages[pdIndex]}" alt="${partName}"
+           style="max-width:100%;max-height:320px;object-fit:contain;border-radius:10px;border:1px solid var(--border);background:#fff"
+           onerror="this.parentElement.innerHTML='<div class=&quot;pd-noimg&quot;>'+t('parts.pd.noimg')+'</div>'">
+      ${showArrows ? `<button type="button" class="pd-nav pd-nav-next" onclick="pdNext()" aria-label="Next">›</button>` : ''}
+    </div>
+    ${showArrows ? `<div class="pd-dots">${pdImages.map((_, i) =>
+        `<span class="pd-dot ${i === pdIndex ? 'active' : ''}" onclick="pdGoto(${i})"></span>`).join('')}</div>` : ''}
+  `;
+}
+
+function pdPrev() { pdIndex = (pdIndex - 1 + pdImages.length) % pdImages.length; renderPdImage(document.getElementById('pd-title').textContent); }
+function pdNext() { pdIndex = (pdIndex + 1) % pdImages.length; renderPdImage(document.getElementById('pd-title').textContent); }
+function pdGoto(i) { pdIndex = i; renderPdImage(document.getElementById('pd-title').textContent); }
+
 function closePartDetail() {
   document.getElementById('part-detail-overlay').classList.add('hidden');
+}
+
+/* ── Photo gallery (edit mode) — upload/remove multiple photos per part ── */
+function renderGallery(p) {
+  const wrap = document.getElementById('gallery-thumbs');
+  if (!wrap) return;
+  const images = p.images || [];
+  wrap.innerHTML = images.map(img => `
+    <div class="gallery-thumb">
+      <img src="${IMG_BASE}${img.filePath}" alt="${img.fileName}">
+      <button type="button" class="gallery-thumb-remove" onclick="removePartImage(${p.id}, ${img.partImageId})" title="${t('btn.delete') || 'Remove'}">✕</button>
+    </div>`).join('') || `<span style="font-size:12px;color:var(--text-muted);">${t('parts.pd.noimg')}</span>`;
+}
+
+async function uploadPartImages(files) {
+  if (!editingId || !files || !files.length) return;
+  for (const file of Array.from(files)) {
+    try {
+      await api.parts.uploadImage(editingId, file);
+    } catch (e) {
+      showToast?.(e.message || t('toast.error'), 'error');
+    }
+  }
+  await loadParts();
+  const p = allParts.find(x => x.id === editingId);
+  if (p) renderGallery(p);
+}
+
+async function removePartImage(partId, imageId) {
+  try {
+    await api.parts.deleteImage(partId, imageId);
+    await loadParts();
+    const p = allParts.find(x => x.id === partId);
+    if (p) renderGallery(p);
+  } catch (e) {
+    showToast?.(e.message || t('toast.error'), 'error');
+  }
 }
 
 /* ── Holders modal — who currently has this part checked out ── */
@@ -260,6 +324,7 @@ function openModal(id = null) {
     submitBtn.textContent = t('btn.save');
     cancelBtn.textContent = t('btn.cancel');
     setStockFieldMode(false);
+    renderGallery(p);
   } else {
     // ── ADD (batch) ──
     modal.classList.remove('edit-mode');

@@ -69,6 +69,8 @@ const api = {
     remove:  (id)          => apiFetch(`/Parts/${id}`, { method: 'DELETE' }),
     restore: (id)          => apiFetch(`/Parts/${id}/restore`, { method: 'PATCH' }),
     holders: (id)          => apiFetch(`/Parts/${id}/holders`),
+    uploadImage: (id, file) => { const fd = new FormData(); fd.append('file', file); return apiUpload(`/Parts/${id}/images`, fd); },
+    deleteImage: (id, imageId) => apiFetch(`/Parts/${id}/images/${imageId}`, { method: 'DELETE' }),
   },
   categories: {
     getAll:  (params = {}) => apiFetch('/Categories?' + new URLSearchParams(params)),
