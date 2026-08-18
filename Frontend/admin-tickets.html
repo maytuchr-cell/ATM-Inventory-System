@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Tickets — ATM Inventory</title>
-    <link rel="stylesheet" href="shared/styles.css?v=18">
+    <link rel="stylesheet" href="shared/styles.css?v=19">
     <style>
         /* Page-specific overrides */
         .section-head { display:flex; align-items:center; gap:10px; margin-bottom:20px; }
@@ -39,6 +39,8 @@
         .ticket-action-row { display:flex; gap:6px; flex-wrap:wrap; align-items:center; }
         .btn-substitute { background:none; border:none; cursor:pointer; font-size:12px; padding:1px 3px; border-radius:4px; line-height:1; opacity:.7; transition:all .15s; }
         .btn-substitute:hover { opacity:1; background:var(--orange-light); }
+        .btn-substitute-full { display:inline-flex; align-items:center; gap:5px; margin-top:6px; background:var(--orange-light); color:var(--orange); border:1.5px solid var(--orange); border-radius:7px; padding:6px 12px; font-family:inherit; font-size:12px; font-weight:600; cursor:pointer; transition:all .15s; }
+        .btn-substitute-full:hover { background:var(--orange); color:#fff; }
         .sub-option { padding:9px 10px; border:1.5px solid var(--border); border-radius:8px; cursor:pointer; margin-bottom:6px; font-size:12.5px; display:flex; justify-content:space-between; align-items:center; transition:all .15s; }
         .sub-option:hover { border-color:var(--orange); background:var(--orange-light); }
         .sub-option .sub-qty { font-size:11px; color:var(--text-muted); }
@@ -292,10 +294,10 @@
     </div>
 </div>
 
-<script src="shared/translations.js?v=18"></script>
-<script src="shared/toast.js?v=18"></script>
-<script src="shared/api.js?v=18"></script>
-<script src="shared/layout.js?v=18"></script>
+<script src="shared/translations.js?v=19"></script>
+<script src="shared/toast.js?v=19"></script>
+<script src="shared/api.js?v=19"></script>
+<script src="shared/layout.js?v=19"></script>
 <script>
     let cachedTickets = [];
     let rejectTargetId = null;
@@ -672,13 +674,15 @@
         const withdrawListHtml = list => list.length
             ? list.map(l => {
                 const short = (l.availableStock ?? 0) < l.quantity;
-                return `<div style="display:flex;justify-content:space-between;align-items:center;padding:4px 0;border-bottom:1px solid var(--border);gap:6px;">
-                    <span>${l.partName}</span>
-                    <span style="display:flex;align-items:center;gap:6px;">
-                        <span style="font-size:11px;font-weight:600;color:${short ? 'var(--red)' : 'var(--text-muted)'};">${short ? `⚠ คงเหลือ ${l.availableStock ?? 0}` : `คงเหลือ ${l.availableStock ?? 0}`}</span>
-                        <span class="fw-600">×${l.quantity}</span>
-                        ${canSubstitute ? `<button class="btn-substitute" title="เปลี่ยนเป็นอะไหล่เทียบเคียง" onclick="closeDetailModal();openSubstituteModal(${tk.ticketId}, ${l.ticketPartLineId}, '${l.partNo}', '${(l.partName || '').replace(/'/g, "\\'")}')">🔄</button>` : ''}
-                    </span>
+                return `<div style="padding:8px 0;border-bottom:1px solid var(--border);">
+                    <div style="display:flex;justify-content:space-between;align-items:center;gap:6px;">
+                        <span>${l.partName}</span>
+                        <span style="display:flex;align-items:center;gap:6px;">
+                            <span style="font-size:11px;font-weight:600;color:${short ? 'var(--red)' : 'var(--text-muted)'};">${short ? `⚠ คงเหลือ ${l.availableStock ?? 0}` : `คงเหลือ ${l.availableStock ?? 0}`}</span>
+                            <span class="fw-600">×${l.quantity}</span>
+                        </span>
+                    </div>
+                    ${canSubstitute ? `<button class="btn-substitute-full" onclick="closeDetailModal();openSubstituteModal(${tk.ticketId}, ${l.ticketPartLineId}, '${l.partNo}', '${(l.partName || '').replace(/'/g, "\\'")}')">🔄 เปลี่ยนเป็นอะไหล่เทียบเคียง</button>` : ''}
                 </div>`;
             }).join('')
             : `<span class="detail-empty">—</span>`;
