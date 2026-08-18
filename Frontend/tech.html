@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Tech Workspace — ATM Inventory</title>
-    <link rel="stylesheet" href="shared/styles.css?v=21">
+    <link rel="stylesheet" href="shared/styles.css?v=22">
     <style>
         .section-head { display:flex; align-items:center; gap:10px; margin-bottom:20px; }
         .section-accent { width:4px; height:22px; background:var(--orange); border-radius:2px; }
@@ -150,9 +150,6 @@
             <div id="wdLines"></div>
             <button type="button" class="btn-add-line" onclick="addLine('withdraw')">+ เพิ่มอะไหล่</button>
 
-            <span class="tk-section-label" style="margin-top:18px;display:block;">หมายเหตุ / อาการเสีย</span>
-            <textarea id="wdDescription" class="form-textarea" placeholder="เช่น Card reader เสีย, ปลั๊ก Sensor ขาด..." style="min-height:60px;"></textarea>
-
             <span class="tk-section-label" style="margin-top:18px;display:block;">ที่อยู่จัดส่ง</span>
             <textarea id="wdAddress" class="form-textarea" placeholder="กรอกที่อยู่สำหรับจัดส่งอะไหล่..." style="min-height:70px;"></textarea>
 
@@ -160,6 +157,9 @@
             <input type="file" id="wdPhotoInput" accept="image/*" multiple style="display:none;" onchange="handlePhotoSelect('wd', this.files)">
             <button type="button" class="btn-add-line" onclick="document.getElementById('wdPhotoInput').click()">📷 แนบรูปภาพ (เลือกได้หลายรูป)</button>
             <div id="wdPhotoPreview" class="tk-photo-preview"></div>
+
+            <span class="tk-section-label" style="margin-top:18px;display:block;">หมายเหตุ / อาการเสีย</span>
+            <textarea id="wdDescription" class="form-textarea" placeholder="เช่น Card reader เสีย, ปลั๊ก Sensor ขาด..." style="min-height:60px;"></textarea>
 
             <div class="tk-modal-actions">
                 <button type="button" class="btn btn-ghost" onclick="closeWithdrawModal()">Cancel</button>
@@ -230,9 +230,6 @@
             <div id="nrLines"></div>
             <button type="button" class="btn-add-line" onclick="addLine('new')">+ เพิ่มอะไหล่</button>
 
-            <span class="tk-section-label" style="margin-top:18px;display:block;">หมายเหตุ / อาการเสีย</span>
-            <textarea id="nrDescription" class="form-textarea" placeholder="เช่น Card reader เสีย, ปลั๊ก Sensor ขาด..." style="min-height:60px;"></textarea>
-
             <span class="tk-section-label" style="margin-top:18px;display:block;">ที่อยู่จัดส่ง</span>
             <textarea id="nrAddress" class="form-textarea" placeholder="กรอกที่อยู่สำหรับจัดส่งอะไหล่..." style="min-height:70px;"></textarea>
 
@@ -240,6 +237,9 @@
             <input type="file" id="nrPhotoInput" accept="image/*" multiple style="display:none;" onchange="handlePhotoSelect('nr', this.files)">
             <button type="button" class="btn-add-line" onclick="document.getElementById('nrPhotoInput').click()">📷 แนบรูปภาพ (เลือกได้หลายรูป)</button>
             <div id="nrPhotoPreview" class="tk-photo-preview"></div>
+
+            <span class="tk-section-label" style="margin-top:18px;display:block;">หมายเหตุ / อาการเสีย</span>
+            <textarea id="nrDescription" class="form-textarea" placeholder="เช่น Card reader เสีย, ปลั๊ก Sensor ขาด..." style="min-height:60px;"></textarea>
 
             <div class="tk-modal-actions">
                 <button type="button" class="btn btn-ghost" onclick="closeNewRequestModal()">Cancel</button>
@@ -249,10 +249,10 @@
     </div>
 </div>
 
-<script src="shared/translations.js?v=21"></script>
-<script src="shared/toast.js?v=21"></script>
-<script src="shared/api.js?v=21"></script>
-<script src="shared/layout.js?v=21"></script>
+<script src="shared/translations.js?v=22"></script>
+<script src="shared/toast.js?v=22"></script>
+<script src="shared/api.js?v=22"></script>
+<script src="shared/layout.js?v=22"></script>
 <script>
     /* Status: รอ / เดินทาง / เบิก / คืน / Reject / Cancel   (null = ยังไม่เริ่มเบิก) */
     const currentEmail = localStorage.getItem('userEmail') || 'tech@atm.com';
