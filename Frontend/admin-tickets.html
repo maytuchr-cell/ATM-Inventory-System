@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Tickets — ATM Inventory</title>
-    <link rel="stylesheet" href="shared/styles.css?v=17">
+    <link rel="stylesheet" href="shared/styles.css?v=18">
     <style>
         /* Page-specific overrides */
         .section-head { display:flex; align-items:center; gap:10px; margin-bottom:20px; }
@@ -292,10 +292,10 @@
     </div>
 </div>
 
-<script src="shared/translations.js?v=17"></script>
-<script src="shared/toast.js?v=17"></script>
-<script src="shared/api.js?v=17"></script>
-<script src="shared/layout.js?v=17"></script>
+<script src="shared/translations.js?v=18"></script>
+<script src="shared/toast.js?v=18"></script>
+<script src="shared/api.js?v=18"></script>
+<script src="shared/layout.js?v=18"></script>
 <script>
     let cachedTickets = [];
     let rejectTargetId = null;
@@ -475,25 +475,34 @@
             const b = STATUS_BADGE[tk.status] || STATUS_BADGE["รอ"];
             const badge = `<span class="badge ${b.cls}"><span class="badge-dot"></span>${tk.status}</span>`;
 
-            // Substituting to an equivalent part only makes sense before approval commits stock.
-            const canSubstitute = tk.status === "รอ" && tk.phase === "withdraw";
             // Whether the central warehouse can actually fulfill every Withdraw line right now —
             // gates the Approve button below so Admin can't approve a request stock can't cover.
             const withdrawLines = tk.lines.filter(l => l.lineType === 'Withdraw');
-            const hasShortage = withdrawLines.some(l => (l.availableStock ?? 0) < l.quantity);
-            const partsSummary = tk.lines.map(l => {
-                const short = l.lineType === 'Withdraw' && (l.availableStock ?? 0) < l.quantity;
-                const stockNote = l.lineType === 'Withdraw'
-                    ? `<span style="font-size:10px;font-weight:600;color:${short ? 'var(--red)' : 'var(--text-muted)'}">${short ? `⚠ คงเหลือ ${l.availableStock ?? 0}` : `คงเหลือ ${l.availableStock ?? 0}`}</span>`
-                    : '';
-                return `
-                <div style="font-size:12px;display:flex;align-items:center;gap:5px;">
-                    <span>${l.partName} <span style="color:var(--text-muted)">×${l.quantity}</span> <span style="font-size:10px;color:var(--text-muted)">(${l.lineType === 'Withdraw' ? 'เบิก' : 'คืน'}${l.condition ? ' — ' + CONDITION_LABEL[l.condition] : ''})</span> ${stockNote}</span>
-                    ${canSubstitute && l.lineType === 'Withdraw'
-                        ? `<button class="btn-substitute" title="เปลี่ยนเป็นอะไหล่เทียบเคียง" onclick="openSubstituteModal(${tk.ticketId}, ${l.ticketPartLineId}, '${l.partNo}', '${(l.partName || '').replace(/'/g, "\\'")}')">🔄</button>`
-                        : ''}
-                </div>`;
-            }).join('');
+            const shortLines = withdrawLines.filter(l => (l.availableStock ?? 0) < l.quantity);
+            const hasShortage = shortLines.length > 0;
+
+            // The full per-line list (with condition, qty, substitute button) only shows in the
+            // detail modal now — this column is a quick readiness flag so Admin doesn't have to
+            // open every ticket to see whether stock is a problem.
+            let partsSummary;
+            if (!withdrawLines.length) {
+                partsSummary = `<span style="color:var(--text-muted);font-size:12px;">—</span>`;
+            } else if (hasShortage) {
+                partsSummary = `
+                    <div style="display:flex;align-items:flex-start;gap:5px;">
+                        <span style="color:var(--red);font-size:13px;">⚠</span>
+                        <div>
+                            <div style="font-size:12px;font-weight:600;color:var(--red);">ขาดอะไหล่</div>
+                            ${shortLines.map(l => `<div style="font-size:11px;color:var(--red);">${l.partName} — ขาด ${l.quantity - (l.availableStock ?? 0)}</div>`).join('')}
+                        </div>
+                    </div>`;
+            } else {
+                partsSummary = `
+                    <div style="display:flex;align-items:center;gap:5px;">
+                        <span style="color:var(--green);font-size:13px;">✅</span>
+                        <span style="font-size:12px;color:var(--green);font-weight:600;">พร้อม (${withdrawLines.length} รายการ)</span>
+                    </div>`;
+            }
 
             const phaseLabel = tk.phase === 'withdraw'
                 ? `<span style="font-size:11px;color:var(--text-secondary);">ขาเบิก</span>`
@@ -656,8 +665,22 @@
 
         const withdrawLines = tk.lines.filter(l => l.lineType === 'Withdraw');
         const returnLines   = tk.lines.filter(l => l.lineType === 'Return');
+        const canSubstitute = tk.status === "รอ" && tk.phase === "withdraw";
         const lineListHtml = list => list.length
             ? list.map(l => `<div style="display:flex;justify-content:space-between;padding:4px 0;border-bottom:1px solid var(--border);"><span>${l.partName}${l.condition ? ` <span style="color:var(--text-muted);font-size:11px;">(${CONDITION_LABEL[l.condition]})</span>` : ''}</span><span class="fw-600">×${l.quantity}</span></div>`).join('')
+            : `<span class="detail-empty">—</span>`;
+        const withdrawListHtml = list => list.length
+            ? list.map(l => {
+                const short = (l.availableStock ?? 0) < l.quantity;
+                return `<div style="display:flex;justify-content:space-between;align-items:center;padding:4px 0;border-bottom:1px solid var(--border);gap:6px;">
+                    <span>${l.partName}</span>
+                    <span style="display:flex;align-items:center;gap:6px;">
+                        <span style="font-size:11px;font-weight:600;color:${short ? 'var(--red)' : 'var(--text-muted)'};">${short ? `⚠ คงเหลือ ${l.availableStock ?? 0}` : `คงเหลือ ${l.availableStock ?? 0}`}</span>
+                        <span class="fw-600">×${l.quantity}</span>
+                        ${canSubstitute ? `<button class="btn-substitute" title="เปลี่ยนเป็นอะไหล่เทียบเคียง" onclick="closeDetailModal();openSubstituteModal(${tk.ticketId}, ${l.ticketPartLineId}, '${l.partNo}', '${(l.partName || '').replace(/'/g, "\\'")}')">🔄</button>` : ''}
+                    </span>
+                </div>`;
+            }).join('')
             : `<span class="detail-empty">—</span>`;
 
         document.getElementById('detailTitle').textContent =
@@ -686,7 +709,7 @@
 
             <div class="detail-section">
                 <div class="detail-section-title">รายการอะไหล่ — เบิก</div>
-                ${lineListHtml(withdrawLines)}
+                ${withdrawListHtml(withdrawLines)}
             </div>
 
             <div class="detail-section">
