@@ -122,8 +122,13 @@ public class PartsController : ControllerBase
     // GET /api/Parts/{id}/holders — which technician(s) currently have this part checked out,
     // and how many. There's no per-tech stock location (OL_TECHNICIAN is one shared bucket), so
     // this is derived from open Tickets instead: a ticket is "holding" a part once the tech has
-    // received it (reached เบิก) and until the return leg fully closes (คืน/Reject/Cancel),
-    // for whatever quantity hasn't been returned yet (Withdraw qty minus Return qty, per part).
+    // received it (reached เบิก) and until the return leg fully closes.
+    //
+    // Return lines do NOT reduce the outstanding qty here, even once the tech has submitted a
+    // return (status รอ/อนุมัติคืน/เดินทาง on the return leg) — ConfirmReturnArrived is the only
+    // place PartStock actually moves the part out of techLoc, and it does that atomically in the
+    // same call that flips Status to คืน. Subtracting Return-line qty before that point would
+    // undercount against the real techStock number, which stays unchanged until confirm-return.
     [HttpGet("{id}/holders")]
     public IActionResult GetHolders(int id)
     {
@@ -146,14 +151,12 @@ public class PartsController : ControllerBase
             if (!isReturnPhase && ticket.Status != "เบิก") continue;
 
             var withdrawQty = tLines.Where(l => l.LineType == "Withdraw").Sum(l => l.Quantity);
-            var returnQty = tLines.Where(l => l.LineType == "Return").Sum(l => l.Quantity);
-            var outstanding = withdrawQty - returnQty;
-            if (outstanding <= 0) continue;
+            if (withdrawQty <= 0) continue;
 
             holders.Add(new
             {
                 ticket.TicketId, ticket.ExternalTicketNo, ticket.TechName, ticket.TechDept,
-                ticket.Status, Quantity = outstanding
+                ticket.Status, Quantity = withdrawQty
             });
         }
 
