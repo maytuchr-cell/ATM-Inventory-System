@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Parts Master — ATM Inventory</title>
-  <link rel="stylesheet" href="shared/styles.css?v=22">
+  <link rel="stylesheet" href="shared/styles.css?v=23">
 </head>
 <body>
   <div class="app-layout">
@@ -44,14 +44,16 @@
                   <th data-i18n="parts.col.partno">Part No.</th>
                   <th data-i18n="parts.col.name">Part Name</th>
                   <th data-i18n="parts.col.cat">Category</th>
-                  <th data-i18n="parts.col.stock">Stock</th>
+                  <th title="พร้อมให้เบิก — เท่านี้เท่านั้นที่ระบบนับตอนอนุมัติ Ticket">คลังกลาง</th>
+                  <th title="อยู่ในมือช่างที่เบิกไปแล้ว — เบิกซ้ำไม่ได้">อยู่กับช่าง</th>
+                  <th data-i18n="parts.col.stock">รวม</th>
                   <th data-i18n="parts.col.min">Min</th>
                   <th data-i18n="col.status">Status</th>
                   <th data-i18n="col.actions">Actions</th>
                 </tr>
               </thead>
               <tbody id="parts-tbody">
-                <tr><td colspan="7" class="empty-state" data-i18n="connecting">Connecting…</td></tr>
+                <tr><td colspan="9" class="empty-state" data-i18n="connecting">Connecting…</td></tr>
               </tbody>
             </table>
           </div>
@@ -215,10 +217,10 @@
   </style>
 
   <script src="https://code.iconify.design/iconify-icon/2.1.0/iconify-icon.min.js"></script>
-  <script src="shared/translations.js?v=22"></script>
-  <script src="shared/toast.js?v=22"></script>
-  <script src="shared/api.js?v=22"></script>
-  <script src="shared/layout.js?v=22"></script>
-  <script src="admin-parts.js?v=22"></script>
+  <script src="shared/translations.js?v=23"></script>
+  <script src="shared/toast.js?v=23"></script>
+  <script src="shared/api.js?v=23"></script>
+  <script src="shared/layout.js?v=23"></script>
+  <script src="admin-parts.js?v=23"></script>
 </body>
 </html>

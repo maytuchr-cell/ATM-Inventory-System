@@ -48,7 +48,7 @@ async function loadParts() {
   } catch (e) {
     showToast(t('toast.network'), 'error');
     document.getElementById('parts-tbody').innerHTML =
-      `<tr><td colspan="7" class="empty-state">${t('inv.empty')}</td></tr>`;
+      `<tr><td colspan="9" class="empty-state">${t('inv.empty')}</td></tr>`;
   }
 }
 
@@ -84,7 +84,7 @@ function renderTable() {
 
   const tbody = document.getElementById('parts-tbody');
   if (!rows.length) {
-    tbody.innerHTML = `<tr><td colspan="7" class="empty-state">${t('parts.empty')}</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="9" class="empty-state">${t('parts.empty')}</td></tr>`;
     renderPagination(0, 1);
     return;
   }
@@ -102,10 +102,14 @@ function renderTable() {
     const imgIcon = p.imagePath
       ? `<iconify-icon icon="material-symbols:image-outline" width="15" style="vertical-align:-3px;color:var(--orange)"></iconify-icon> `
       : '';
+    const whQty   = p.warehouseStock ?? 0;
+    const techQty = p.techStock ?? 0;
     return `<tr>
       <td><code>${p.partNo}</code></td>
       <td><a href="#" class="part-name-link" onclick="openPartDetail(${p.id});return false;">${imgIcon}<strong>${p.partName}</strong></a></td>
       <td>${catName}</td>
+      <td>${whQty} ${t('inv.units')}</td>
+      <td style="color:var(--text-secondary);">${techQty ? `${techQty} ${t('inv.units')}` : '—'}</td>
       <td><span class="stock-pill ${stockClass}">${p.stockQuantity} ${t('inv.units')}</span></td>
       <td>${p.minStock}</td>
       <td>${statusBadge}</td>
@@ -134,7 +138,7 @@ function openPartDetail(id) {
     ['parts.pd.desc',   `<strong>${dash(p.partName)}</strong>`],
     ['parts.pd.main',   dash(p.mainUnit)],
     ['parts.pd.sub',    dash(catName)],
-    ['parts.pd.stock',  `${p.stockQuantity}`],
+    ['parts.pd.stock',  `${p.stockQuantity} รวม &nbsp;(คลังกลาง ${p.warehouseStock ?? 0} / อยู่กับช่าง ${p.techStock ?? 0})`],
     ['parts.pd.remark', dash(p.remark)],
   ].map(([k, v]) => `
     <div class="pd-row">

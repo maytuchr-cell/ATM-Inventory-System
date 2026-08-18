@@ -32,6 +32,26 @@ public class PartsController : ControllerBase
             .ToDictionary(x => x.PartId, x => x.Good);
     }
 
+    // Per-location breakdown for the two buckets Admin actually cares about on the Parts Master
+    // list: the central warehouse (what a new withdraw can actually draw from — see
+    // TicketController.ApproveTicket) vs. stock already issued out to technicians. The total
+    // (StockTotals above) can be higher than what's approvable because it includes tech-held
+    // stock, which is exactly the "shows 2 but withdraw says short by 1" confusion this fixes.
+    private (Dictionary<int, int> Warehouse, Dictionary<int, int> Tech) StockByBucket(IEnumerable<int> partIds)
+    {
+        var ids = partIds.ToList();
+        var whId = _context.Locations.FirstOrDefault(l => l.Code == "WH-RAT")?.Id;
+        var techId = _context.Locations.FirstOrDefault(l => l.LocationType == "OL_TECHNICIAN")?.Id;
+
+        var rows = _context.PartStocks
+            .Where(s => ids.Contains(s.PartId) && (s.LocationId == whId || s.LocationId == techId))
+            .ToList();
+
+        var wh = rows.Where(s => s.LocationId == whId).ToDictionary(s => s.PartId, s => s.GoodQty);
+        var tech = rows.Where(s => s.LocationId == techId).ToDictionary(s => s.PartId, s => s.GoodQty);
+        return (wh, tech);
+    }
+
     // GET /api/Parts?categoryId=&isActive=&search=
     [HttpGet]
     public IActionResult GetAll([FromQuery] int? categoryId, [FromQuery] bool? isActive, [FromQuery] string? search)
@@ -46,6 +66,7 @@ public class PartsController : ControllerBase
 
         // on-hand totals from PartStock (source of truth)
         var stockTotals = StockTotals(parts.Select(p => p.Id));
+        var (whStock, techStock) = StockByBucket(parts.Select(p => p.Id));
 
         // attach known serial numbers from StockMovements
         var serialMap = _context.StockMovements
@@ -56,6 +77,8 @@ public class PartsController : ControllerBase
         var result = parts.Select(p => new {
             p.Id, p.PartNo, p.PartName, p.OrderNumber, p.Unit,
             StockQuantity = stockTotals.GetValueOrDefault(p.Id, 0),
+            WarehouseStock = whStock.GetValueOrDefault(p.Id, 0),
+            TechStock = techStock.GetValueOrDefault(p.Id, 0),
             p.CategoryId, p.MinStock, p.MaxStock,
             p.ReorderPoint, p.CostPerUnit, p.CatalogueRef, p.SerialNo,
             p.MainUnit, p.Remark, p.ImagePath, p.Zone, p.DeviceType, p.AddedBy, p.Lot, p.Project, p.AddedDate,
