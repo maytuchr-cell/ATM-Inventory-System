@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Parts Master — ATM Inventory</title>
-  <link rel="stylesheet" href="shared/styles.css?v=23">
+  <link rel="stylesheet" href="shared/styles.css?v=25">
 </head>
 <body>
   <div class="app-layout">
@@ -189,6 +189,17 @@
     </div>
   </div>
 
+  <!-- ── Holders Popup (who has this part checked out) ── -->
+  <div class="modal-overlay hidden" id="holders-overlay" onclick="if(event.target===this)closeHoldersModal()">
+    <div class="modal" style="max-width:640px;">
+      <div class="modal-header">
+        <span class="modal-title" id="holders-title"></span>
+        <button type="button" class="modal-close" onclick="closeHoldersModal()">✕</button>
+      </div>
+      <div id="holders-body" style="padding:4px 4px 8px;"></div>
+    </div>
+  </div>
+
   <style>
     .part-name-link { color: var(--text-primary); text-decoration: none; cursor: pointer; }
     .part-name-link:hover { color: var(--orange); }
@@ -217,10 +228,10 @@
   </style>
 
   <script src="https://code.iconify.design/iconify-icon/2.1.0/iconify-icon.min.js"></script>
-  <script src="shared/translations.js?v=23"></script>
-  <script src="shared/toast.js?v=23"></script>
-  <script src="shared/api.js?v=23"></script>
-  <script src="shared/layout.js?v=23"></script>
-  <script src="admin-parts.js?v=23"></script>
+  <script src="shared/translations.js?v=25"></script>
+  <script src="shared/toast.js?v=25"></script>
+  <script src="shared/api.js?v=25"></script>
+  <script src="shared/layout.js?v=25"></script>
+  <script src="admin-parts.js?v=25"></script>
 </body>
 </html>

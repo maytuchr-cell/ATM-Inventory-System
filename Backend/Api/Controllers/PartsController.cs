@@ -119,6 +119,47 @@ public class PartsController : ControllerBase
         });
     }
 
+    // GET /api/Parts/{id}/holders — which technician(s) currently have this part checked out,
+    // and how many. There's no per-tech stock location (OL_TECHNICIAN is one shared bucket), so
+    // this is derived from open Tickets instead: a ticket is "holding" a part once the tech has
+    // received it (reached เบิก) and until the return leg fully closes (คืน/Reject/Cancel),
+    // for whatever quantity hasn't been returned yet (Withdraw qty minus Return qty, per part).
+    [HttpGet("{id}/holders")]
+    public IActionResult GetHolders(int id)
+    {
+        var part = _context.Parts.FirstOrDefault(p => p.Id == id);
+        if (part == null) return NotFound();
+
+        var lines = _context.TicketPartLines.Where(l => l.PartNo == part.PartNo).ToList();
+        var ticketIds = lines.Select(l => l.TicketId).Distinct().ToList();
+        var tickets = _context.Tickets.Where(t => ticketIds.Contains(t.TicketId)).ToList();
+
+        var holders = new List<object>();
+        foreach (var ticket in tickets)
+        {
+            if (ticket.Status is "คืน" or "Reject" or "Cancel" or null) continue;
+
+            var tLines = lines.Where(l => l.TicketId == ticket.TicketId).ToList();
+            var isReturnPhase = ticket.ReturnAddress != null || tLines.Any(l => l.LineType == "Return");
+            // Still waiting to be picked up (withdraw leg not yet received) — nothing physically
+            // held yet regardless of what the lines say.
+            if (!isReturnPhase && ticket.Status != "เบิก") continue;
+
+            var withdrawQty = tLines.Where(l => l.LineType == "Withdraw").Sum(l => l.Quantity);
+            var returnQty = tLines.Where(l => l.LineType == "Return").Sum(l => l.Quantity);
+            var outstanding = withdrawQty - returnQty;
+            if (outstanding <= 0) continue;
+
+            holders.Add(new
+            {
+                ticket.TicketId, ticket.ExternalTicketNo, ticket.TechName, ticket.TechDept,
+                ticket.Status, Quantity = outstanding
+            });
+        }
+
+        return Ok(holders);
+    }
+
     // POST /api/Parts
     [Authorize(Policy = "CanWriteMasterData")]
     [HttpPost]

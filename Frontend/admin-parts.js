@@ -109,7 +109,9 @@ function renderTable() {
       <td><a href="#" class="part-name-link" onclick="openPartDetail(${p.id});return false;">${imgIcon}<strong>${p.partName}</strong></a></td>
       <td>${catName}</td>
       <td>${whQty} ${t('inv.units')}</td>
-      <td style="color:var(--text-secondary);">${techQty ? `${techQty} ${t('inv.units')}` : '—'}</td>
+      <td>${techQty
+          ? `<a href="#" style="color:var(--orange);text-decoration:underline;text-underline-offset:2px;" onclick="openHoldersModal(${p.id});return false;">${techQty} ${t('inv.units')}</a>`
+          : `<span style="color:var(--text-secondary);">—</span>`}</td>
       <td><span class="stock-pill ${stockClass}">${p.stockQuantity} ${t('inv.units')}</span></td>
       <td>${p.minStock}</td>
       <td>${statusBadge}</td>
@@ -154,6 +156,39 @@ function openPartDetail(id) {
 
 function closePartDetail() {
   document.getElementById('part-detail-overlay').classList.add('hidden');
+}
+
+/* ── Holders modal — who currently has this part checked out ── */
+async function openHoldersModal(partId) {
+  const part = allParts.find(x => x.id === partId);
+  document.getElementById('holders-title').textContent = `ใครถือ "${part?.partName || ''}" อยู่บ้าง`;
+  const body = document.getElementById('holders-body');
+  body.innerHTML = `<div style="text-align:center;color:var(--text-muted);padding:20px;font-size:13px;">กำลังโหลด...</div>`;
+  document.getElementById('holders-overlay').classList.remove('hidden');
+  try {
+    const holders = await api.parts.holders(partId);
+    if (!holders.length) {
+      body.innerHTML = `<div style="text-align:center;color:var(--text-muted);padding:20px;font-size:13px;">ไม่พบข้อมูลผู้ถือครอง</div>`;
+      return;
+    }
+    body.innerHTML = `<div class="tbl-wrap"><table>
+      <thead><tr><th>ช่าง</th><th>แผนก / โซน</th><th>Ticket</th><th>สถานะ</th><th>จำนวน</th></tr></thead>
+      <tbody>${holders.map(h => `
+        <tr>
+          <td>${h.techName || '—'}</td>
+          <td>${h.techDept || '—'}</td>
+          <td><code>${h.externalTicketNo}</code></td>
+          <td>${h.status}</td>
+          <td class="fw-600">${h.quantity}</td>
+        </tr>`).join('')}
+      </tbody>
+    </table></div>`;
+  } catch (e) {
+    body.innerHTML = `<div style="text-align:center;color:var(--red);padding:20px;font-size:13px;">${e.message || t('toast.error')}</div>`;
+  }
+}
+function closeHoldersModal() {
+  document.getElementById('holders-overlay').classList.add('hidden');
 }
 
 function renderPagination(total, totalPages) {

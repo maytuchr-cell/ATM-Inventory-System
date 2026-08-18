@@ -68,6 +68,7 @@ const api = {
     update:  (id, data)    => apiFetch(`/Parts/${id}`, { method: 'PUT',    body: JSON.stringify(data) }),
     remove:  (id)          => apiFetch(`/Parts/${id}`, { method: 'DELETE' }),
     restore: (id)          => apiFetch(`/Parts/${id}/restore`, { method: 'PATCH' }),
+    holders: (id)          => apiFetch(`/Parts/${id}/holders`),
   },
   categories: {
     getAll:  (params = {}) => apiFetch('/Categories?' + new URLSearchParams(params)),

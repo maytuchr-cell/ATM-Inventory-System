@@ -213,6 +213,35 @@ public class TicketWorkflowTests
     }
 
     [Fact]
+    public void ConfirmReturnArrived_DeductsFromTechLocation_RegardlessOfCondition()
+    {
+        var (controller, context) = TicketControllerFixture.Create();
+        var ticket = TicketControllerFixture.CreateReceivedTicket(controller, context, "T15", qty: 3);
+
+        controller.SubmitReturn(ticket.TicketId, new SubmitLinesDto
+        {
+            Lines = new()
+            {
+                new LineDto { PartNo = TicketControllerFixture.PartNo, Quantity = 1, Condition = "Good" },
+                new LineDto { PartNo = TicketControllerFixture.PartNo, Quantity = 1, Condition = "Bad" },
+                new LineDto { PartNo = TicketControllerFixture.PartNo, Quantity = 1, Condition = "Lost" },
+            },
+            Address = "Return Addr"
+        });
+        controller.ApproveReturn(ticket.TicketId);
+        controller.MarkShipped(ticket.TicketId);
+        controller.ConfirmReturnArrived(ticket.TicketId);
+
+        // All 3 units left the tech's hands regardless of what condition they came back in
+        // (Good/Bad go to the warehouse, Lost is a write-off) — none of that changes that the
+        // tech no longer has them. Previously ConfirmReturnArrived never touched techLoc at all,
+        // so this bucket only ever grew.
+        var techLoc = context.Locations.First(l => l.LocationType == "OL_TECHNICIAN");
+        var techStock = context.PartStocks.First(s => s.LocationId == techLoc.Id);
+        Assert.Equal(0, techStock.GoodQty);
+    }
+
+    [Fact]
     public void ApproveReturn_WhenNotAwaitingApproval_ReturnsBadRequest()
     {
         var (controller, context) = TicketControllerFixture.Create();

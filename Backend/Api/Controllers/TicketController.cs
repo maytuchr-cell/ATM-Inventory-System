@@ -387,15 +387,26 @@ public class TicketController : ControllerBase
 
         var returnLines = _context.TicketPartLines.Where(l => l.TicketId == id && l.LineType == "Return").ToList();
         var mainWh = _context.Locations.FirstOrDefault(l => l.Code == "WH-RAT");
+        var techLoc = _context.Locations.FirstOrDefault(l => l.LocationType == "OL_TECHNICIAN");
 
         foreach (var line in returnLines)
         {
-            // Lost means the part never actually came back — nothing to add to stock, it's a
-            // write-off (covers both a genuinely missing part and a non-circulating "baby part").
-            if (line.Condition == "Lost") continue;
-
             try
             {
+                // Comes out of the tech's on-hand bucket either way — Good/Bad go back into the
+                // warehouse, Lost is a write-off, but in every case it's no longer sitting with
+                // the tech once this confirms. (Previously this never touched techLoc at all, so
+                // "อยู่กับช่าง" only ever grew and never reflected completed returns.)
+                _stock.AdjustStock(
+                    partNo: line.PartNo, locationId: techLoc?.Id ?? 0, qtyDelta: -line.Quantity, condition: "Good",
+                    movementType: "Return", refType: "Ticket", refId: id.ToString(),
+                    userName: ticket.TechName, remarks: $"Returned ({line.Condition}) for ticket {ticket.ExternalTicketNo}");
+
+                // Lost means the part never actually came back — nothing to add to warehouse
+                // stock, it's a write-off (covers both a genuinely missing part and a
+                // non-circulating "baby part").
+                if (line.Condition == "Lost") continue;
+
                 _stock.AdjustStock(
                     partNo: line.PartNo, locationId: mainWh?.Id ?? 0, qtyDelta: line.Quantity, condition: line.Condition ?? "Good",
                     movementType: "Return", refType: "Ticket", refId: id.ToString(),
