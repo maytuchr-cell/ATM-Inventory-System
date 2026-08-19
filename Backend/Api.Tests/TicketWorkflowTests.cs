@@ -394,4 +394,132 @@ public class TicketWorkflowTests
         var secondAfter = context.Tickets.First(t => t.TicketId == second.TicketId);
         Assert.Equal("รอ", secondAfter.Status);
     }
+
+    // ── Substitute — show the tech's original request after Admin swaps it ────
+
+    [Fact]
+    public void SubstitutePart_OnRegisteredEquivalent_SetsPartNoAndRecordsOriginalPartNo()
+    {
+        var (controller, context) = TicketControllerFixture.Create();
+        TicketControllerFixture.SeedEquivalentPart(context);
+        controller.SyncFromAservice(new SyncTicketDto { ExternalTicketNo = "SUB-1", TechName = "Tech" });
+        var ticket = context.Tickets.First(t => t.ExternalTicketNo == "SUB-1");
+        controller.SubmitWithdraw(ticket.TicketId, new SubmitLinesDto
+        {
+            Lines = new() { new LineDto { PartNo = TicketControllerFixture.PartNo, Quantity = 1 } },
+            Address = "Addr"
+        });
+        var line = context.TicketPartLines.First(l => l.TicketId == ticket.TicketId);
+
+        var result = controller.SubstitutePart(ticket.TicketId, line.TicketPartLineId,
+            new SubstituteDto { PartNo = TicketControllerFixture.EquivalentPartNo });
+
+        Assert.IsType<OkObjectResult>(result);
+        var lineAfter = context.TicketPartLines.First(l => l.TicketPartLineId == line.TicketPartLineId);
+        Assert.Equal(TicketControllerFixture.EquivalentPartNo, lineAfter.PartNo);
+        Assert.Equal(TicketControllerFixture.PartNo, lineAfter.OriginalPartNo);
+    }
+
+    [Fact]
+    public void SubstitutePart_OnUnregisteredPart_ReturnsBadRequestAndLeavesLineUnchanged()
+    {
+        var (controller, context) = TicketControllerFixture.Create();
+        // A second part exists but is never registered as an equivalent of PartNo.
+        context.Parts.Add(new Part { PartNo = "TEST-PART-UNRELATED", PartName = "Unrelated", IsActive = true });
+        context.SaveChanges();
+        controller.SyncFromAservice(new SyncTicketDto { ExternalTicketNo = "SUB-2", TechName = "Tech" });
+        var ticket = context.Tickets.First(t => t.ExternalTicketNo == "SUB-2");
+        controller.SubmitWithdraw(ticket.TicketId, new SubmitLinesDto
+        {
+            Lines = new() { new LineDto { PartNo = TicketControllerFixture.PartNo, Quantity = 1 } },
+            Address = "Addr"
+        });
+        var line = context.TicketPartLines.First(l => l.TicketId == ticket.TicketId);
+
+        var result = controller.SubstitutePart(ticket.TicketId, line.TicketPartLineId,
+            new SubstituteDto { PartNo = "TEST-PART-UNRELATED" });
+
+        Assert.IsType<BadRequestObjectResult>(result);
+        var lineAfter = context.TicketPartLines.First(l => l.TicketPartLineId == line.TicketPartLineId);
+        Assert.Equal(TicketControllerFixture.PartNo, lineAfter.PartNo);
+        Assert.Null(lineAfter.OriginalPartNo);
+    }
+
+    [Fact]
+    public void SubstitutePart_CalledTwice_KeepsTheTrueOriginalPartNo()
+    {
+        // Admin changes their mind and substitutes a second time — OriginalPartNo must still
+        // point at what the tech actually requested, not the first substitute.
+        var (controller, context) = TicketControllerFixture.Create();
+        TicketControllerFixture.SeedEquivalentPart(context);
+        var thirdPart = new Part { PartNo = "TEST-PART-003", PartName = "Third", IsActive = true };
+        context.Parts.Add(thirdPart);
+        context.SaveChanges();
+        var groupId = context.EquivalentGroupMembers.First(m => m.PartNo == TicketControllerFixture.PartNo).GroupId;
+        context.EquivalentGroupMembers.Add(new EquivalentGroupMember { GroupId = groupId, PartId = thirdPart.Id, PartNo = thirdPart.PartNo });
+        context.SaveChanges();
+
+        controller.SyncFromAservice(new SyncTicketDto { ExternalTicketNo = "SUB-3", TechName = "Tech" });
+        var ticket = context.Tickets.First(t => t.ExternalTicketNo == "SUB-3");
+        controller.SubmitWithdraw(ticket.TicketId, new SubmitLinesDto
+        {
+            Lines = new() { new LineDto { PartNo = TicketControllerFixture.PartNo, Quantity = 1 } },
+            Address = "Addr"
+        });
+        var line = context.TicketPartLines.First(l => l.TicketId == ticket.TicketId);
+
+        controller.SubstitutePart(ticket.TicketId, line.TicketPartLineId,
+            new SubstituteDto { PartNo = TicketControllerFixture.EquivalentPartNo });
+        controller.SubstitutePart(ticket.TicketId, line.TicketPartLineId,
+            new SubstituteDto { PartNo = thirdPart.PartNo });
+
+        var lineAfter = context.TicketPartLines.First(l => l.TicketPartLineId == line.TicketPartLineId);
+        Assert.Equal(thirdPart.PartNo, lineAfter.PartNo);
+        Assert.Equal(TicketControllerFixture.PartNo, lineAfter.OriginalPartNo);
+    }
+
+    [Fact]
+    public void SubstitutePart_WhenTicketNotWaiting_ReturnsBadRequest()
+    {
+        var (controller, context) = TicketControllerFixture.Create();
+        TicketControllerFixture.SeedEquivalentPart(context);
+        var ticket = TicketControllerFixture.CreateReceivedTicket(controller, context, "SUB-4", qty: 1);
+        var line = context.TicketPartLines.First(l => l.TicketId == ticket.TicketId);
+
+        // Ticket is already เบิก (received), not รอ — substitution window has closed.
+        var result = controller.SubstitutePart(ticket.TicketId, line.TicketPartLineId,
+            new SubstituteDto { PartNo = TicketControllerFixture.EquivalentPartNo });
+
+        Assert.IsType<BadRequestObjectResult>(result);
+    }
+
+    [Fact]
+    public void GetAllTickets_OnSubstitutedLine_IncludesOriginalPartNoAndName()
+    {
+        var (controller, context) = TicketControllerFixture.Create();
+        TicketControllerFixture.SeedEquivalentPart(context);
+        controller.SyncFromAservice(new SyncTicketDto { ExternalTicketNo = "SUB-5", TechName = "Tech" });
+        var ticket = context.Tickets.First(t => t.ExternalTicketNo == "SUB-5");
+        controller.SubmitWithdraw(ticket.TicketId, new SubmitLinesDto
+        {
+            Lines = new() { new LineDto { PartNo = TicketControllerFixture.PartNo, Quantity = 1 } },
+            Address = "Addr"
+        });
+        var line = context.TicketPartLines.First(l => l.TicketId == ticket.TicketId);
+        controller.SubstitutePart(ticket.TicketId, line.TicketPartLineId,
+            new SubstituteDto { PartNo = TicketControllerFixture.EquivalentPartNo });
+
+        var ok = Assert.IsType<OkObjectResult>(controller.GetAllTickets());
+        // The response is an anonymous type (internal to the Api assembly), so read it back
+        // through JSON instead of dynamic — dynamic binding can't see internal anonymous types
+        // across assemblies.
+        var json = System.Text.Json.JsonSerializer.Serialize(ok.Value);
+        using var doc = System.Text.Json.JsonDocument.Parse(json);
+        var ticketJson = doc.RootElement.EnumerateArray()
+            .First(t => t.GetProperty("TicketId").GetInt32() == ticket.TicketId);
+        var lineJson = ticketJson.GetProperty("lines").EnumerateArray().First();
+
+        Assert.Equal(TicketControllerFixture.PartNo, lineJson.GetProperty("OriginalPartNo").GetString());
+        Assert.Equal("Test Part", lineJson.GetProperty("originalPartName").GetString());
+    }
 }

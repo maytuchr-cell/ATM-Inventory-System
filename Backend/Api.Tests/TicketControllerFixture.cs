@@ -45,6 +45,28 @@ public static class TicketControllerFixture
         return (controller, context);
     }
 
+    /// <summary>
+    /// Registers a second part (EquivalentPartNo) as a registered equivalent of PartNo, so
+    /// TicketController.SubstitutePart accepts swapping one for the other.
+    /// </summary>
+    public const string EquivalentPartNo = "TEST-PART-002";
+
+    public static void SeedEquivalentPart(AppDbContext context)
+    {
+        var original = context.Parts.First(p => p.PartNo == PartNo);
+        var equivalent = new Part { PartNo = EquivalentPartNo, PartName = "Test Equivalent Part", IsActive = true };
+        context.Parts.Add(equivalent);
+        context.SaveChanges();
+
+        var group = new EquivalentGroup { Name = "Test Group" };
+        context.EquivalentGroups.Add(group);
+        context.SaveChanges();
+        context.EquivalentGroupMembers.AddRange(
+            new EquivalentGroupMember { GroupId = group.Id, PartId = original.Id, PartNo = PartNo },
+            new EquivalentGroupMember { GroupId = group.Id, PartId = equivalent.Id, PartNo = EquivalentPartNo });
+        context.SaveChanges();
+    }
+
     /// <summary>Syncs a ticket, submits+approves+receives a withdraw so it's ready for a return test.</summary>
     public static Ticket CreateReceivedTicket(TicketController controller, AppDbContext context, string externalNo, int qty = 1)
     {

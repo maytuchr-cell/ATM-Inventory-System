@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Tech Workspace — ATM Inventory</title>
-    <link rel="stylesheet" href="shared/styles.css?v=28">
+    <link rel="stylesheet" href="shared/styles.css?v=29">
     <style>
         .section-head { display:flex; align-items:center; gap:10px; margin-bottom:20px; }
         .section-accent { width:4px; height:22px; background:var(--orange); border-radius:2px; }
@@ -249,10 +249,10 @@
     </div>
 </div>
 
-<script src="shared/translations.js?v=28"></script>
-<script src="shared/toast.js?v=28"></script>
-<script src="shared/api.js?v=28"></script>
-<script src="shared/layout.js?v=28"></script>
+<script src="shared/translations.js?v=29"></script>
+<script src="shared/toast.js?v=29"></script>
+<script src="shared/api.js?v=29"></script>
+<script src="shared/layout.js?v=29"></script>
 <script>
     /* Status: รอ / เดินทาง / เบิก / คืน / Reject / Cancel   (null = ยังไม่เริ่มเบิก) */
     const currentEmail = localStorage.getItem('userEmail') || 'tech@atm.com';
@@ -260,6 +260,10 @@
     let cachedTickets = [];
     let activeTicketId = null;
     let wdLineCount = 0, rtLineCount = 0, nrLineCount = 0;
+    // Set while the withdraw modal is open for "เบิกเพิ่ม (ใบใหม่)" and no Ticket row exists yet —
+    // holds the source ticket to copy tech info from. The additional-withdraw Ticket is only
+    // actually created at Submit time (see submitWithdraw), so Cancel/Escape leaves nothing behind.
+    let pendingAdditionalSrc = null;
 
     window.addEventListener('DOMContentLoaded', async () => {
         initLayout();
@@ -559,21 +563,27 @@
     }
 
     // Start another independent ใบเบิก under the same Aservice Ticket number as an existing row
-    // (e.g. the job needs more parts while the first request is still open). Creates a brand new
-    // Ticket row (own withdraw/return cycle, own status) then opens the withdraw form on it.
-    async function requestAdditionalWithdraw(fromTicketId) {
+    // (e.g. the job needs more parts while the first request is still open). No Ticket row is
+    // created here — only the form opens; the row is created at Submit time (see submitWithdraw)
+    // so closing/cancelling the form without submitting leaves no orphan behind.
+    function requestAdditionalWithdraw(fromTicketId) {
         const src = cachedTickets.find(t => t.ticketId === fromTicketId);
         if (!src) return;
-        try {
-            const res = await api.tickets.createAdditionalWithdraw({
-                externalTicketNo: src.externalTicketNo,
-                techName: src.techName,
-                techEmail: currentEmail,
-                techDept: src.techDept
-            });
-            await fetchTickets();
-            openWithdrawModal(res.ticket.ticketId);
-        } catch (e) { showToast?.(e.message || t('toast.error'), 'error'); }
+        pendingAdditionalSrc = src;
+        activeTicketId = null;
+        document.getElementById('wdTicketNo').textContent = src.externalTicketNo;
+        document.getElementById('wdTechName').textContent = src.techName;
+        document.getElementById('wdTechDept').textContent = src.techDept;
+        document.getElementById('wdCreatedAt').textContent = new Date().toLocaleString('th-TH');
+        document.getElementById('wdRejectBox').style.display = 'none';
+        document.getElementById('wdAddress').value = '';
+        document.getElementById('wdDescription').value = '';
+        document.getElementById('wdLines').innerHTML = '';
+        wdLineCount = 0;
+        addLine('withdraw');
+        photoFiles.wd = [];
+        renderPhotoPreview('wd');
+        document.getElementById('withdrawOverlay').classList.add('open');
     }
 
     /* ── Withdraw form (also handles resubmit-after-Reject) ── */
@@ -581,6 +591,7 @@
         const tk = cachedTickets.find(t => t.ticketId === id);
         if (!tk) return;
         activeTicketId = id;
+        pendingAdditionalSrc = null;
         document.getElementById('wdTicketNo').textContent = tk.externalTicketNo;
         document.getElementById('wdTechName').textContent = tk.techName;
         document.getElementById('wdTechDept').textContent = tk.techDept;
@@ -614,6 +625,7 @@
     function closeWithdrawModal() {
         document.getElementById('withdrawOverlay').classList.remove('open');
         activeTicketId = null;
+        pendingAdditionalSrc = null;
     }
     async function submitWithdraw() {
         const lines = collectLines('wd', wdLineCount);
@@ -621,14 +633,35 @@
         const description = document.getElementById('wdDescription').value.trim();
         if (!lines.length) { showToast?.('เลือกอะไหล่อย่างน้อย 1 รายการ', 'error'); return; }
         if (!address) { showToast?.('กรุณากรอกที่อยู่จัดส่ง', 'error'); return; }
+
+        // "เบิกเพิ่ม" flow — the Ticket row doesn't exist yet, create it now (Submit is the point
+        // of no return). If a later step fails, clean it back up so retrying doesn't pile up
+        // empty rows — same pattern as submitNewRequest.
+        let createdTicketId = null;
+        let ticketId = activeTicketId;
+        if (pendingAdditionalSrc) {
+            try {
+                const res = await api.tickets.createAdditionalWithdraw({
+                    externalTicketNo: pendingAdditionalSrc.externalTicketNo,
+                    techName: pendingAdditionalSrc.techName,
+                    techEmail: currentEmail,
+                    techDept: pendingAdditionalSrc.techDept
+                });
+                ticketId = createdTicketId = res.ticket.ticketId;
+            } catch (e) { showToast?.(e.message || t('toast.error'), 'error'); return; }
+        }
+
         try {
             const attachments = await uploadPendingPhotos('wd');
-            await api.tickets.submitWithdraw(activeTicketId, { lines, address, description, attachments });
+            await api.tickets.submitWithdraw(ticketId, { lines, address, description, attachments });
             photoFiles.wd = [];
             closeWithdrawModal();
             await fetchTickets();
             showToast?.('ส่งคำขอเบิกแล้ว รอ Admin อนุมัติ', 'success');
-        } catch (e) { showToast?.(e.message || t('toast.error'), 'error'); }
+        } catch (e) {
+            if (createdTicketId) { try { await api.tickets.remove(createdTicketId); } catch {} }
+            showToast?.(e.message || t('toast.error'), 'error');
+        }
     }
 
     async function confirmReceive(id) {
