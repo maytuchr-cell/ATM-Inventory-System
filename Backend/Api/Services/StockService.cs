@@ -9,43 +9,49 @@ public class StockService
 
     public StockService(AppDbContext context) => _context = context;
 
+    // Finds the PartStock row for a part+location, checking the change tracker (Local) first
+    // so repeated adjustments within the same request see rows added earlier but not yet saved
+    // — this prevents creating duplicate (PartId, LocationId) rows that would break the unique index.
+    private PartStock? FindStock(int partId, int locationId) =>
+        _context.Set<PartStock>().Local.FirstOrDefault(s => s.PartId == partId && s.LocationId == locationId)
+        ?? _context.Set<PartStock>().FirstOrDefault(s => s.PartId == partId && s.LocationId == locationId);
+
     /// <summary>
     /// Adjusts stock for a part at a location by qtyDelta (positive=add, negative=remove),
-    /// keeps PartStock, Part.StockQuantity (denormalized total) and StockMovement in sync.
-    /// Does NOT call SaveChanges — caller controls the transaction boundary.
+    /// updating PartStock (source of truth) and appending a StockMovement ledger row.
+    /// Does NOT call SaveChanges — caller controls the transaction boundary (atomic with its own work).
     /// </summary>
     public StockMovement AdjustStock(
         string partNo, int locationId, int qtyDelta, string condition,
         string movementType, string? refType, string? refId,
-        string userName, string? remarks = null, decimal? cost = null, string? serialNo = null)
+        string userName, string? remarks = null, decimal? cost = null, string? serialNo = null, int? partUnitId = null)
     {
         var part = _context.Parts.FirstOrDefault(p => p.PartNo == partNo)
             ?? throw new InvalidOperationException($"Part {partNo} not found.");
 
-        var stock = _context.Set<PartStock>()
-            .FirstOrDefault(s => s.PartId == part.Id && s.LocationId == locationId);
+        var stock = FindStock(part.Id, locationId);
 
         if (stock == null)
         {
-            stock = new PartStock { PartId = part.Id, LocationId = locationId, GoodQty = 0, DefectiveQty = 0 };
+            stock = new PartStock { PartId = part.Id, LocationId = locationId, GoodQty = 0, BadQty = 0 };
             _context.Set<PartStock>().Add(stock);
         }
 
-        if (condition == "Defective")
-            stock.DefectiveQty += qtyDelta;
+        if (condition == "Bad")
+            stock.BadQty += qtyDelta;
         else
             stock.GoodQty += qtyDelta;
 
-        if (stock.GoodQty < 0 || stock.DefectiveQty < 0)
+        if (stock.GoodQty < 0 || stock.BadQty < 0)
             throw new InvalidOperationException($"Insufficient stock for {partNo} at location {locationId}.");
 
-        // Persist the PartStock change first so the recalculation query below sees it.
-        _context.SaveChanges();
-        RecalculatePartTotal(part);
+        stock.UpdatedAt = DateTime.Now;
+        TouchPart(part);
 
         var movement = new StockMovement
         {
             MovementType = movementType,
+            PartId = part.Id,
             PartNo = partNo,
             ToLocationId = qtyDelta >= 0 ? locationId : null,
             FromLocationId = qtyDelta < 0 ? locationId : null,
@@ -55,6 +61,7 @@ public class StockService
             RefId = refId,
             Cost = cost,
             SerialNo = serialNo,
+            PartUnitId = partUnitId,
             Remarks = remarks,
             UserName = userName,
             Timestamp = DateTime.Now
@@ -70,41 +77,40 @@ public class StockService
     /// </summary>
     public StockMovement MoveStock(
         string partNo, int? fromLocationId, int? toLocationId, int qty, string condition,
-        string movementType, string? refType, string? refId, string userName, string? remarks = null, string? serialNo = null)
+        string movementType, string? refType, string? refId, string userName, string? remarks = null, string? serialNo = null, int? partUnitId = null)
     {
         var part = _context.Parts.FirstOrDefault(p => p.PartNo == partNo)
             ?? throw new InvalidOperationException($"Part {partNo} not found.");
 
         if (fromLocationId.HasValue)
         {
-            var from = _context.Set<PartStock>()
-                .FirstOrDefault(s => s.PartId == part.Id && s.LocationId == fromLocationId.Value)
+            var from = FindStock(part.Id, fromLocationId.Value)
                 ?? throw new InvalidOperationException($"No stock for {partNo} at source location.");
 
-            if (condition == "Defective") from.DefectiveQty -= qty; else from.GoodQty -= qty;
-            if (from.GoodQty < 0 || from.DefectiveQty < 0)
+            if (condition == "Bad") from.BadQty -= qty; else from.GoodQty -= qty;
+            if (from.GoodQty < 0 || from.BadQty < 0)
                 throw new InvalidOperationException($"Insufficient stock for {partNo} at source location.");
+            from.UpdatedAt = DateTime.Now;
         }
 
         if (toLocationId.HasValue)
         {
-            var to = _context.Set<PartStock>()
-                .FirstOrDefault(s => s.PartId == part.Id && s.LocationId == toLocationId.Value);
+            var to = FindStock(part.Id, toLocationId.Value);
             if (to == null)
             {
-                to = new PartStock { PartId = part.Id, LocationId = toLocationId.Value, GoodQty = 0, DefectiveQty = 0 };
+                to = new PartStock { PartId = part.Id, LocationId = toLocationId.Value, GoodQty = 0, BadQty = 0 };
                 _context.Set<PartStock>().Add(to);
             }
-            if (condition == "Defective") to.DefectiveQty += qty; else to.GoodQty += qty;
+            if (condition == "Bad") to.BadQty += qty; else to.GoodQty += qty;
+            to.UpdatedAt = DateTime.Now;
         }
 
-        // Persist the PartStock changes first so the recalculation query below sees them.
-        _context.SaveChanges();
-        RecalculatePartTotal(part);
+        TouchPart(part);
 
         var movement = new StockMovement
         {
             MovementType = movementType,
+            PartId = part.Id,
             PartNo = partNo,
             FromLocationId = fromLocationId,
             ToLocationId = toLocationId,
@@ -113,6 +119,7 @@ public class StockService
             RefType = refType,
             RefId = refId,
             SerialNo = serialNo,
+            PartUnitId = partUnitId,
             Remarks = remarks,
             UserName = userName,
             Timestamp = DateTime.Now
@@ -122,11 +129,10 @@ public class StockService
         return movement;
     }
 
-    private void RecalculatePartTotal(Part part)
+    // PartStock is the single source of truth for on-hand quantity — there is no
+    // denormalized total to recompute. We only stamp the part as touched.
+    private void TouchPart(Part part)
     {
-        part.StockQuantity = _context.Set<PartStock>()
-            .Where(s => s.PartId == part.Id)
-            .Sum(s => s.GoodQty);
         part.UpdatedAt = DateTime.Now;
     }
 }

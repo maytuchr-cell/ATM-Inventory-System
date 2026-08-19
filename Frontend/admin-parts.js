@@ -48,7 +48,7 @@ async function loadParts() {
   } catch (e) {
     showToast(t('toast.network'), 'error');
     document.getElementById('parts-tbody').innerHTML =
-      `<tr><td colspan="7" class="empty-state">${t('inv.empty')}</td></tr>`;
+      `<tr><td colspan="9" class="empty-state">${t('inv.empty')}</td></tr>`;
   }
 }
 
@@ -84,7 +84,7 @@ function renderTable() {
 
   const tbody = document.getElementById('parts-tbody');
   if (!rows.length) {
-    tbody.innerHTML = `<tr><td colspan="7" class="empty-state">${t('parts.empty')}</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="9" class="empty-state">${t('parts.empty')}</td></tr>`;
     renderPagination(0, 1);
     return;
   }
@@ -102,10 +102,16 @@ function renderTable() {
     const imgIcon = p.imagePath
       ? `<iconify-icon icon="material-symbols:image-outline" width="15" style="vertical-align:-3px;color:var(--orange)"></iconify-icon> `
       : '';
+    const whQty   = p.warehouseStock ?? 0;
+    const techQty = p.techStock ?? 0;
     return `<tr>
       <td><code>${p.partNo}</code></td>
       <td><a href="#" class="part-name-link" onclick="openPartDetail(${p.id});return false;">${imgIcon}<strong>${p.partName}</strong></a></td>
       <td>${catName}</td>
+      <td>${whQty} ${t('inv.units')}</td>
+      <td>${techQty
+          ? `<a href="#" style="color:var(--orange);text-decoration:underline;text-underline-offset:2px;" onclick="openHoldersModal(${p.id});return false;">${techQty} ${t('inv.units')}</a>`
+          : `<span style="color:var(--text-secondary);">—</span>`}</td>
       <td><span class="stock-pill ${stockClass}">${p.stockQuantity} ${t('inv.units')}</span></td>
       <td>${p.minStock}</td>
       <td>${statusBadge}</td>
@@ -117,24 +123,28 @@ function renderTable() {
 }
 
 /* ── Part detail popup (catalog view) ── */
+let pdImages = [];
+let pdIndex = 0;
+
 function openPartDetail(id) {
   const p = allParts.find(x => x.id === id);
   if (!p) return;
   const catName = p.category?.name ?? (allCategories.find(c => c.id === p.categoryId)?.name ?? '—');
   const dash = v => (v == null || v === '') ? '—' : v;
 
-  const imgHtml = p.imagePath
-    ? `<img src="${IMG_BASE}${p.imagePath}" alt="${p.partName}"
-           style="max-width:100%;max-height:320px;object-fit:contain;border-radius:10px;border:1px solid var(--border);background:#fff"
-           onerror="this.parentElement.innerHTML='<div class=&quot;pd-noimg&quot;>'+t('parts.pd.noimg')+'</div>'">`
-    : `<div class="pd-noimg">${t('parts.pd.noimg')}</div>`;
+  // Prefer the multi-photo gallery; fall back to the single legacy ImagePath.
+  pdImages = (p.images && p.images.length)
+    ? p.images.map(i => i.filePath)
+    : (p.imagePath ? [p.imagePath] : []);
+  pdIndex = 0;
+  renderPdImage(p.partName);
 
   const rows = [
     ['parts.pd.partno', `<code>${p.partNo}</code>`],
     ['parts.pd.desc',   `<strong>${dash(p.partName)}</strong>`],
     ['parts.pd.main',   dash(p.mainUnit)],
     ['parts.pd.sub',    dash(catName)],
-    ['parts.pd.stock',  `${p.stockQuantity}`],
+    ['parts.pd.stock',  `${p.stockQuantity} รวม &nbsp;(คลังกลาง ${p.warehouseStock ?? 0} / อยู่กับช่าง ${p.techStock ?? 0})`],
     ['parts.pd.remark', dash(p.remark)],
   ].map(([k, v]) => `
     <div class="pd-row">
@@ -142,14 +152,107 @@ function openPartDetail(id) {
       <div class="pd-value">${v}</div>
     </div>`).join('');
 
-  document.getElementById('pd-image').innerHTML = imgHtml;
   document.getElementById('pd-fields').innerHTML = rows;
   document.getElementById('pd-title').textContent = p.partNo;
   document.getElementById('part-detail-overlay').classList.remove('hidden');
 }
 
+function renderPdImage(partName) {
+  const box = document.getElementById('pd-image');
+  if (!pdImages.length) {
+    box.innerHTML = `<div class="pd-noimg">${t('parts.pd.noimg')}</div>`;
+    return;
+  }
+  const showArrows = pdImages.length > 1;
+  box.innerHTML = `
+    <div style="position:relative;width:100%;display:flex;align-items:center;justify-content:center;">
+      ${showArrows ? `<button type="button" class="pd-nav pd-nav-prev" onclick="pdPrev()" aria-label="Previous">‹</button>` : ''}
+      <img src="${IMG_BASE}${pdImages[pdIndex]}" alt="${partName}"
+           style="max-width:100%;max-height:320px;object-fit:contain;border-radius:10px;border:1px solid var(--border);background:#fff"
+           onerror="this.parentElement.innerHTML='<div class=&quot;pd-noimg&quot;>'+t('parts.pd.noimg')+'</div>'">
+      ${showArrows ? `<button type="button" class="pd-nav pd-nav-next" onclick="pdNext()" aria-label="Next">›</button>` : ''}
+    </div>
+    ${showArrows ? `<div class="pd-dots">${pdImages.map((_, i) =>
+        `<span class="pd-dot ${i === pdIndex ? 'active' : ''}" onclick="pdGoto(${i})"></span>`).join('')}</div>` : ''}
+  `;
+}
+
+function pdPrev() { pdIndex = (pdIndex - 1 + pdImages.length) % pdImages.length; renderPdImage(document.getElementById('pd-title').textContent); }
+function pdNext() { pdIndex = (pdIndex + 1) % pdImages.length; renderPdImage(document.getElementById('pd-title').textContent); }
+function pdGoto(i) { pdIndex = i; renderPdImage(document.getElementById('pd-title').textContent); }
+
 function closePartDetail() {
   document.getElementById('part-detail-overlay').classList.add('hidden');
+}
+
+/* ── Photo gallery (edit mode) — upload/remove multiple photos per part ── */
+function renderGallery(p) {
+  const wrap = document.getElementById('gallery-thumbs');
+  if (!wrap) return;
+  const images = p.images || [];
+  wrap.innerHTML = images.map(img => `
+    <div class="gallery-thumb">
+      <img src="${IMG_BASE}${img.filePath}" alt="${img.fileName}">
+      <button type="button" class="gallery-thumb-remove" onclick="removePartImage(${p.id}, ${img.partImageId})" title="${t('btn.delete') || 'Remove'}">✕</button>
+    </div>`).join('') || `<span style="font-size:12px;color:var(--text-muted);">${t('parts.pd.noimg')}</span>`;
+}
+
+async function uploadPartImages(files) {
+  if (!editingId || !files || !files.length) return;
+  for (const file of Array.from(files)) {
+    try {
+      await api.parts.uploadImage(editingId, file);
+    } catch (e) {
+      showToast?.(e.message || t('toast.error'), 'error');
+    }
+  }
+  await loadParts();
+  const p = allParts.find(x => x.id === editingId);
+  if (p) renderGallery(p);
+}
+
+async function removePartImage(partId, imageId) {
+  try {
+    await api.parts.deleteImage(partId, imageId);
+    await loadParts();
+    const p = allParts.find(x => x.id === partId);
+    if (p) renderGallery(p);
+  } catch (e) {
+    showToast?.(e.message || t('toast.error'), 'error');
+  }
+}
+
+/* ── Holders modal — who currently has this part checked out ── */
+async function openHoldersModal(partId) {
+  const part = allParts.find(x => x.id === partId);
+  document.getElementById('holders-title').textContent = `ใครถือ "${part?.partName || ''}" อยู่บ้าง`;
+  const body = document.getElementById('holders-body');
+  body.innerHTML = `<div style="text-align:center;color:var(--text-muted);padding:20px;font-size:13px;">กำลังโหลด...</div>`;
+  document.getElementById('holders-overlay').classList.remove('hidden');
+  try {
+    const holders = await api.parts.holders(partId);
+    if (!holders.length) {
+      body.innerHTML = `<div style="text-align:center;color:var(--text-muted);padding:20px;font-size:13px;">ไม่พบข้อมูลผู้ถือครอง</div>`;
+      return;
+    }
+    body.innerHTML = `<div class="tbl-wrap"><table>
+      <thead><tr><th>ช่าง</th><th>แผนก / โซน</th><th>Ticket</th><th>สถานะ</th><th>จำนวน</th></tr></thead>
+      <tbody>${holders.map(h => `
+        <tr>
+          <td>${h.techName || '—'}</td>
+          <td>${h.techDept || '—'}</td>
+          <td><code>${h.externalTicketNo}</code></td>
+          <td>${h.status}</td>
+          <td class="fw-600">${h.quantity}</td>
+        </tr>`).join('')}
+      </tbody>
+    </table></div>`;
+  } catch (e) {
+    body.innerHTML = `<div style="text-align:center;color:var(--red);padding:20px;font-size:13px;">${e.message || t('toast.error')}</div>`;
+  }
+}
+function closeHoldersModal() {
+  document.getElementById('holders-overlay').classList.add('hidden');
 }
 
 function renderPagination(total, totalPages) {
@@ -185,12 +288,27 @@ function goPage(p) {
   document.querySelector('.tbl-wrap')?.scrollTo(0, 0);
 }
 
+let batchItems = [];        // parts added in the current Add session
+let currentDeviceType = null;
+let batchAdded = 0;         // whether any part was created (to know if we must refresh)
+
+function setDeviceType(val) {
+  currentDeviceType = (currentDeviceType === val) ? null : val;
+  document.querySelectorAll('#devtype-toggle .dt-btn').forEach(b =>
+    b.classList.toggle('active', b.dataset.dt === currentDeviceType));
+}
+
 function openModal(id = null) {
   editingId = id;
   const overlay = document.getElementById('modal-overlay');
+  const modal   = overlay.querySelector('.modal');
   const title   = document.getElementById('modal-title');
+  const submitBtn = document.getElementById('modal-submit-btn');
+  const cancelBtn = document.getElementById('modal-cancel-btn');
 
   if (id) {
+    // ── EDIT (single) ──
+    modal.classList.add('edit-mode');
     const p = allParts.find(x => x.id === id);
     if (!p) return;
     title.textContent = t('parts.edit');
@@ -203,26 +321,89 @@ function openModal(id = null) {
     document.getElementById('f-max').value      = p.maxStock;
     document.getElementById('f-reorder').value  = p.reorderPoint;
     document.getElementById('f-cat-ref').value  = p.catalogueRef ?? '';
+    submitBtn.textContent = t('btn.save');
+    cancelBtn.textContent = t('btn.cancel');
+    setStockFieldMode(false);
+    renderGallery(p);
   } else {
+    // ── ADD (batch) ──
+    modal.classList.remove('edit-mode');
     title.textContent = t('parts.add');
     document.getElementById('part-form').reset();
     document.getElementById('f-stock').value   = '0';
     document.getElementById('f-min').value     = '1';
     document.getElementById('f-max').value     = '100';
     document.getElementById('f-reorder').value = '3';
+    // batch header
+    document.getElementById('b-addedby').value = localStorage.getItem('userEmail') || '';
+    document.getElementById('b-lot').value = '';
+    document.getElementById('b-project').value = '';
+    document.getElementById('b-date').value = new Date().toISOString().slice(0, 10); // auto today
+    currentDeviceType = null;
+    document.querySelectorAll('#devtype-toggle .dt-btn').forEach(b => b.classList.remove('active'));
+    batchItems = []; batchAdded = 0;
+    renderBatchList();
+    submitBtn.textContent = t('parts.batch.add');
+    cancelBtn.textContent = t('parts.batch.done');
+    setStockFieldMode(true);
   }
 
   overlay.classList.remove('hidden');
 }
 
-function closeModal() {
-  document.getElementById('modal-overlay').classList.add('hidden');
-  editingId = null;
+function renderBatchList() {
+  const tbody = document.getElementById('batch-tbody');
+  document.getElementById('batch-count').textContent = batchItems.length;
+  if (!batchItems.length) {
+    tbody.innerHTML = `<tr><td colspan="5" class="empty-state">${t('parts.batch.empty')}</td></tr>`;
+    return;
+  }
+  tbody.innerHTML = batchItems.map((it, i) => `
+    <tr>
+      <td style="color:var(--text-muted)">${i + 1}</td>
+      <td><code>${it.partNo}</code></td>
+      <td>${it.partName}</td>
+      <td>${it.deviceType ? `<span class="badge badge-orange">${it.deviceType}</span>` : '—'}</td>
+      <td>${it.qty}</td>
+    </tr>`).join('');
 }
 
-async function savePart(e) {
+// Route form submit: edit → update one part; add → append to batch.
+function onFormSubmit(e) {
   e.preventDefault();
-  const dto = {
+  if (editingId) return updatePart();
+  return addToBatch();
+}
+
+// Stock field is an editable "opening balance" only when creating a new part.
+// When editing, it's read-only because on-hand stock changes flow through Goods Receipt / Issue.
+function setStockFieldMode(isNew) {
+  const input = document.getElementById('f-stock');
+  const label = document.getElementById('f-stock-label');
+  const hint  = document.getElementById('f-stock-hint');
+  if (isNew) {
+    input.readOnly = false;
+    input.style.opacity = '';
+    if (label) label.textContent = t('parts.lbl.stockinit');
+    if (hint) hint.style.display = 'none';
+  } else {
+    input.readOnly = true;
+    input.style.opacity = '0.6';
+    if (label) label.textContent = t('parts.lbl.stock');
+    if (hint) { hint.textContent = t('parts.hint.stockmanaged'); hint.style.display = 'block'; }
+  }
+}
+
+async function closeModal() {
+  document.getElementById('modal-overlay').classList.add('hidden');
+  const wasBatch = batchAdded > 0;
+  editingId = null;
+  if (wasBatch) { batchAdded = 0; await loadParts(); }  // refresh table with newly added parts
+}
+
+// Reads the part-entry fields (used by both add-to-batch and edit).
+function readPartDto() {
+  return {
     partNo:       document.getElementById('f-partno').value.trim(),
     partName:     document.getElementById('f-partname').value.trim(),
     orderNumber:  document.getElementById('f-ordernum').value.trim(),
@@ -235,15 +416,40 @@ async function savePart(e) {
     costPerUnit:  null,
     catalogueRef: document.getElementById('f-cat-ref').value.trim() || null,
   };
+}
+
+// ── ADD (batch): create the part with the shared batch header, append to the session list ──
+async function addToBatch() {
+  const dto = readPartDto();
+  dto.deviceType = currentDeviceType;
+  dto.addedBy    = document.getElementById('b-addedby').value.trim() || null;
+  dto.lot        = document.getElementById('b-lot').value.trim() || null;
+  dto.project    = document.getElementById('b-project').value.trim() || null;
+  const d = document.getElementById('b-date').value;
+  dto.addedDate  = d ? new Date(d).toISOString() : null;
 
   try {
-    if (editingId) {
-      await api.parts.update(editingId, dto);
-    } else {
-      await api.parts.create(dto);
-    }
+    await api.parts.create(dto);
+    batchItems.push({ partNo: dto.partNo, partName: dto.partName, deviceType: dto.deviceType, qty: dto.stockQuantity });
+    batchAdded++;
+    renderBatchList();
+    // clear part-specific fields, keep the batch header + device type + category for the next item
+    ['f-partno', 'f-partname', 'f-ordernum', 'f-cat-ref'].forEach(id => document.getElementById(id).value = '');
+    document.getElementById('f-stock').value = '0';
+    document.getElementById('f-partno').focus();
+    showToast(t('parts.batch.toast'), 'success');
+  } catch (err) {
+    showToast(err.message || t('toast.error'), 'error');
+  }
+}
+
+// ── EDIT (single) ──
+async function updatePart() {
+  try {
+    await api.parts.update(editingId, readPartDto());
     showToast(t('toast.saved'), 'success');
-    closeModal();
+    document.getElementById('modal-overlay').classList.add('hidden');
+    editingId = null;
     await loadParts();
   } catch (err) {
     showToast(err.message || t('toast.error'), 'error');

@@ -8,7 +8,6 @@ public class Part
     public string PartName { get; set; } = string.Empty;
     public string Unit { get; set; } = "pcs";
     public string? SerialNo { get; set; }
-    public int StockQuantity { get; set; }
     public int? CategoryId { get; set; }
     public Category? Category { get; set; }
     public string? CatalogueRef { get; set; }
@@ -29,5 +28,27 @@ public class Part
     // Catalog fields (from GRG spare parts catalog)
     public string? MainUnit { get; set; }   // e.g. "Cabinet"
     public string? Remark { get; set; }      // free-text remark
-    public string? ImagePath { get; set; }   // e.g. "/uploads/parts/208010040-H.jpg"
+    public string? ImagePath { get; set; }   // e.g. "/assets/parts/208010040-H.jpg"
+
+    // Physical assembly zone within the ATM/ADM (from catalog "Sub Unit" = "Upper Unit"/"Lower Unit").
+    // Null/empty = zone not known for this part — do not guess from MainUnit.
+    public string? Zone { get; set; }        // "Upper" | "Lower" | null
+
+    // Which machine type(s) this part applies to, parsed from the catalog "Remark" free-text
+    // column (e.g. "ADM,GHB,BOC,VTM" -> "ADM"). Comma-separated when a part serves more than
+    // one type (e.g. "ADM,ATM"). Null/empty = not mentioned in Remark — do not guess.
+    public string? DeviceType { get; set; }  // "ATM" | "ADM" | "CDM" | comma-combo | null
+
+    // Provenance from the manual "Add Part" batch form (and Excel import).
+    public string? AddedBy { get; set; }      // person who added the part
+    public string? Lot { get; set; }          // lot / batch reference
+    public string? Project { get; set; }      // project name
+    public DateTime? AddedDate { get; set; }  // date the part was added (defaults to today)
+
+    // Optimistic-concurrency token — bumped on every save (see AppDbContext.SaveChanges).
+    public string RowVersion { get; set; } = Guid.NewGuid().ToString("N");
+
+    // Stock is tracked per-location in PartStock — there is no denormalized total column.
+    // Total on-hand = Stocks.Sum(s => s.GoodQty). Compute it from PartStock, never store it here.
+    public ICollection<PartStock> Stocks { get; set; } = new List<PartStock>();
 }

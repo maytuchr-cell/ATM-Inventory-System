@@ -1,6 +1,8 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using System.Text.Json;
 using Api.Models;
+using Api.Services;
 
 namespace Api.Controllers;
 
@@ -9,8 +11,13 @@ namespace Api.Controllers;
 public class CategoriesController : ControllerBase
 {
     private readonly AppDbContext _context;
+    private readonly AuditService _audit;
 
-    public CategoriesController(AppDbContext context) => _context = context;
+    public CategoriesController(AppDbContext context, AuditService audit)
+    {
+        _context = context;
+        _audit = audit;
+    }
 
     [HttpGet]
     public IActionResult GetAll([FromQuery] bool? isActive)
@@ -40,7 +47,7 @@ public class CategoriesController : ControllerBase
         return Ok(cat);
     }
 
-    [Authorize(Roles = "Admin")]
+    [Authorize(Policy = "CanWriteMasterData")]
     [HttpPost]
     public IActionResult Create([FromBody] CategoryWriteDto dto)
     {
@@ -52,10 +59,11 @@ public class CategoriesController : ControllerBase
         var cat = new Category { Name = dto.Name, Description = dto.Description };
         _context.Categories.Add(cat);
         _context.SaveChanges();
+        _audit.Log(User, "Category", cat.Id.ToString(), "CREATE", null, cat);
         return Ok(cat);
     }
 
-    [Authorize(Roles = "Admin")]
+    [Authorize(Policy = "CanWriteMasterData")]
     [HttpPut("{id}")]
     public IActionResult Update(int id, [FromBody] CategoryWriteDto dto)
     {
@@ -67,13 +75,15 @@ public class CategoriesController : ControllerBase
         if (_context.Categories.Any(c => c.Name == dto.Name && c.Id != id))
             return BadRequest(new { message = $"Category '{dto.Name}' already used by another category." });
 
+        var old = JsonSerializer.Serialize(new { cat.Name, cat.Description });
         cat.Name = dto.Name;
         cat.Description = dto.Description;
         _context.SaveChanges();
+        _audit.Log(User, "Category", id.ToString(), "UPDATE", old, cat);
         return Ok(cat);
     }
 
-    [Authorize(Roles = "Admin")]
+    [Authorize(Policy = "CanWriteMasterData")]
     [HttpDelete("{id}")]
     public IActionResult Delete(int id)
     {
@@ -85,6 +95,7 @@ public class CategoriesController : ControllerBase
 
         cat.IsActive = false;
         _context.SaveChanges();
+        _audit.Log(User, "Category", id.ToString(), "DELETE", null, cat);
         return Ok(new { message = "Category deactivated." });
     }
 }

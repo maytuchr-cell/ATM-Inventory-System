@@ -74,6 +74,7 @@ public class DisposalController : ControllerBase
                 var scrapStock = _context.PartStocks.FirstOrDefault(s => s.PartId == part.Id && s.LocationId == scrap.Id);
                 _context.DisposalRequests.Add(new DisposalRequest
                 {
+                    PartId      = part.Id,
                     PartNo      = part.PartNo,
                     LocationId  = scrap.Id,
                     Qty         = scrapStock?.GoodQty ?? 0,
@@ -102,6 +103,7 @@ public class DisposalController : ControllerBase
 
         var request = new DisposalRequest
         {
+            PartId      = part.Id,
             PartNo      = dto.PartNo,
             SerialNo    = dto.SerialNo,
             LocationId  = dto.LocationId,
@@ -150,6 +152,13 @@ public class DisposalController : ControllerBase
         catch (InvalidOperationException ex)
         {
             return BadRequest(new { message = ex.Message });
+        }
+
+        // If a specific serial-tracked unit was disposed, mark it Disposed too.
+        if (!string.IsNullOrWhiteSpace(request.SerialNo))
+        {
+            var unit = _context.PartUnits.FirstOrDefault(u => u.SerialNo == request.SerialNo);
+            if (unit != null) { unit.Status = "Disposed"; }
         }
 
         request.Status     = "Disposed";

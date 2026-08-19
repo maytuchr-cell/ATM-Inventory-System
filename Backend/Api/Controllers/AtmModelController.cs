@@ -75,14 +75,14 @@ public class AtmModelController : ControllerBase
         {
             var all = _context.Parts
                 .Where(p => p.IsActive)
-                .Select(p => new { p.PartNo, p.PartName, p.StockQuantity, p.Unit })
+                .Select(p => new { p.PartNo, p.PartName, StockQuantity = p.Stocks.Sum(s => s.GoodQty), p.Unit })
                 .ToList();
             return Ok(new { restricted = false, parts = all });
         }
 
         var parts = _context.Parts
             .Where(p => p.IsActive && partNos.Contains(p.PartNo))
-            .Select(p => new { p.PartNo, p.PartName, p.StockQuantity, p.Unit })
+            .Select(p => new { p.PartNo, p.PartName, StockQuantity = p.Stocks.Sum(s => s.GoodQty), p.Unit })
             .ToList();
 
         return Ok(new { restricted = true, parts });
@@ -144,7 +144,7 @@ public class AtmModelController : ControllerBase
         if (_context.AtmModelParts.Any(p => p.AtmModelId == id && p.PartNo == dto.PartNo))
             return BadRequest(new { message = "Part already in this model's list." });
 
-        _context.AtmModelParts.Add(new AtmModelPart { AtmModelId = id, PartNo = dto.PartNo });
+        _context.AtmModelParts.Add(new AtmModelPart { AtmModelId = id, PartId = part.Id, PartNo = dto.PartNo });
         _context.SaveChanges();
         return Ok(new { message = "Part added.", partNo = dto.PartNo, partName = part.PartName });
     }

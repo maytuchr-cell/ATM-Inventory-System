@@ -96,11 +96,12 @@ public class GoodsReceiptController : ControllerBase
                     PartNo        = line.PartNo,
                     PartName      = !string.IsNullOrWhiteSpace(line.Remarks) ? line.Remarks : line.PartNo,
                     Unit          = "pcs",
-                    StockQuantity = 0,
                     MinStock      = 1,
                     MaxStock      = 100,
                     ReorderPoint  = 3,
                     IsActive      = true,
+                    AddedBy       = receipt.ReceivedBy,   // provenance: who imported
+                    AddedDate     = DateTime.Now,          // date added = today (matches manual Add form)
                 };
                 _context.Parts.Add(part);
                 _context.SaveChanges();
@@ -113,6 +114,7 @@ public class GoodsReceiptController : ControllerBase
 
             receipt.Lines.Add(new GoodsReceiptLine
             {
+                PartId         = part.Id,
                 PartNo         = line.PartNo,
                 Qty            = line.Qty,
                 Condition      = line.Condition,
@@ -127,11 +129,30 @@ public class GoodsReceiptController : ControllerBase
 
         foreach (var line in receipt.Lines)
         {
+            // For a serial-tracked line, register the physical unit so it can be tracked piece-by-piece.
+            int? partUnitId = null;
+            if (!string.IsNullOrWhiteSpace(line.SerialNo)
+                && !_context.PartUnits.Any(u => u.SerialNo == line.SerialNo))
+            {
+                var unit = new PartUnit
+                {
+                    PartId     = line.PartId,
+                    LocationId = dto.LocationId,
+                    SerialNo   = line.SerialNo!.Trim(),
+                    Condition  = line.Condition,
+                    ReceivedAt = receipt.ReceivedAt,
+                    Status     = "InStock"
+                };
+                _context.PartUnits.Add(unit);
+                _context.SaveChanges();
+                partUnitId = unit.Id;
+            }
+
             _stock.AdjustStock(
                 partNo: line.PartNo, locationId: dto.LocationId, qtyDelta: line.Qty,
                 condition: line.Condition, movementType: "GR", refType: "GoodsReceipt",
                 refId: receipt.Id.ToString(), userName: receipt.ReceivedBy,
-                remarks: line.Remarks, cost: dto.HandlingCost, serialNo: line.SerialNo);
+                remarks: line.Remarks, cost: dto.HandlingCost, serialNo: line.SerialNo, partUnitId: partUnitId);
         }
         _context.SaveChanges();
 
@@ -190,13 +211,14 @@ public class GoodsReceiptController : ControllerBase
             if (!int.TryParse(qtyStr, out int qty) || qty <= 0)
             { errors.Add($"Row {rowNum}: invalid Qty '{qtyStr}'."); continue; }
 
-            if (condition != "Good" && condition != "Defective") condition = "Good";
+            if (condition != "Good" && condition != "Bad") condition = "Good";
 
             var part = _context.Parts.FirstOrDefault(p => p.PartNo == partNo && p.IsActive);
             if (part == null) { errors.Add($"Row {rowNum}: Part '{partNo}' not found."); continue; }
 
             lines.Add(new GoodsReceiptLine
             {
+                PartId    = part.Id,
                 PartNo    = partNo,
                 SerialNo  = string.IsNullOrEmpty(serialNo) ? null : serialNo,
                 Qty       = qty,

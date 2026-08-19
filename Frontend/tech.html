@@ -4,53 +4,90 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Tech Workspace — ATM Inventory</title>
-    <link rel="stylesheet" href="shared/styles.css">
+    <link rel="stylesheet" href="shared/styles.css?v=29">
     <style>
-        /* Tech-page-specific styles */
         .section-head { display:flex; align-items:center; gap:10px; margin-bottom:20px; }
         .section-accent { width:4px; height:22px; background:var(--orange); border-radius:2px; }
         .section-title  { font-size:17px; font-weight:700; color:var(--text-primary); }
-        .section-label { font-size:11px; font-weight:700; letter-spacing:.8px; text-transform:uppercase; color:var(--orange); margin-bottom:16px; display:block; }
-        .form-divider { border:none; border-top:1px solid var(--border); margin:8px 0 20px; }
-        .form-textarea { padding:12px 14px; border:1.5px solid var(--border); border-radius:10px; background:var(--bg-input); color:var(--text-primary); font-family:'Inter','Sarabun',sans-serif; font-size:14px; resize:vertical; min-height:80px; transition:border-color .2s,box-shadow .2s,background .3s; width:100%; }
-        .form-textarea:focus { outline:none; border-color:var(--orange); box-shadow:0 0 0 4px var(--orange-ring); }
-        .form-textarea::placeholder { color:var(--text-muted); }
-        .upload-zone { border:2px dashed var(--border); border-radius:12px; padding:24px; text-align:center; cursor:pointer; transition:border-color .2s,background .2s; position:relative; }
-        .upload-zone:hover, .upload-zone.drag-over { border-color:var(--orange); background:var(--orange-light); }
-        .upload-zone input[type=file] { position:absolute; inset:0; opacity:0; cursor:pointer; width:100%; height:100%; }
-        .upload-icon { font-size:28px; margin-bottom:8px; }
-        .upload-text { font-size:13px; color:var(--text-secondary); }
-        .upload-hint { font-size:11px; color:var(--text-muted); margin-top:4px; }
-        .img-preview { margin-top:14px; border-radius:10px; max-height:200px; max-width:100%; object-fit:contain; border:1px solid var(--border); display:none; }
-        .img-preview.show { display:block; margin:14px auto 0; }
-        .remove-img { display:none; margin-top:8px; font-size:12px; color:var(--red); background:none; border:none; cursor:pointer; font-family:'Inter',sans-serif; font-weight:600; }
-        .remove-img.show { display:inline-block; }
-        .btn-receive { background:var(--green-light); color:#065f46; border:1.5px solid transparent; padding:7px 14px; font-size:13px; border-radius:8px; font-family:'Inter','Sarabun',sans-serif; cursor:pointer; }
-        .btn-receive:hover { background:var(--green); color:#fff; }
-        .btn-return { background:var(--orange-light); color:var(--orange); border:1.5px solid transparent; padding:7px 14px; font-size:13px; border-radius:8px; font-family:'Inter','Sarabun',sans-serif; cursor:pointer; }
-        .btn-return:hover { background:var(--orange); color:#fff; }
+        .section-count  { font-size:12px; font-weight:600; background:var(--bg-subtle); color:var(--text-secondary); padding:2px 9px; border-radius:20px; border:1px solid var(--border); }
+
         .badge { display:inline-flex; align-items:center; gap:5px; padding:4px 10px; border-radius:6px; font-size:12px; font-weight:600; white-space:nowrap; }
         .badge-dot { width:6px; height:6px; border-radius:50%; flex-shrink:0; }
+        .badge-new      { background:var(--bg-subtle); color:var(--text-secondary); }
+        .badge-new      .badge-dot { background:var(--text-secondary); }
         .badge-pending  { background:var(--yellow-light); color:#92400e; }
         .badge-pending  .badge-dot { background:var(--yellow); }
-        .badge-approved { background:var(--orange-light); color:var(--orange); }
-        .badge-approved .badge-dot { background:var(--orange); }
+        .badge-transit  { background:var(--orange-light); color:var(--orange); }
+        .badge-transit  .badge-dot { background:var(--orange); }
         .badge-success  { background:var(--green-light); color:#065f46; }
         .badge-success  .badge-dot { background:var(--green); }
         .badge-danger   { background:var(--red-light); color:#991b1b; }
         .badge-danger   .badge-dot { background:var(--red); }
+        .badge-muted    { background:var(--bg-subtle); color:var(--text-secondary); }
+        .badge-muted    .badge-dot { background:var(--text-secondary); }
+
         .id-chip { font-size:12px; font-weight:600; color:var(--text-muted); background:var(--bg-subtle); padding:3px 8px; border-radius:5px; font-family:'Inter',monospace; border:1px solid var(--border); }
         .ticket-id { color:var(--orange); }
-        .due-chip { display:inline-flex; align-items:center; gap:5px; font-size:12px; font-weight:600; color:var(--orange); background:var(--orange-light); padding:4px 10px; border-radius:6px; }
-        .text-green  { color:var(--green); font-weight:600; }
-        .text-muted  { color:var(--text-muted); }
-        .fw-600      { font-weight:600; }
-        .ret-modal-overlay { display:none; position:fixed; inset:0; background:rgba(0,0,0,.45); z-index:900; align-items:center; justify-content:center; padding:20px; }
-        .ret-modal-overlay.open { display:flex; }
-        .ret-modal { background:var(--bg-card); border-radius:16px; border:1px solid var(--border); width:100%; max-width:420px; padding:24px; }
-        .ret-modal h3 { font-size:16px; font-weight:700; margin-bottom:16px; }
-        .ret-modal .form-group { margin-bottom:16px; }
-        @media(max-width:640px) { .form-grid { grid-template-columns:1fr; } }
+        .fw-600 { font-weight:600; }
+        .text-muted { color:var(--text-muted); }
+
+        .btn-withdraw { background:var(--orange-light); color:var(--orange); border:1.5px solid transparent; padding:7px 14px; font-size:12.5px; font-weight:600; border-radius:8px; font-family:inherit; cursor:pointer; }
+        .btn-withdraw:hover { background:var(--orange); color:#fff; }
+        .btn-return   { background:var(--green-light);  color:#065f46; border:1.5px solid transparent; padding:7px 14px; font-size:12.5px; font-weight:600; border-radius:8px; font-family:inherit; cursor:pointer; }
+        .btn-return:hover { background:var(--green); color:#fff; }
+        .btn-ship     { background:var(--bg-subtle); color:var(--text-secondary); border:1.5px solid var(--border); padding:7px 14px; font-size:12.5px; font-weight:600; border-radius:8px; font-family:inherit; cursor:pointer; }
+        .btn-ship:hover { background:var(--text-secondary); color:#fff; }
+
+        /* ── Ticket form modal (withdraw / return) ── */
+        .tk-overlay { display:none; position:fixed; inset:0; background:rgba(0,0,0,.45); z-index:900; align-items:center; justify-content:center; padding:16px; }
+        .tk-overlay.open { display:flex; }
+        .tk-modal { background:var(--bg-card); border-radius:18px; border:1px solid var(--border); width:100%; max-width:560px; max-height:92vh; overflow-y:auto; box-shadow:0 20px 60px rgba(0,0,0,.25); }
+        .tk-modal-header { display:flex; align-items:center; justify-content:space-between; padding:20px 24px 14px; border-bottom:1px solid var(--border); position:sticky; top:0; background:var(--bg-card); z-index:1; border-radius:18px 18px 0 0; }
+        .tk-modal-title { font-size:15.5px; font-weight:700; color:var(--text-primary); }
+        .tk-modal-close { background:none; border:none; cursor:pointer; color:var(--text-muted); padding:4px; border-radius:6px; display:flex; }
+        .tk-modal-close:hover { color:var(--text-primary); background:var(--bg-subtle); }
+        .tk-modal-body { padding:22px 24px; }
+
+        .tk-tabs { display:flex; gap:4px; border-bottom:1px solid var(--border); margin-bottom:0; }
+        .tk-tab { background:none; border:none; padding:10px 16px; font-family:inherit; font-size:13px; font-weight:600; color:var(--text-secondary); cursor:pointer; border-bottom:2.5px solid transparent; margin-bottom:-1px; transition:color .15s,border-color .15s; }
+        .tk-tab:hover { color:var(--text-primary); }
+        .tk-tab.active { color:var(--orange); border-bottom-color:var(--orange); }
+
+        .tk-readonly-box { background:var(--bg-subtle); border:1px solid var(--border); border-radius:10px; padding:14px 16px; margin-bottom:18px; }
+        .tk-readonly-grid { display:grid; grid-template-columns:1fr 1fr; gap:10px 16px; }
+        .tk-readonly-field label { font-size:10.5px; font-weight:700; letter-spacing:.4px; text-transform:uppercase; color:var(--text-muted); display:block; margin-bottom:2px; }
+        .tk-readonly-field span  { font-size:13.5px; color:var(--text-secondary); font-weight:500; }
+
+        .tk-section-label { font-size:11px; font-weight:700; letter-spacing:.6px; text-transform:uppercase; color:var(--orange); margin-bottom:10px; display:block; }
+        .tk-line-row { display:flex; gap:8px; align-items:flex-start; margin-bottom:8px; }
+        .tk-part-picker { flex:2; position:relative; min-width:0; }
+        .tk-part-picker input[type=text] { width:100%; padding:8px 28px 8px 10px; border-radius:8px; background:var(--bg-input); color:var(--text-primary); border:1.5px solid var(--border); font-family:inherit; font-size:13px; outline:none; box-sizing:border-box; }
+        .tk-part-picker input[type=text]:focus { border-color:var(--orange); }
+        .tk-part-picker .tk-part-caret { position:absolute; right:9px; top:9px; pointer-events:none; color:var(--text-muted); font-size:11px; }
+        .tk-part-dropdown { display:none; position:absolute; left:0; right:0; top:calc(100% + 4px); background:var(--bg-card); border:1.5px solid var(--border); border-radius:8px; max-height:220px; overflow-y:auto; z-index:30; box-shadow:0 8px 24px rgba(0,0,0,.15); }
+        .tk-part-dropdown.open { display:block; }
+        .tk-part-option { padding:8px 10px; font-size:12.5px; cursor:pointer; border-bottom:1px solid var(--border); }
+        .tk-part-option:last-child { border-bottom:none; }
+        .tk-part-option:hover, .tk-part-option.active { background:var(--orange-light); color:var(--orange); }
+        .tk-part-option .tk-part-no { font-size:10.5px; color:var(--text-muted); display:block; margin-top:1px; }
+        .tk-part-option:hover .tk-part-no, .tk-part-option.active .tk-part-no { color:var(--orange); opacity:.75; }
+        .tk-part-empty { padding:10px; font-size:12px; color:var(--text-muted); text-align:center; }
+        .tk-line-row input[type=number] { flex:0 0 70px; padding:8px 8px; border-radius:8px; background:var(--bg-input); color:var(--text-primary); border:1.5px solid var(--border); font-family:inherit; font-size:13px; outline:none; text-align:center; }
+        .tk-line-row select.tk-condition { flex:0 0 92px; padding:8px 6px; border-radius:8px; background:var(--bg-input); color:var(--text-primary); border:1.5px solid var(--border); font-family:inherit; font-size:12.5px; outline:none; }
+        .tk-line-row .tk-remove { flex:0 0 auto; background:none; border:none; color:var(--red); cursor:pointer; font-size:15px; padding:4px 6px; }
+        .tk-photo-preview { display:flex; flex-wrap:wrap; gap:8px; margin-top:10px; }
+        .tk-photo-thumb { position:relative; width:64px; height:64px; }
+        .tk-photo-thumb img { width:100%; height:100%; object-fit:cover; border-radius:8px; border:1.5px solid var(--border); }
+        .tk-photo-thumb .tk-photo-remove { position:absolute; top:-6px; right:-6px; width:18px; height:18px; border-radius:50%; background:var(--red); color:#fff; border:none; font-size:10px; cursor:pointer; line-height:1; display:flex; align-items:center; justify-content:center; }
+        .tk-photo-thumb .tk-photo-uploading { position:absolute; inset:0; background:rgba(0,0,0,.4); border-radius:8px; display:flex; align-items:center; justify-content:center; color:#fff; font-size:10px; }
+        .btn-add-line { background:var(--bg-subtle); color:var(--text-secondary); border:1.5px dashed var(--border); width:100%; padding:8px; border-radius:8px; font-family:inherit; font-size:12.5px; font-weight:600; cursor:pointer; margin-top:2px; }
+        .btn-add-line:hover { border-color:var(--orange); color:var(--orange); }
+
+        .tk-history-line { display:flex; justify-content:space-between; padding:6px 0; border-bottom:1px solid var(--border); font-size:13px; color:var(--text-secondary); }
+        .tk-history-line:last-child { border-bottom:none; }
+
+        .tk-modal-actions { display:flex; gap:10px; justify-content:flex-end; margin-top:20px; }
+        @media(max-width:640px) { .tk-readonly-grid { grid-template-columns:1fr; } }
     </style>
 </head>
 <body>
@@ -60,449 +97,683 @@
     <div class="main-content">
         <div class="topbar">
             <div>
-                <div class="topbar-title" data-i18n="tech.title">Tech Workspace</div>
-                <div class="topbar-sub" data-i18n="tech.sub">Submit and track your withdrawal tickets</div>
+                <div class="topbar-title">Tech Workspace</div>
+                <div class="topbar-sub">Ticket ที่ Sync มาจากระบบ Aservice — เบิก / คืน อะไหล่</div>
             </div>
         </div>
 
         <div class="page-body">
-
-            <!-- Create Ticket -->
-            <div class="card" style="margin-bottom:28px">
-                <div class="card-body">
-                    <div class="section-head">
-                        <div class="section-accent"></div>
-                        <span class="section-title" data-i18n="form.section">Create Withdrawal Ticket</span>
-                    </div>
-                    <form id="ticketForm" onsubmit="createTicket(event)">
-
-                        <!-- Technician Info -->
-                        <span class="section-label">👤 ข้อมูลช่างเทคนิค</span>
-                        <div class="form-grid">
-                            <div class="form-group">
-                                <label class="form-label" data-i18n="form.name">Full Name</label>
-                                <input type="text" id="techName" class="form-input" required
-                                    data-i18n-ph="form.ph.name" placeholder="e.g. John Smith">
-                            </div>
-                            <div class="form-group">
-                                <label class="form-label" data-i18n="form.dept">Department / Region</label>
-                                <input type="text" id="techDept" class="form-input" required
-                                    data-i18n-ph="form.ph.dept" placeholder="e.g. South Service Zone">
-                            </div>
-                        </div>
-                        <div class="form-grid">
-                            <div class="form-group">
-                                <label class="form-label" data-i18n="form.phone">Phone Number</label>
-                                <input type="tel" id="techPhone" class="form-input" required
-                                    data-i18n-ph="form.ph.phone" placeholder="08X-XXX-XXXX">
-                            </div>
-                            <div class="form-group">
-                                <label class="form-label" data-i18n="form.part">Select Replacement Part</label>
-                                <select id="requestedPart" class="form-select" required></select>
-                            </div>
-                        </div>
-
-                        <hr class="form-divider">
-
-                        <!-- Defective Part Info -->
-                        <span class="section-label">🔧 ข้อมูลอะไหล่ที่เสีย</span>
-                        <div class="form-grid">
-                            <div class="form-group">
-                                <label class="form-label">S/N อะไหล่ที่เสีย</label>
-                                <input type="text" id="faultySerialNo" class="form-input"
-                                    placeholder="e.g. SN-2024-001234">
-                            </div>
-                            <div class="form-group">
-                                <label class="form-label">Part Number อะไหล่ที่เสีย</label>
-                                <input type="text" id="faultyPartNo" class="form-input"
-                                    placeholder="e.g. ATM-001">
-                            </div>
-                        </div>
-                        <div class="form-grid">
-                            <div class="form-group">
-                                <label class="form-label">Model เครื่อง ATM</label>
-                                <select id="machineModel" class="form-select" onchange="onModelChange()">
-                                    <option value="">— เลือกโมเดล ATM —</option>
-                                </select>
-                            </div>
-                            <div class="form-group" style="grid-column:1/-1;">
-                                <label class="form-label">อธิบายปัญหา / Fault Description</label>
-                                <textarea id="description" class="form-textarea"
-                                    placeholder="อธิบายอาการเสีย สาเหตุ หรือรายละเอียดเพิ่มเติม…"></textarea>
-                            </div>
-                        </div>
-
-                        <hr class="form-divider">
-
-                        <!-- Attachment -->
-                        <span class="section-label">📷 แนบรูปอะไหล่ที่เสีย</span>
-                        <div class="upload-zone" id="uploadZone">
-                            <input type="file" id="attachmentFile" accept="image/*"
-                                onchange="handleFileSelect(this)">
-                            <div class="upload-icon">📎</div>
-                            <div class="upload-text">คลิกหรือลากไฟล์มาวางที่นี่</div>
-                            <div class="upload-hint">รองรับ JPG, PNG, WEBP (ไม่เกิน 5MB)</div>
-                        </div>
-                        <img id="imgPreview" class="img-preview" alt="Preview">
-                        <button type="button" class="remove-img" id="removeImg" onclick="removeImage()">✕ ลบรูป</button>
-
-                        <div style="margin-top:20px;">
-                            <button type="submit" class="btn btn-primary" id="submitBtn" style="width:100%;justify-content:center;padding:13px 20px;font-size:15px;">
-                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-                                <span data-i18n="form.submit">Submit Withdrawal Request</span>
-                            </button>
-                        </div>
-                    </form>
-                </div>
-            </div>
-
-            <!-- History -->
             <div class="card">
                 <div class="card-body">
                     <div class="section-head">
                         <div class="section-accent"></div>
-                        <span class="section-title" data-i18n="my.section">My Ticket History</span>
+                        <span class="section-title" id="tickets-section-title">Ticket ของฉัน</span>
+                        <span class="section-count" id="tickets-count">—</span>
+                        <button class="btn-withdraw" style="margin-left:auto;" onclick="openNewRequestModal()">+ ขอเบิกอะไหล่ใหม่</button>
                     </div>
-                    <div class="table-wrap">
-                        <table>
-                            <thead>
-                                <tr>
-                                    <th style="width:10%" data-i18n="my.colid">Ticket ID</th>
-                                    <th style="width:22%" data-i18n="my.colreq">Requested Part</th>
-                                    <th style="width:22%" data-i18n="my.colissued">Issued Part</th>
-                                    <th style="width:15%" data-i18n="my.colstatus">Status</th>
-                                    <th style="width:16%" data-i18n="my.coldue">Return Deadline</th>
-                                    <th style="width:15%" data-i18n="my.colaction">Action</th>
-                                </tr>
-                            </thead>
-                            <tbody id="ticketsTableBody">
-                                <tr><td colspan="6" class="empty-state"><span data-i18n="connecting">Connecting to server…</span></td></tr>
-                            </tbody>
-                        </table>
+                    <div class="tk-tabs">
+                        <button class="tk-tab active" id="tabActive" onclick="switchTab('active')">Ticket ของฉัน</button>
+                        <button class="tk-tab" id="tabHistory" onclick="switchTab('history')">ประวัติการเบิก</button>
                     </div>
+                    <div class="tbl-wrap" id="ticketsTableWrap"></div>
                 </div>
             </div>
-
         </div><!-- /page-body -->
     </div><!-- /main-content -->
 </div><!-- /app-layout -->
 
-<!-- Return Part Modal -->
-<div class="ret-modal-overlay" id="retModalOverlay" onclick="if(event.target===this) closeReturnModal()">
-    <div class="ret-modal">
-        <h3 data-i18n="ret.title">Return Part</h3>
-        <div class="form-group">
-            <label class="form-label" data-i18n="ret.condition">Condition</label>
-            <select id="retCondition" class="form-select">
-                <option value="Good" data-i18n="gr.condition.good">Good</option>
-                <option value="Defective" data-i18n="gr.condition.defective">Defective</option>
-            </select>
+<!-- Withdraw Form (Form 1) -->
+<div class="tk-overlay" id="withdrawOverlay">
+    <div class="tk-modal">
+        <div class="tk-modal-header">
+            <span class="tk-modal-title">เบิกอะไหล่</span>
+            <button class="tk-modal-close" onclick="closeWithdrawModal()">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+            </button>
         </div>
-        <div class="form-group">
-            <label class="form-label" data-i18n="ret.location">Return To Location</label>
-            <select id="retLocation" class="form-select"></select>
-        </div>
-        <div style="display:flex;gap:10px;justify-content:flex-end;">
-            <button type="button" class="btn btn-ghost" onclick="closeReturnModal()" data-i18n="btn.cancel">Cancel</button>
-            <button type="button" class="btn btn-primary" style="width:auto;margin-top:0;" onclick="confirmReturn()" data-i18n="ret.confirm">Confirm Return</button>
+        <div class="tk-modal-body">
+            <div class="tk-readonly-box">
+                <div class="tk-readonly-grid">
+                    <div class="tk-readonly-field"><label>Ticket No.</label><span id="wdTicketNo">—</span></div>
+                    <div class="tk-readonly-field"><label>ช่าง</label><span id="wdTechName">—</span></div>
+                    <div class="tk-readonly-field"><label>Zone / Dept</label><span id="wdTechDept">—</span></div>
+                    <div class="tk-readonly-field"><label>วันที่สร้าง</label><span id="wdCreatedAt">—</span></div>
+                </div>
+            </div>
+
+            <div id="wdRejectBox" style="display:none;background:var(--red-light);border:1px solid var(--red);border-radius:10px;padding:12px 14px;margin-bottom:18px;">
+                <div style="font-size:10.5px;font-weight:700;letter-spacing:.4px;text-transform:uppercase;color:var(--red);margin-bottom:3px;">Admin ปฏิเสธ — เหตุผล</div>
+                <div id="wdRejectReason" style="font-size:13px;color:var(--text-primary);"></div>
+            </div>
+
+            <span class="tk-section-label">เลือกอะไหล่ที่ต้องการเบิก</span>
+            <div id="wdLines"></div>
+            <button type="button" class="btn-add-line" onclick="addLine('withdraw')">+ เพิ่มอะไหล่</button>
+
+            <span class="tk-section-label" style="margin-top:18px;display:block;">ที่อยู่จัดส่ง</span>
+            <textarea id="wdAddress" class="form-textarea" placeholder="กรอกที่อยู่สำหรับจัดส่งอะไหล่..." style="min-height:70px;"></textarea>
+
+            <span class="tk-section-label" style="margin-top:18px;display:block;">แนบรูปภาพ</span>
+            <input type="file" id="wdPhotoInput" accept="image/*" multiple style="display:none;" onchange="handlePhotoSelect('wd', this.files)">
+            <button type="button" class="btn-add-line" onclick="document.getElementById('wdPhotoInput').click()">📷 แนบรูปภาพ (เลือกได้หลายรูป)</button>
+            <div id="wdPhotoPreview" class="tk-photo-preview"></div>
+
+            <span class="tk-section-label" style="margin-top:18px;display:block;">หมายเหตุ / อาการเสีย</span>
+            <textarea id="wdDescription" class="form-textarea" placeholder="เช่น Card reader เสีย, ปลั๊ก Sensor ขาด..." style="min-height:60px;"></textarea>
+
+            <div class="tk-modal-actions">
+                <button type="button" class="btn btn-ghost" onclick="closeWithdrawModal()">Cancel</button>
+                <button type="button" class="btn btn-primary" style="width:auto;margin-top:0;" onclick="submitWithdraw()">Submit</button>
+            </div>
         </div>
     </div>
 </div>
 
-<script src="shared/translations.js?v=3"></script>
-<script src="shared/toast.js"></script>
-<script src="shared/api.js"></script>
-<script src="shared/layout.js"></script>
+<!-- Return Form (Form 2) -->
+<div class="tk-overlay" id="returnOverlay">
+    <div class="tk-modal">
+        <div class="tk-modal-header">
+            <span class="tk-modal-title">คืนอะไหล่</span>
+            <button class="tk-modal-close" onclick="closeReturnModal()">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+            </button>
+        </div>
+        <div class="tk-modal-body">
+            <div class="tk-readonly-box">
+                <div class="tk-readonly-grid">
+                    <div class="tk-readonly-field"><label>Ticket No.</label><span id="rtTicketNo">—</span></div>
+                    <div class="tk-readonly-field"><label>ช่าง</label><span id="rtTechName">—</span></div>
+                </div>
+            </div>
+
+            <span class="tk-section-label">ประวัติการเบิก (อ้างอิงเท่านั้น)</span>
+            <div class="tk-readonly-box" id="rtHistory" style="margin-bottom:18px;"></div>
+
+            <span class="tk-section-label">เลือกอะไหล่ที่จะคืน</span>
+            <div id="rtLines"></div>
+            <button type="button" class="btn-add-line" onclick="addLine('return')">+ เพิ่มอะไหล่</button>
+            <div style="font-size:11.5px;color:var(--text-muted);margin-top:6px;">* คืนน้อยกว่าจำนวนที่เบิกไปได้ (กรณีของหายหรือใช้ไปแล้ว)</div>
+
+            <span class="tk-section-label" style="margin-top:18px;display:block;">ที่อยู่ (จุดส่งคืน)</span>
+            <textarea id="rtAddress" class="form-textarea" placeholder="กรอกที่อยู่ที่จะส่งของคืน..." style="min-height:70px;"></textarea>
+
+            <span class="tk-section-label" style="margin-top:18px;display:block;">แนบรูปภาพ</span>
+            <input type="file" id="rtPhotoInput" accept="image/*" multiple style="display:none;" onchange="handlePhotoSelect('rt', this.files)">
+            <button type="button" class="btn-add-line" onclick="document.getElementById('rtPhotoInput').click()">📷 แนบรูปภาพ (เลือกได้หลายรูป)</button>
+            <div id="rtPhotoPreview" class="tk-photo-preview"></div>
+
+            <div class="tk-modal-actions">
+                <button type="button" class="btn btn-ghost" onclick="closeReturnModal()">Cancel</button>
+                <button type="button" class="btn btn-primary" style="width:auto;margin-top:0;" onclick="submitReturn()">Submit</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- New Withdrawal Request (tech-initiated — no existing Ticket yet) -->
+<div class="tk-overlay" id="newRequestOverlay">
+    <div class="tk-modal">
+        <div class="tk-modal-header">
+            <span class="tk-modal-title">ขอเบิกอะไหล่ใหม่</span>
+            <button class="tk-modal-close" onclick="closeNewRequestModal()">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+            </button>
+        </div>
+        <div class="tk-modal-body">
+            <span class="tk-section-label">ข้อมูลช่าง</span>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:18px;">
+                <input id="nrTechName" type="text" placeholder="ชื่อช่าง" class="select-part" style="margin-bottom:0;">
+                <input id="nrTechDept" type="text" placeholder="Zone / แผนก" class="select-part" style="margin-bottom:0;">
+            </div>
+
+            <span class="tk-section-label">เลือกอะไหล่ที่ต้องการเบิก</span>
+            <div id="nrLines"></div>
+            <button type="button" class="btn-add-line" onclick="addLine('new')">+ เพิ่มอะไหล่</button>
+
+            <span class="tk-section-label" style="margin-top:18px;display:block;">ที่อยู่จัดส่ง</span>
+            <textarea id="nrAddress" class="form-textarea" placeholder="กรอกที่อยู่สำหรับจัดส่งอะไหล่..." style="min-height:70px;"></textarea>
+
+            <span class="tk-section-label" style="margin-top:18px;display:block;">แนบรูปภาพ</span>
+            <input type="file" id="nrPhotoInput" accept="image/*" multiple style="display:none;" onchange="handlePhotoSelect('nr', this.files)">
+            <button type="button" class="btn-add-line" onclick="document.getElementById('nrPhotoInput').click()">📷 แนบรูปภาพ (เลือกได้หลายรูป)</button>
+            <div id="nrPhotoPreview" class="tk-photo-preview"></div>
+
+            <span class="tk-section-label" style="margin-top:18px;display:block;">หมายเหตุ / อาการเสีย</span>
+            <textarea id="nrDescription" class="form-textarea" placeholder="เช่น Card reader เสีย, ปลั๊ก Sensor ขาด..." style="min-height:60px;"></textarea>
+
+            <div class="tk-modal-actions">
+                <button type="button" class="btn btn-ghost" onclick="closeNewRequestModal()">Cancel</button>
+                <button type="button" class="btn btn-primary" style="width:auto;margin-top:0;" onclick="submitNewRequest()">Submit</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script src="shared/translations.js?v=29"></script>
+<script src="shared/toast.js?v=29"></script>
+<script src="shared/api.js?v=29"></script>
+<script src="shared/layout.js?v=29"></script>
 <script>
-    const TICKET_URL = API_BASE.replace(/\/api$/, "") + "/api/Ticket";
-    let cachedParts      = [];
-    let cachedTickets    = [];
-    let cachedAtmModels  = [];
-    let returnedTicketIds = new Set();
-    let allLocations  = [];
-    let returnTicketId = null;
+    /* Status: รอ / เดินทาง / เบิก / คืน / Reject / Cancel   (null = ยังไม่เริ่มเบิก) */
+    const currentEmail = localStorage.getItem('userEmail') || 'tech@atm.com';
+    let cachedParts   = [];
+    let cachedTickets = [];
+    let activeTicketId = null;
+    let wdLineCount = 0, rtLineCount = 0, nrLineCount = 0;
+    // Set while the withdraw modal is open for "เบิกเพิ่ม (ใบใหม่)" and no Ticket row exists yet —
+    // holds the source ticket to copy tech info from. The additional-withdraw Ticket is only
+    // actually created at Submit time (see submitWithdraw), so Cancel/Escape leaves nothing behind.
+    let pendingAdditionalSrc = null;
 
-    function onLangChange() { renderPartsSelect(); renderTicketsTable(); }
-
-    window.addEventListener('DOMContentLoaded', () => {
+    window.addEventListener('DOMContentLoaded', async () => {
         initLayout();
-        const savedEmail = localStorage.getItem("userEmail");
-        if (savedEmail) document.getElementById("techName").value = savedEmail.split('@')[0];
-        fetchAtmModels();
-        fetchParts();
-        fetchTickets();
-        fetchReturnedIds();
-        loadLocationsForReturn();
+        await fetchParts();
+        await fetchTickets();
     });
+    function onLangChange() { renderTicketsTable(); }
 
-    /* ── ATM Model dropdown ── */
-    async function fetchAtmModels() {
-        try {
-            cachedAtmModels = await api.atmModels.getAll({ isActive: true });
-            const sel = document.getElementById('machineModel');
-            sel.innerHTML = `<option value="">— เลือกโมเดล ATM —</option>`;
-            cachedAtmModels.forEach(m => {
-                sel.innerHTML += `<option value="${m.modelCode}">${m.modelName}${m.manufacturer ? ' (' + m.manufacturer + ')' : ''}</option>`;
-            });
-        } catch { /* non-critical — leave as empty dropdown */ }
-    }
-
-    async function onModelChange() {
-        const modelCode = document.getElementById('machineModel').value;
-        if (!modelCode) {
-            // No model selected → show all parts
-            renderPartsSelect(cachedParts);
-            return;
-        }
-        const model = cachedAtmModels.find(m => m.modelCode === modelCode);
-        if (!model) return;
-        try {
-            const result = await api.atmModels.getCompatible(model.id);
-            // result.restricted=false means no parts assigned → show all
-            renderPartsSelect(result.parts, result.restricted, model.modelName);
-        } catch {
-            renderPartsSelect(cachedParts);
-        }
-    }
-
-    /* ── Return Part ── */
-    async function fetchReturnedIds() {
-        try {
-            const returns = await api.returns.getAll();
-            returnedTicketIds = new Set(returns.map(r => r.ticketId));
-            renderTicketsTable();
-        } catch {}
-    }
-    async function loadLocationsForReturn() {
-        try {
-            allLocations = await api.locations.getAll({ isActive: true });
-            document.getElementById('retLocation').innerHTML =
-                allLocations.map(l => `<option value="${l.id}">${l.name} (${l.code})</option>`).join('');
-        } catch {}
-    }
-    function openReturnModal(ticketId) {
-        returnTicketId = ticketId;
-        document.getElementById('retModalOverlay').classList.add('open');
-    }
-    function closeReturnModal() {
-        document.getElementById('retModalOverlay').classList.remove('open');
-        returnTicketId = null;
-    }
-    async function confirmReturn() {
-        const condition   = document.getElementById('retCondition').value;
-        const locationToId = parseInt(document.getElementById('retLocation').value, 10);
-        try {
-            await api.returns.create({
-                ticketId: returnTicketId,
-                partNo: cachedTickets.find(t => t.ticketId === returnTicketId)?.approvedPartNo,
-                condition,
-                sourceType: 'Technician',
-                locationToId,
-                returnedBy: document.getElementById('techName').value
-            });
-            closeReturnModal();
-            await fetchReturnedIds();
-        } catch (e) {
-            alert(e.message || t('toast.error'));
-        }
-    }
-
-    /* ── Parts dropdown ── */
     async function fetchParts() {
-        try {
-            cachedParts = await api.parts.getAll({ isActive: true });
-            renderPartsSelect(cachedParts);
-        } catch {
-            document.getElementById("requestedPart").innerHTML =
-                `<option value="">⚠ ${t('error.connect')}</option>`;
-        }
+        try { cachedParts = await api.parts.getAll({ isActive: true }); } catch { cachedParts = []; }
     }
 
-    function renderPartsSelect(parts, restricted, modelName) {
-        parts = parts || cachedParts;
-        const sel = document.getElementById("requestedPart");
-        const prev = sel.value;
-        const hint = restricted && modelName
-            ? `— เลือกอะไหล่สำหรับ ${modelName} —`
-            : t('form.ph.part');
-        sel.innerHTML = `<option value="">${hint}</option>`;
-        parts.forEach(p => {
-            const qty = p.stockQuantity ?? p.StockQuantity ?? 0;
-            if (qty > 0) {
-                sel.innerHTML += `<option value="${p.partNo}" ${prev===p.partNo?'selected':''}>${p.partName} (${t('form.instock')}: ${qty})</option>`;
-            } else {
-                sel.innerHTML += `<option value="${p.partNo}" disabled>${p.partName} (${t('form.outofstock')})</option>`;
-            }
-        });
-        // If prev selection is no longer valid, clear it
-        if (prev && !parts.find(p => p.partNo === prev)) sel.value = '';
-    }
-
-    /* ── Image upload helpers ── */
-    let selectedFile = null;
-
-    function handleFileSelect(input) {
-        const file = input.files[0];
-        if (!file) return;
-        if (file.size > 5 * 1024 * 1024) { alert('ไฟล์ใหญ่เกิน 5MB'); input.value = ''; return; }
-        selectedFile = file;
-        const reader = new FileReader();
-        reader.onload = e => {
-            const img = document.getElementById('imgPreview');
-            img.src = e.target.result;
-            img.classList.add('show');
-            document.getElementById('removeImg').classList.add('show');
-            document.getElementById('uploadZone').style.borderColor = 'var(--orange)';
-        };
-        reader.readAsDataURL(file);
-    }
-
-    function removeImage() {
-        selectedFile = null;
-        document.getElementById('attachmentFile').value = '';
-        const img = document.getElementById('imgPreview');
-        img.src = ''; img.classList.remove('show');
-        document.getElementById('removeImg').classList.remove('show');
-        document.getElementById('uploadZone').style.borderColor = '';
-    }
-
-    async function uploadImage() {
-        if (!selectedFile) return null;
-        const form = new FormData();
-        form.append('file', selectedFile);
-        const res = await fetch(`${TICKET_URL}/upload`, { method: 'POST', body: form });
-        if (!res.ok) throw new Error('Upload failed');
-        const json = await res.json();
-        return json.path;
-    }
-
-    /* ── Create ticket ── */
-    async function createTicket(event) {
-        event.preventDefault();
-        const btn = document.getElementById('submitBtn');
-        btn.querySelector('span').textContent = t('form.submitting');
-        btn.disabled = true;
-
-        try {
-            const attachmentPath = await uploadImage();
-
-            const data = {
-                techName:        document.getElementById("techName").value,
-                techDept:        document.getElementById("techDept").value,
-                techPhone:       document.getElementById("techPhone").value,
-                requestedPartNo: document.getElementById("requestedPart").value,
-                faultySerialNo:  document.getElementById("faultySerialNo").value || null,
-                faultyPartNo:    document.getElementById("faultyPartNo").value   || null,
-                machineModel:    document.getElementById("machineModel").value   || null,
-                description:     document.getElementById("description").value    || null,
-                attachmentPath:  attachmentPath
-            };
-
-            const res = await fetch(TICKET_URL, {
-                method:"POST", headers:{"Content-Type":"application/json"},
-                body: JSON.stringify(data)
-            });
-            if (res.ok) {
-                document.getElementById("ticketForm").reset();
-                removeImage();
-                await fetchParts();
-                fetchTickets();
-            } else {
-                alert(t('form.err.create'));
-            }
-        } catch {
-            alert(t('form.err.server'));
-        } finally {
-            btn.querySelector('span').textContent = t('form.submit');
-            btn.disabled = false;
-        }
-    }
-
-    /* ── Ticket history ── */
     async function fetchTickets() {
         try {
-            const res = await fetch(TICKET_URL);
-            cachedTickets = await res.json();
+            const all = await api.tickets.getAll();
+            cachedTickets = all.filter(t => t.techEmail === currentEmail);
             renderTicketsTable();
-        } catch {
-            document.getElementById("ticketsTableBody").innerHTML =
-                `<tr><td colspan="6" class="empty-state" style="color:var(--red)">${t('error.connect')}</td></tr>`;
-        }
-    }
-    function renderTicketsTable() {
-        const tbody = document.getElementById("ticketsTableBody");
-        tbody.innerHTML = "";
-
-        if (!cachedTickets.length) {
-            tbody.innerHTML = `<tr><td colspan="6" class="empty-state">${t('my.empty')}</td></tr>`;
-            return;
-        }
-
-        cachedTickets.forEach(tk => {
-            const reqName     = tk.requestedPartNav?.partName || tk.requestedPartNo || '—';
-            const approvedName = tk.approvedPartNav?.partName || tk.approvedPartNo;
-            let badge = "", action = `<span class="text-muted">—</span>`;
-            let due = tk.dueDate
-                ? `<span class="due-chip">⏱ ${new Date(tk.dueDate).toLocaleDateString(getLang()==='th'?'th-TH':'en-GB')}</span>`
-                : `<span class="text-muted">${t('my.none.due')}</span>`;
-            let issued = approvedName
-                ? `<span class="text-green">${approvedName}</span>`
-                : `<span class="text-muted">—</span>`;
-
-            if (tk.status === "Pending") {
-                badge  = `<span class="badge badge-pending"><span class="badge-dot"></span>${t('status.pending')}</span>`;
-            } else if (tk.status === "Approved") {
-                badge  = `<span class="badge badge-approved"><span class="badge-dot"></span>${t('status.awaiting')}</span>`;
-                action = `<button class="btn btn-receive" onclick="receivePart(${tk.ticketId})">
-                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
-                    ${t('my.confirm')}
-                </button>`;
-            } else if (tk.status === "Received") {
-                badge = `<span class="badge badge-success"><span class="badge-dot"></span>${t('status.received')}</span>`
-                       + (tk.isDOA ? ` <span class="badge badge-danger" style="margin-left:4px;">${t('doa.badge')}</span>` : '');
-                if (!returnedTicketIds.has(tk.ticketId)) {
-                    action = `<button class="btn-return" onclick="openReturnModal(${tk.ticketId})">↩ ${t('ret.title')}</button>`;
-                    if (!tk.isDOA) {
-                        action += `<button class="btn-return" style="margin-left:6px;" onclick="reportDoa(${tk.ticketId})">⚠ ${t('doa.btn')}</button>`;
-                    }
-                } else {
-                    action = `<span class="text-muted" style="font-size:12px;">✓ ${t('ret.done')}</span>`;
-                }
-            } else if (tk.status === "Rejected") {
-                badge  = `<span class="badge badge-danger"><span class="badge-dot"></span>${t('status.rejected')}</span>`;
-                due    = `<span class="text-muted">—</span>`;
-                issued = `<span class="text-muted">—</span>`;
-            }
-
-            tbody.innerHTML += `
-                <tr>
-                    <td><span class="id-chip ticket-id">TK-${tk.ticketId.toString().padStart(4,'0')}</span></td>
-                    <td class="fw-600">${reqName}</td>
-                    <td>${issued}</td>
-                    <td>${badge}</td>
-                    <td>${due}</td>
-                    <td>${action}</td>
-                </tr>`;
-        });
-    }
-
-    async function receivePart(id) {
-        if (!confirm(t('my.confirm.receive'))) return;
-        try {
-            const res = await fetch(`${TICKET_URL}/${id}/receive`, { method:"PUT" });
-            if (res.ok) fetchTickets();
-        } catch {}
-    }
-
-    async function reportDoa(id) {
-        if (!confirm(t('doa.confirm'))) return;
-        try {
-            await api.tickets.doa(id);
-            fetchTickets();
         } catch (e) {
-            alert(e.message || t('toast.error'));
+            document.getElementById('ticketsTableWrap').innerHTML =
+                `<div class="empty-state" style="color:var(--red);padding:20px;">${t('error.connect')}</div>`;
         }
     }
+
+    /* ── Status badge helpers ── */
+    const STATUS_BADGE = {
+        null:        { cls: 'badge-new',     label: 'ยังไม่เบิก' },
+        'รอ':        { cls: 'badge-pending', label: 'รอ' },
+        'อนุมัติคืน': { cls: 'badge-transit', label: 'Admin อนุมัติแล้ว' },
+        'เดินทาง':   { cls: 'badge-transit', label: 'เดินทาง' },
+        'เบิก':      { cls: 'badge-success', label: 'เบิก' },
+        'คืน':       { cls: 'badge-success', label: 'คืน' },
+        'Reject':    { cls: 'badge-danger',  label: 'Reject' },
+        'Cancel':    { cls: 'badge-muted',   label: 'Cancel' },
+    };
+    // Active leg: still needs the tech (or Admin) to do something. History: the Ticket is done —
+    // either fully returned, or terminated (Reject/Cancel).
+    // Reject is deliberately NOT terminal — the tech still has to edit and resubmit it, so it
+    // belongs in "Ticket ของฉัน" (active), not History, until that happens.
+    const TERMINAL_STATUSES = ['คืน', 'Cancel'];
+
+    let activeTab = 'active';
+    function switchTab(tab) {
+        activeTab = tab;
+        document.getElementById('tabActive').classList.toggle('active', tab === 'active');
+        document.getElementById('tabHistory').classList.toggle('active', tab === 'history');
+        document.getElementById('tickets-section-title').textContent = tab === 'active' ? 'Ticket ของฉัน' : 'ประวัติการเบิก';
+        renderTicketsTable();
+    }
+
+    const CONDITION_LABEL = { Good: 'ของดี', Bad: 'ของเสีย', Lost: 'สูญหาย' };
+    function partsSummaryHtml(tk) {
+        return tk.lines.length
+            ? tk.lines.map(l => `<div style="font-size:12px;">${l.partName} <span class="text-muted">×${l.quantity}</span> <span style="font-size:10px;color:var(--text-muted)">(${l.lineType === 'Withdraw' ? 'เบิก' : 'คืน'}${l.condition ? ' — ' + CONDITION_LABEL[l.condition] : ''})</span>
+                ${l.originalPartName ? `<div style="font-size:10px;color:var(--orange);margin-top:1px;">🔄 ขอไป: ${l.originalPartName} — Admin เปลี่ยนเป็นอะไหล่เทียบเคียงนี้แทน</div>` : ''}</div>`).join('')
+            : `<span class="text-muted">—</span>`;
+    }
+
+    function renderTicketsTable() {
+        const rows = cachedTickets.filter(tk => TERMINAL_STATUSES.includes(tk.status) === (activeTab === 'history'));
+        document.getElementById('tickets-count').textContent = rows.length + ' tickets';
+        const wrap = document.getElementById('ticketsTableWrap');
+
+        if (activeTab === 'active') {
+            let body = '';
+            if (!rows.length) {
+                body = `<tr><td colspan="5" class="empty-state">ไม่มี Ticket ที่ต้องดำเนินการ</td></tr>`;
+            } else {
+                rows.forEach(tk => {
+                    const b = STATUS_BADGE[tk.status] || STATUS_BADGE[null];
+                    const badge = `<span class="badge ${b.cls}"><span class="badge-dot"></span>${b.label}</span>`;
+                    const phaseLabel = tk.phase ? (tk.phase === 'withdraw' ? 'ขาเบิก' : 'ขาคืน') : '<span class="text-muted">—</span>';
+
+                    let action = `<span class="text-muted">—</span>`;
+                    if (tk.status === null) {
+                        action = `<button class="btn-withdraw" onclick="openWithdrawModal(${tk.ticketId})">📤 เบิก</button>`;
+                    } else if (tk.status === 'เดินทาง' && tk.phase === 'withdraw') {
+                        action = `<button class="btn-return" onclick="confirmReceive(${tk.ticketId})">✅ ยืนยันรับของ</button>`;
+                    } else if (tk.status === 'เบิก' && tk.phase === 'withdraw') {
+                        action = `<button class="btn-return" onclick="openReturnModal(${tk.ticketId})">📥 คืน</button>`;
+                    } else if (tk.status === 'อนุมัติคืน' && tk.phase === 'return') {
+                        action = `<button class="btn-ship" onclick="markShipped(${tk.ticketId})">🚚 จัดส่งแล้ว</button>`;
+                    } else if (tk.status === 'รอ' && tk.phase === 'return') {
+                        action = `<span class="text-muted" style="font-size:12px;">รอ Admin ยืนยัน</span>`;
+                    } else if (tk.status === 'รอ' && tk.phase === 'withdraw') {
+                        action = `<span class="text-muted" style="font-size:12px;">รอ Admin อนุมัติ</span>`;
+                    } else if (tk.status === 'เดินทาง' && tk.phase === 'return') {
+                        action = `<span class="text-muted" style="font-size:12px;">รอถึง DHL</span>`;
+                    } else if (tk.status === 'Reject') {
+                        action = `<button class="btn-withdraw" onclick="openWithdrawModal(${tk.ticketId})">📝 แก้ไขและส่งใหม่</button>`;
+                    }
+
+                    // Same Aservice Ticket can carry more than one independent ใบเบิก (e.g. the
+                    // job needs more parts while the first request is still open) — always
+                    // offered, regardless of this row's own status.
+                    const addlBtn = `<button class="btn-add-line" style="margin-top:4px;font-size:11px;padding:4px 8px;width:auto;" onclick="requestAdditionalWithdraw(${tk.ticketId})">➕ เบิกเพิ่ม (ใบใหม่)</button>`;
+                    const ticketLabel = tk.siblingCount > 1
+                        ? `<span class="id-chip ticket-id">${tk.externalTicketNo}</span><div class="text-muted" style="font-size:11px;margin-top:2px;">ใบที่ ${tk.siblingIndex} จาก ${tk.siblingCount}</div>`
+                        : `<span class="id-chip ticket-id">${tk.externalTicketNo}</span>`;
+
+                    body += `
+                        <tr>
+                            <td>${ticketLabel}</td>
+                            <td>${partsSummaryHtml(tk)}</td>
+                            <td>${phaseLabel}</td>
+                            <td>${badge}</td>
+                            <td>${action}${addlBtn}</td>
+                        </tr>`;
+                });
+            }
+            wrap.innerHTML = `
+                <table>
+                    <thead>
+                        <tr>
+                            <th style="width:14%">Ticket</th>
+                            <th style="width:30%">Parts</th>
+                            <th style="width:14%">Phase</th>
+                            <th style="width:18%">Status</th>
+                            <th style="width:24%">Action</th>
+                        </tr>
+                    </thead>
+                    <tbody>${body}</tbody>
+                </table>`;
+        } else {
+            let body = '';
+            if (!rows.length) {
+                body = `<tr><td colspan="4" class="empty-state">ยังไม่มีประวัติการเบิก</td></tr>`;
+            } else {
+                rows.sort((a, b) => new Date(b.updatedAt) - new Date(a.updatedAt));
+                rows.forEach(tk => {
+                    const b = STATUS_BADGE[tk.status] || STATUS_BADGE[null];
+                    const badge = `<span class="badge ${b.cls}"><span class="badge-dot"></span>${b.label}</span>`;
+                    const dt = new Date(tk.updatedAt).toLocaleString('th-TH', { dateStyle: 'medium', timeStyle: 'short' });
+                    body += `
+                        <tr>
+                            <td><span class="id-chip ticket-id">${tk.externalTicketNo}</span></td>
+                            <td>${partsSummaryHtml(tk)}</td>
+                            <td>${badge}</td>
+                            <td style="font-size:12.5px;color:var(--text-secondary);">${dt}</td>
+                        </tr>`;
+                });
+            }
+            wrap.innerHTML = `
+                <table>
+                    <thead>
+                        <tr>
+                            <th style="width:16%">Ticket</th>
+                            <th style="width:36%">Parts</th>
+                            <th style="width:20%">Status</th>
+                            <th style="width:28%">วันที่/เวลา</th>
+                        </tr>
+                    </thead>
+                    <tbody>${body}</tbody>
+                </table>`;
+        }
+    }
+
+    /* ── Part-line row builder (shared by withdraw / return forms) ──
+       Plain <select> became unusable once the real parts catalog (500+ items) loaded — every
+       row was a scroll-fest. Native <datalist> was tried next but mobile browser support for it
+       is inconsistent (several don't render suggestions at all), so this is a small custom
+       combobox instead: a text input that filters cachedParts as you type, plus a dropdown list
+       you tap/click to pick from. The chosen PartNo is stamped onto the input's
+       `data-partno` attribute — collectLines() reads that directly rather than re-parsing text,
+       so a stale/edited-but-not-reselected label can't silently submit the wrong part. ── */
+    function partLabel(p) { return `${p.partName} (${p.partNo})`; }
+
+    const CONDITION_OPTIONS = [
+        { value: 'Good',      label: 'ของดี' },
+        { value: 'Bad',       label: 'ของเสีย' },
+        { value: 'Lost',      label: 'สูญหาย' },
+    ];
+    function lineRowHtml(prefix, idx, partNo, qty, condition) {
+        const selected = cachedParts.find(p => p.partNo === partNo);
+        const val = selected ? partLabel(selected) : '';
+        const dataAttr = selected ? ` data-partno="${selected.partNo}"` : '';
+        // Condition only applies to a Return line (prefix "rt") — Withdraw doesn't know the
+        // part's condition yet, that's decided when it comes back.
+        const conditionHtml = prefix === 'rt'
+            ? `<select class="tk-condition" id="${prefix}-cond-${idx}">${CONDITION_OPTIONS.map(o =>
+                `<option value="${o.value}" ${o.value === (condition || 'Good') ? 'selected' : ''}>${o.label}</option>`).join('')}</select>`
+            : '';
+        return `<div class="tk-line-row" id="${prefix}-row-${idx}">
+            <div class="tk-part-picker">
+                <input type="text" id="${prefix}-part-${idx}"${dataAttr}
+                    placeholder="พิมพ์ชื่ออะไหล่เพื่อค้นหา..." autocomplete="off" value="${val}"
+                    oninput="onPartInput('${prefix}', ${idx})"
+                    onfocus="onPartInput('${prefix}', ${idx})">
+                <span class="tk-part-caret">▾</span>
+                <div class="tk-part-dropdown" id="${prefix}-dropdown-${idx}"></div>
+            </div>
+            <input type="number" id="${prefix}-qty-${idx}" min="1" value="${qty || 1}">
+            ${conditionHtml}
+            <button type="button" class="tk-remove" onclick="removeLine('${prefix}', ${idx})">✕</button>
+        </div>`;
+    }
+
+    function onPartInput(prefix, idx) {
+        const input = document.getElementById(`${prefix}-part-${idx}`);
+        const dropdown = document.getElementById(`${prefix}-dropdown-${idx}`);
+        input.removeAttribute('data-partno'); // any prior selection is void until re-picked
+        const q = input.value.trim().toLowerCase();
+        const matches = (q
+            ? cachedParts.filter(p => p.partName.toLowerCase().includes(q) || p.partNo.toLowerCase().includes(q))
+            : cachedParts
+        ).slice(0, 40);
+
+        closeAllPartDropdowns(dropdown);
+        dropdown.innerHTML = matches.length
+            ? matches.map(p => `
+                <div class="tk-part-option" onclick="selectPart('${prefix}', ${idx}, '${p.partNo.replace(/'/g, "\\'")}')">
+                    ${p.partName}<span class="tk-part-no">${p.partNo}</span>
+                </div>`).join('')
+            : `<div class="tk-part-empty">ไม่พบอะไหล่ที่ตรงกับ "${input.value}"</div>`;
+        dropdown.classList.add('open');
+    }
+    function selectPart(prefix, idx, partNo) {
+        const part = cachedParts.find(p => p.partNo === partNo);
+        if (!part) return;
+        const input = document.getElementById(`${prefix}-part-${idx}`);
+        input.value = partLabel(part);
+        input.dataset.partno = partNo;
+        document.getElementById(`${prefix}-dropdown-${idx}`).classList.remove('open');
+    }
+    function closeAllPartDropdowns(except) {
+        document.querySelectorAll('.tk-part-dropdown.open').forEach(d => { if (d !== except) d.classList.remove('open'); });
+    }
+    document.addEventListener('click', e => {
+        if (!e.target.closest('.tk-part-picker')) closeAllPartDropdowns(null);
+    });
+
+    function addLine(kind) {
+        if (kind === 'withdraw') {
+            wdLineCount++;
+            document.getElementById('wdLines').insertAdjacentHTML('beforeend', lineRowHtml('wd', wdLineCount));
+        } else if (kind === 'new') {
+            nrLineCount++;
+            document.getElementById('nrLines').insertAdjacentHTML('beforeend', lineRowHtml('nr', nrLineCount));
+        } else {
+            rtLineCount++;
+            document.getElementById('rtLines').insertAdjacentHTML('beforeend', lineRowHtml('rt', rtLineCount));
+        }
+    }
+    function removeLine(prefix, idx) {
+        document.getElementById(`${prefix}-row-${idx}`)?.remove();
+    }
+    function collectLines(prefix, count) {
+        const lines = [];
+        for (let i = 1; i <= count; i++) {
+            const partInp = document.getElementById(`${prefix}-part-${i}`);
+            const qtyInp  = document.getElementById(`${prefix}-qty-${i}`);
+            if (!partInp) continue;
+            const partNo = partInp.dataset.partno || null;
+            const quantity = parseInt(qtyInp.value, 10) || 0;
+            if (!partNo || quantity <= 0) continue;
+            const line = { partNo, quantity };
+            if (prefix === 'rt') {
+                const condInp = document.getElementById(`${prefix}-cond-${i}`);
+                line.condition = condInp?.value || 'Good';
+            }
+            lines.push(line);
+        }
+        return lines;
+    }
+
+    /* ── Photo attachments (withdraw + return share this) ──
+       Files are held client-side until Submit, then uploaded one by one via
+       /Ticket/upload and the returned paths are sent along with the withdraw/return body. */
+    const photoFiles = { wd: [], rt: [], nr: [] };
+
+    function handlePhotoSelect(prefix, fileList) {
+        for (const f of fileList) {
+            if (!f.type.startsWith('image/')) continue;
+            photoFiles[prefix].push(f);
+        }
+        renderPhotoPreview(prefix);
+        document.getElementById(`${prefix}PhotoInput`).value = '';
+    }
+    function removePhoto(prefix, idx) {
+        photoFiles[prefix].splice(idx, 1);
+        renderPhotoPreview(prefix);
+    }
+    function renderPhotoPreview(prefix) {
+        const box = document.getElementById(`${prefix}PhotoPreview`);
+        box.innerHTML = photoFiles[prefix].map((f, i) => `
+            <div class="tk-photo-thumb">
+                <img src="${URL.createObjectURL(f)}" alt="${f.name}">
+                <button type="button" class="tk-photo-remove" onclick="removePhoto('${prefix}', ${i})">✕</button>
+            </div>`).join('');
+    }
+    async function uploadPendingPhotos(prefix) {
+        const attachments = [];
+        for (const f of photoFiles[prefix]) {
+            const res = await api.tickets.uploadAttachment(f);
+            attachments.push({ filePath: res.filePath, fileName: res.fileName });
+        }
+        return attachments;
+    }
+
+    // Start another independent ใบเบิก under the same Aservice Ticket number as an existing row
+    // (e.g. the job needs more parts while the first request is still open). No Ticket row is
+    // created here — only the form opens; the row is created at Submit time (see submitWithdraw)
+    // so closing/cancelling the form without submitting leaves no orphan behind.
+    function requestAdditionalWithdraw(fromTicketId) {
+        const src = cachedTickets.find(t => t.ticketId === fromTicketId);
+        if (!src) return;
+        pendingAdditionalSrc = src;
+        activeTicketId = null;
+        document.getElementById('wdTicketNo').textContent = src.externalTicketNo;
+        document.getElementById('wdTechName').textContent = src.techName;
+        document.getElementById('wdTechDept').textContent = src.techDept;
+        document.getElementById('wdCreatedAt').textContent = new Date().toLocaleString('th-TH');
+        document.getElementById('wdRejectBox').style.display = 'none';
+        document.getElementById('wdAddress').value = '';
+        document.getElementById('wdDescription').value = '';
+        document.getElementById('wdLines').innerHTML = '';
+        wdLineCount = 0;
+        addLine('withdraw');
+        photoFiles.wd = [];
+        renderPhotoPreview('wd');
+        document.getElementById('withdrawOverlay').classList.add('open');
+    }
+
+    /* ── Withdraw form (also handles resubmit-after-Reject) ── */
+    function openWithdrawModal(id) {
+        const tk = cachedTickets.find(t => t.ticketId === id);
+        if (!tk) return;
+        activeTicketId = id;
+        pendingAdditionalSrc = null;
+        document.getElementById('wdTicketNo').textContent = tk.externalTicketNo;
+        document.getElementById('wdTechName').textContent = tk.techName;
+        document.getElementById('wdTechDept').textContent = tk.techDept;
+        document.getElementById('wdCreatedAt').textContent = new Date(tk.createdAt).toLocaleString('th-TH');
+
+        const rejectBox = document.getElementById('wdRejectBox');
+        if (tk.status === 'Reject' && tk.rejectReason) {
+            document.getElementById('wdRejectReason').textContent = tk.rejectReason;
+            rejectBox.style.display = 'block';
+        } else {
+            rejectBox.style.display = 'none';
+        }
+
+        document.getElementById('wdAddress').value = tk.status === 'Reject' ? (tk.withdrawAddress || '') : '';
+        document.getElementById('wdDescription').value = tk.status === 'Reject' ? (tk.withdrawDescription || '') : '';
+        document.getElementById('wdLines').innerHTML = '';
+        wdLineCount = 0;
+        const priorLines = tk.status === 'Reject' ? tk.lines.filter(l => l.lineType === 'Withdraw') : [];
+        if (priorLines.length) {
+            priorLines.forEach(l => {
+                wdLineCount++;
+                document.getElementById('wdLines').insertAdjacentHTML('beforeend', lineRowHtml('wd', wdLineCount, l.partNo, l.quantity));
+            });
+        } else {
+            addLine('withdraw');
+        }
+        photoFiles.wd = [];
+        renderPhotoPreview('wd');
+        document.getElementById('withdrawOverlay').classList.add('open');
+    }
+    function closeWithdrawModal() {
+        document.getElementById('withdrawOverlay').classList.remove('open');
+        activeTicketId = null;
+        pendingAdditionalSrc = null;
+    }
+    async function submitWithdraw() {
+        const lines = collectLines('wd', wdLineCount);
+        const address = document.getElementById('wdAddress').value.trim();
+        const description = document.getElementById('wdDescription').value.trim();
+        if (!lines.length) { showToast?.('เลือกอะไหล่อย่างน้อย 1 รายการ', 'error'); return; }
+        if (!address) { showToast?.('กรุณากรอกที่อยู่จัดส่ง', 'error'); return; }
+
+        // "เบิกเพิ่ม" flow — the Ticket row doesn't exist yet, create it now (Submit is the point
+        // of no return). If a later step fails, clean it back up so retrying doesn't pile up
+        // empty rows — same pattern as submitNewRequest.
+        let createdTicketId = null;
+        let ticketId = activeTicketId;
+        if (pendingAdditionalSrc) {
+            try {
+                const res = await api.tickets.createAdditionalWithdraw({
+                    externalTicketNo: pendingAdditionalSrc.externalTicketNo,
+                    techName: pendingAdditionalSrc.techName,
+                    techEmail: currentEmail,
+                    techDept: pendingAdditionalSrc.techDept
+                });
+                ticketId = createdTicketId = res.ticket.ticketId;
+            } catch (e) { showToast?.(e.message || t('toast.error'), 'error'); return; }
+        }
+
+        try {
+            const attachments = await uploadPendingPhotos('wd');
+            await api.tickets.submitWithdraw(ticketId, { lines, address, description, attachments });
+            photoFiles.wd = [];
+            closeWithdrawModal();
+            await fetchTickets();
+            showToast?.('ส่งคำขอเบิกแล้ว รอ Admin อนุมัติ', 'success');
+        } catch (e) {
+            if (createdTicketId) { try { await api.tickets.remove(createdTicketId); } catch {} }
+            showToast?.(e.message || t('toast.error'), 'error');
+        }
+    }
+
+    async function confirmReceive(id) {
+        if (!confirm('ยืนยันว่าได้รับอะไหล่แล้ว?')) return;
+        try {
+            await api.tickets.receive(id);
+            await fetchTickets();
+        } catch (e) { showToast?.(e.message || t('toast.error'), 'error'); }
+    }
+
+    /* ── Return form ── */
+    function openReturnModal(id) {
+        const tk = cachedTickets.find(t => t.ticketId === id);
+        if (!tk) return;
+        activeTicketId = id;
+        document.getElementById('rtTicketNo').textContent = tk.externalTicketNo;
+        document.getElementById('rtTechName').textContent = tk.techName;
+        const withdrawn = tk.lines.filter(l => l.lineType === 'Withdraw');
+        document.getElementById('rtHistory').innerHTML = withdrawn.length
+            ? withdrawn.map(l => `<div class="tk-history-line"><span>${l.partName}</span><span class="fw-600">×${l.quantity}</span></div>`).join('')
+            : `<span class="text-muted">—</span>`;
+        document.getElementById('rtAddress').value = '';
+        document.getElementById('rtLines').innerHTML = '';
+        rtLineCount = 0;
+        // pre-fill one row per withdrawn part, defaulting qty to what was withdrawn (partial return allowed)
+        withdrawn.forEach(l => {
+            rtLineCount++;
+            document.getElementById('rtLines').insertAdjacentHTML('beforeend', lineRowHtml('rt', rtLineCount, l.partNo, l.quantity));
+        });
+        if (!withdrawn.length) addLine('return');
+        photoFiles.rt = [];
+        renderPhotoPreview('rt');
+        document.getElementById('returnOverlay').classList.add('open');
+    }
+    function closeReturnModal() {
+        document.getElementById('returnOverlay').classList.remove('open');
+        activeTicketId = null;
+    }
+    async function submitReturn() {
+        const lines = collectLines('rt', rtLineCount);
+        const address = document.getElementById('rtAddress').value.trim();
+        if (!lines.length) { showToast?.('เลือกอะไหล่อย่างน้อย 1 รายการ', 'error'); return; }
+        if (!address) { showToast?.('กรุณากรอกที่อยู่', 'error'); return; }
+        try {
+            const attachments = await uploadPendingPhotos('rt');
+            await api.tickets.submitReturn(activeTicketId, { lines, address, attachments });
+            photoFiles.rt = [];
+            closeReturnModal();
+            await fetchTickets();
+            showToast?.('ส่งคำขอคืนแล้ว', 'success');
+        } catch (e) { showToast?.(e.message || t('toast.error'), 'error'); }
+    }
+
+    async function markShipped(id) {
+        try {
+            await api.tickets.ship(id);
+            await fetchTickets();
+        } catch (e) { showToast?.(e.message || t('toast.error'), 'error'); }
+    }
+
+    /* ── New Withdrawal Request (tech-initiated) ──
+       There's no Aservice-synced Ticket to attach this to yet, so behind the scenes this
+       creates one (POST /Ticket/sync with a self-generated ExternalTicketNo) and immediately
+       submits the withdraw request on it — presented to the tech as one single form. */
+    function openNewRequestModal() {
+        // Prefill from the tech's own last ticket, if any, so they don't retype name/dept every time.
+        const last = cachedTickets.find(t => t.techName);
+        document.getElementById('nrTechName').value = last?.techName || '';
+        document.getElementById('nrTechDept').value = last?.techDept || '';
+        document.getElementById('nrAddress').value = '';
+        document.getElementById('nrDescription').value = '';
+        document.getElementById('nrLines').innerHTML = '';
+        nrLineCount = 0;
+        addLine('new');
+        photoFiles.nr = [];
+        renderPhotoPreview('nr');
+        document.getElementById('newRequestOverlay').classList.add('open');
+    }
+    function closeNewRequestModal() {
+        document.getElementById('newRequestOverlay').classList.remove('open');
+    }
+    async function submitNewRequest() {
+        const techName = document.getElementById('nrTechName').value.trim();
+        const techDept = document.getElementById('nrTechDept').value.trim();
+        const lines = collectLines('nr', nrLineCount);
+        const address = document.getElementById('nrAddress').value.trim();
+        const description = document.getElementById('nrDescription').value.trim();
+        if (!techName) { showToast?.('กรอกชื่อช่าง', 'error'); return; }
+        if (!lines.length) { showToast?.('เลือกอะไหล่อย่างน้อย 1 รายการ', 'error'); return; }
+        if (!address) { showToast?.('กรุณากรอกที่อยู่จัดส่ง', 'error'); return; }
+        let syncedTicketId = null;
+        try {
+            const externalTicketNo = `SELF-${Date.now()}`;
+            const synced = await api.tickets.sync({ externalTicketNo, techName, techEmail: currentEmail, techDept });
+            syncedTicketId = synced.ticket.ticketId;
+            const attachments = await uploadPendingPhotos('nr');
+            await api.tickets.submitWithdraw(syncedTicketId, { lines, address, description, attachments });
+            photoFiles.nr = [];
+            closeNewRequestModal();
+            await fetchTickets();
+            showToast?.('ส่งคำขอเบิกแล้ว รอ Admin อนุมัติ', 'success');
+        } catch (e) {
+            // If sync succeeded but a later step (photo upload, withdraw) failed, don't leave a
+            // dangling empty ticket behind — clean it up so retrying doesn't pile up duplicates.
+            if (syncedTicketId) { try { await api.tickets.remove(syncedTicketId); } catch {} }
+            showToast?.(e.message || t('toast.error'), 'error');
+        }
+    }
+
+    document.addEventListener('keydown', e => {
+        if (e.key === 'Escape') { closeWithdrawModal(); closeReturnModal(); closeNewRequestModal(); }
+    });
 </script>
 </body>
 </html>

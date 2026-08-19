@@ -79,44 +79,6 @@ public class TrackingController : ControllerBase
             });
         }
 
-        // ── Tickets with FaultySerialNo matching (broken-part submissions) ────
-        var tickets = _context.Tickets
-            .Where(t => t.FaultySerialNo == sn)
-            .OrderBy(t => t.CreatedAt)
-            .ToList();
-
-        var partMap = _context.Parts.ToDictionary(p => p.PartNo, p => p.PartName);
-
-        foreach (var t in tickets)
-        {
-            events.Add(new TimelineEvent
-            {
-                Timestamp   = t.CreatedAt,
-                EventType   = "TicketSubmit",
-                Description = $"Reported as faulty on Ticket TK-{t.TicketId:0000} by {t.TechName} ({t.TechDept})",
-                Location    = "OL Technician",
-                Condition   = "Defective",
-                RefType     = "Ticket",
-                RefId       = $"TK-{t.TicketId:0000}",
-                UserName    = t.TechName
-            });
-
-            if (t.Status == "Received" || t.Status == "Approved")
-            {
-                events.Add(new TimelineEvent
-                {
-                    Timestamp   = t.ReceivedAt ?? t.CreatedAt,
-                    EventType   = "Issue",
-                    Description = $"New part issued: {t.ApprovedPartNo ?? "—"} for ticket TK-{t.TicketId:0000}",
-                    Location    = "OL Technician",
-                    Condition   = "Good",
-                    RefType     = "Ticket",
-                    RefId       = $"TK-{t.TicketId:0000}",
-                    UserName    = t.TechName
-                });
-            }
-        }
-
         if (!events.Any())
             return NotFound(new { message = $"No records found for Serial No. '{sn}'." });
 

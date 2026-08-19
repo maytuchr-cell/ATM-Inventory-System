@@ -4,11 +4,15 @@ public class StockMovement
 {
     public int Id { get; set; }
     public string MovementType { get; set; } = string.Empty; // GR|Issue|Return|Transfer|Disposal|Adjustment
-    public string PartNo { get; set; } = string.Empty;
+    public int PartId { get; set; }                  // FK to Part — authoritative link (matches PartStock/PartUnit)
+    public string PartNo { get; set; } = string.Empty; // snapshot of the part number at the time of the movement
+    public Part? Part { get; set; }
     public int? FromLocationId { get; set; }
     public int? ToLocationId { get; set; }
+    public int? PartUnitId { get; set; }             // FK to the specific serial-tracked unit (when applicable)
+    public PartUnit? PartUnit { get; set; }
     public int Qty { get; set; }
-    public string Condition { get; set; } = "Good"; // Good|Defective
+    public string Condition { get; set; } = "Good"; // Good|Bad
     public string? RefType { get; set; }   // Ticket|GoodsReceipt|Transfer|Disposal|StockCount
     public string? RefId { get; set; }
     public decimal? Cost { get; set; }

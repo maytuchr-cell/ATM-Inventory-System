@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>User Management — ATM Inventory</title>
+  <link rel="stylesheet" href="shared/styles.css?v=29">
+</head>
+<body>
+  <div class="app-layout">
+    <div id="sidebar-root"></div>
+    <div class="main-content">
+      <div class="topbar">
+        <div>
+          <div class="topbar-title" data-i18n="users.title">User Management</div>
+          <div class="topbar-sub"   data-i18n="users.sub">Manage accounts and roles (SystemAdmin only)</div>
+        </div>
+        <div class="topbar-controls">
+          <button class="btn btn-primary" onclick="openModal()">
+            <span>+</span> <span data-i18n="users.add">Add User</span>
+          </button>
+        </div>
+      </div>
+
+      <div class="page-body">
+        <div class="card">
+          <div class="tbl-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>#</th>
+                  <th data-i18n="users.col.email">Email</th>
+                  <th data-i18n="users.col.name">Name</th>
+                  <th data-i18n="users.col.role">Role</th>
+                  <th data-i18n="col.status">Status</th>
+                  <th data-i18n="col.actions">Actions</th>
+                </tr>
+              </thead>
+              <tbody id="users-tbody">
+                <tr><td colspan="6" class="empty-state" data-i18n="connecting">Connecting…</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Create/Edit modal -->
+  <div class="modal-overlay hidden" id="modal-overlay">
+    <div class="modal" style="max-width:440px;">
+      <div class="modal-header">
+        <div class="modal-title" id="modal-title" data-i18n="users.add">Add User</div>
+        <button class="btn btn-secondary btn-sm" onclick="closeModal()">✕</button>
+      </div>
+      <form id="user-form" onsubmit="saveUser(event)">
+        <div class="form-group">
+          <label class="form-label" data-i18n="users.lbl.email">Email</label>
+          <input class="form-input" id="f-email" type="email" required>
+        </div>
+        <div class="form-group">
+          <label class="form-label" data-i18n="users.lbl.name">Name</label>
+          <input class="form-input" id="f-name" required>
+        </div>
+        <div class="form-group">
+          <label class="form-label" data-i18n="users.lbl.role">Role</label>
+          <select class="form-input" id="f-role"></select>
+        </div>
+        <div class="form-group" id="pw-group">
+          <label class="form-label" data-i18n="users.lbl.password">Password</label>
+          <input class="form-input" id="f-password" type="password" minlength="6">
+          <small id="pw-hint" style="color:var(--muted,#64748b);"></small>
+        </div>
+        <div class="form-group hidden" id="active-group">
+          <label class="form-label"><input type="checkbox" id="f-active" checked> <span data-i18n="users.lbl.active">Active</span></label>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" onclick="closeModal()" data-i18n="btn.cancel">Cancel</button>
+          <button type="submit" class="btn btn-primary" data-i18n="btn.save">Save</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <script src="shared/translations.js?v=29"></script>
+  <script src="shared/toast.js?v=29"></script>
+  <script src="shared/api.js?v=29"></script>
+  <script src="shared/layout.js?v=29"></script>
+  <script src="admin-users.js?v=29"></script>
+</body>
+</html>

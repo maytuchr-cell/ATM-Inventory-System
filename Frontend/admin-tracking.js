@@ -49,7 +49,7 @@ function renderResult(data) {
 
     const timelineHtml = data.timeline.map((ev, idx) => {
         const isLatest = idx === data.timeline.length - 1;
-        const dotClass = `tl-dot ${ev.condition === 'Good' ? 'good' : 'defective'} ${isLatest ? 'latest' : ''}`;
+        const dotClass = `tl-dot ${ev.condition === 'Good' ? 'good' : 'bad'} ${isLatest ? 'latest' : ''}`;
         const badgeClass = eventBadgeClass(ev.eventType);
         const ref = ev.refType ? `<span class="tl-ref">${ev.refType}${ev.refId ? ' #' + ev.refId : ''}</span>` : '';
         const user = ev.userName ? `<span>${ev.userName}</span>` : '';

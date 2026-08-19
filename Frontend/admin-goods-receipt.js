@@ -65,7 +65,7 @@ function addLine() {
             <label class="form-label" data-i18n="gr.lbl.condition">Condition</label>
             <select class="form-select line-condition">
                 <option value="Good" data-i18n="gr.condition.good">Good</option>
-                <option value="Defective" data-i18n="gr.condition.defective">Defective</option>
+                <option value="Bad" data-i18n="gr.condition.bad">Bad</option>
             </select>
         </div>
         <div class="form-group">
@@ -244,7 +244,7 @@ function buildLines(rows, isCsv) {
 
 function normalizeCondition(val) {
     const s = String(val || '').trim().toLowerCase();
-    if (s === 'defective' || s === 'bad' || s === 'ng') return 'Defective';
+    if (s === 'defective' || s === 'bad' || s === 'ng') return 'Bad';
     return 'Good';
 }
 
@@ -336,11 +336,11 @@ function renderHistory() {
         const grouped = {};
         for (const l of g.lines) {
             const key = (l.partName || l.partNo) + '|' + l.condition;
-            if (!grouped[key]) grouped[key] = { name: l.partName || l.partNo, qty: 0, defective: l.condition === 'Defective' };
+            if (!grouped[key]) grouped[key] = { name: l.partName || l.partNo, qty: 0, bad: l.condition === 'Bad' };
             grouped[key].qty += l.qty;
         }
         const partsSummary = Object.values(grouped)
-            .map((x, i, arr) => `<div style="padding:4px 0;${i < arr.length-1 ? 'border-bottom:1px solid var(--border);' : ''}">${x.name} ×${x.qty}${x.defective ? ' <span style="color:var(--red)">⚠</span>' : ''}</div>`)
+            .map((x, i, arr) => `<div style="padding:4px 0;${i < arr.length-1 ? 'border-bottom:1px solid var(--border);' : ''}">${x.name} ×${x.qty}${x.bad ? ' <span style="color:var(--red)">⚠</span>' : ''}</div>`)
             .join('');
         return `
             <tr>

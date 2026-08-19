@@ -29,19 +29,8 @@
       icon: 'solar:box-bold',
       adminOnly: true,
       items: [
+        { key: 'nav.tickets',      href: 'admin-tickets.html',       icon: 'mdi:clipboard-check-outline',   adminOnly: true },
         { key: 'nav.goodsreceipt', href: 'admin-goods-receipt.html', icon: 'solar:box-bold',                adminOnly: true },
-        { key: 'nav.returns',      href: 'admin-returns.html',       icon: 'streamline:return-2-solid',     adminOnly: true },
-        { key: 'nav.transfers',    href: 'admin-transfers.html',     icon: 'streamline:transfer-van-solid', adminOnly: true },
-      ]
-    },
-    {
-      key: 'nav.group.stockcontrol',
-      labelEN: 'Stock Control', labelTH: 'ควบคุมสต็อก',
-      icon: 'mdi:counter',
-      adminOnly: true,
-      items: [
-        { key: 'nav.stockcount', href: 'admin-stockcount.html', icon: 'mdi:counter',         adminOnly: true },
-        { key: 'nav.disposal',   href: 'admin-disposal.html',   icon: 'fa6-solid:trash-can', adminOnly: true },
       ]
     },
     {
@@ -50,7 +39,6 @@
       icon: 'mdi:file-report',
       adminOnly: true,
       items: [
-        { key: 'nav.reports',  href: 'admin-reports.html',  icon: 'mdi:file-report',            adminOnly: true },
         { key: 'nav.history',  href: 'admin-history.html',  icon: 'ic:outline-history',         adminOnly: true },
         { key: 'nav.tracking', href: 'admin-tracking.html', icon: 'mdi:magnify',                adminOnly: true },
       ]
@@ -66,6 +54,16 @@
         { key: 'nav.locations',  href: 'admin-locations.html',  icon: 'weui:location-filled',        adminOnly: true },
         { key: 'nav.vendors',    href: 'admin-vendors.html',    icon: 'fa6-solid:warehouse',         adminOnly: true },
         { key: 'nav.atmmodels',  href: 'admin-atm-models.html', icon: 'streamline-plump:cog-solid',  adminOnly: true },
+        { key: 'nav.equivgroups', href: 'admin-equivalent-groups.html', icon: 'mdi:vector-link',      adminOnly: true },
+      ]
+    },
+    {
+      key: 'nav.group.admin',
+      labelEN: 'Administration', labelTH: 'ผู้ดูแลระบบ',
+      icon: 'mdi:shield-account',
+      adminOnly: true,
+      items: [
+        { key: 'nav.users', href: 'admin-users.html', icon: 'mdi:account-multiple', adminOnly: true, systemAdminOnly: true },
       ]
     },
     {
@@ -96,15 +94,33 @@
     applyTheme(current === 'dark' ? 'light' : 'dark');
   };
 
-  // ── Sidebar collapse ───────────────────────────────────────────────────────
+  // ── Sidebar collapse (desktop: icon-only width) / open (mobile: off-canvas) ──
+  const isMobile = () => window.matchMedia('(max-width: 768px)').matches;
+
   window.toggleSidebar = function() {
     const sidebar = document.querySelector('.sidebar');
+    const btn = document.getElementById('hamburger-btn');
+    if (isMobile()) {
+      const open = sidebar.classList.toggle('mobile-open');
+      if (btn) btn.innerHTML = open ? '✕' : '☰';
+      return;
+    }
     const collapsed = sidebar.classList.toggle('collapsed');
     localStorage.setItem('sidebarCollapsed', collapsed ? '1' : '0');
-    // update hamburger icon
-    const btn = document.getElementById('hamburger-btn');
     if (btn) btn.innerHTML = collapsed ? '☰' : '✕';
   };
+
+  // Tapping a nav link, or the page behind the off-canvas sidebar, closes it on mobile.
+  document.addEventListener('click', e => {
+    if (!isMobile()) return;
+    const sidebar = document.querySelector('.sidebar');
+    if (!sidebar || !sidebar.classList.contains('mobile-open')) return;
+    if (sidebar.contains(e.target)) {
+      if (e.target.closest('.sidebar-nav-item')) toggleSidebar();
+      return;
+    }
+    toggleSidebar();
+  });
 
   // ── Group accordion ────────────────────────────────────────────────────────
   window.toggleNavGroup = function(groupKey) {
@@ -138,14 +154,40 @@
     const email = localStorage.getItem('userEmail') || '';
     const page  = location.pathname.split('/').pop() || 'index.html';
 
+    // Role flags (4 roles: SystemAdmin / Staff / Auditor / Tech; "admin" kept for legacy)
+    const r = role.toLowerCase();
+    const isAdminSide   = ['systemadmin', 'staff', 'auditor', 'admin'].includes(r);
+    const isSystemAdmin = (r === 'systemadmin' || r === 'admin');
+    const isReadOnly    = (r === 'auditor');
+    // Auditor sees everything but cannot write. Hide write controls (the unambiguous write
+    // button classes are hidden via CSS); for the mixed .btn-primary class, tag the write
+    // ones with [data-write] here — but leave read actions (Export / Search) visible.
+    document.body.classList.toggle('readonly-mode', isReadOnly);
+    if (isReadOnly) {
+      const READ_ONCLICK = /export|search|dosearch|view|detail|toggle|filter/i;
+      const tagWriteButtons = (rootEl) => {
+        rootEl.querySelectorAll('.btn-primary:not([data-write])').forEach(btn => {
+          const on = (btn.getAttribute('onclick') || '') + ' ' + (btn.textContent || '');
+          if (!READ_ONCLICK.test(on)) btn.setAttribute('data-write', '');
+        });
+      };
+      tagWriteButtons(document);
+      // Re-tag dynamically rendered buttons (table rows, modals opened later).
+      new MutationObserver(muts => {
+        for (const m of muts) for (const n of m.addedNodes)
+          if (n.nodeType === 1) tagWriteButtons(n.matches?.('.btn-primary') ? n.parentElement || document : n);
+      }).observe(document.body, { childList: true, subtree: true });
+    }
+
     const isCollapsed    = localStorage.getItem('sidebarCollapsed') === '1';
     const savedGroups    = JSON.parse(localStorage.getItem('navGroups') || '{}');
 
     // Build nav HTML
     const navHtml = NAV_GROUPS
-      .filter(g => !g.adminOnly || role === 'admin')
+      .filter(g => !g.adminOnly || isAdminSide)
       .map(group => {
-        const visibleItems = group.items.filter(i => !i.adminOnly || role === 'admin');
+        const visibleItems = group.items.filter(i =>
+          (!i.adminOnly || isAdminSide) && (!i.systemAdminOnly || isSystemAdmin));
         if (!visibleItems.length) return '';
 
         // Check if any item in this group is the active page
@@ -189,7 +231,7 @@
             <img src="assets/logo.png" alt="Logo" style="width:100%;max-width:148px;height:auto;object-fit:contain;">
           </div>
           <button class="hamburger-btn" id="hamburger-btn" onclick="toggleSidebar()" title="Toggle sidebar">
-            ${isCollapsed ? '☰' : '✕'}
+            ${isMobile() || isCollapsed ? '☰' : '✕'}
           </button>
         </div>
 
