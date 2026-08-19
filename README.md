@@ -1,7 +1,7 @@
 # ATM Inventory System
 
 ระบบจัดการสต็อกอะไหล่ ATM สำหรับ DataOne Asia (Thailand)  
-พัฒนาด้วย **.NET 10 Web API** + **Vanilla JS Frontend** + **SQLite**
+พัฒนาด้วย **.NET 9 Web API** + **Vanilla JS Frontend** + **SQLite**
 
 ---
 
@@ -9,7 +9,7 @@
 
 | Layer | Technology |
 |---|---|
-| Backend | ASP.NET Core 10 Web API, EF Core, SQLite |
+| Backend | ASP.NET Core 9 Web API, EF Core, SQLite |
 | Frontend | HTML/CSS/Vanilla JS (ไม่มี framework) |
 | Launcher | .NET Console App (start.exe) |
 
@@ -41,7 +41,7 @@ ATM-Inventory-System/
 ## การติดตั้งและรัน
 
 ### ข้อกำหนด
-- [.NET 10 SDK](https://dotnet.microsoft.com/download)
+- [.NET 9 SDK](https://dotnet.microsoft.com/download) — ตรวจสอบด้วย `dotnet --list-sdks` ว่ามี `9.x` แล้ว (ใช้ net9.0 เพราะ Visual Studio 2022 ยังไม่รองรับ target net10.0 ใน IDE ต้องใช้ VS 2026/18.x ถึงจะ target net10 ได้)
 - Python 3 (สำหรับ frontend server)
 
 ### วิธีรัน
@@ -130,10 +130,50 @@ DELETE http://localhost:5128/api/Demo/clear
 
 ## Database
 
-ใช้ **SQLite** ไฟล์ `Backend/Api/AtmInventory.db`  
+ใช้ **SQLite** ไฟล์ `Backend/Api/AtmInventory.db` เป็นค่า default  
 สร้างอัตโนมัติตอน backend รันครั้งแรก (EnsureCreated)
 
 > ถ้าต้องการ reset ทั้งหมด: ลบไฟล์ `AtmInventory.db` แล้วรัน backend ใหม่
+
+### ย้ายไปใช้ MySQL
+
+โปรเจกต์รองรับสลับไปใช้ MySQL ได้แล้วผ่าน `Database:Provider` ใน `appsettings.json`
+(`"Sqlite"` ค่า default หรือ `"MySql"`) ดูรายละเอียดวิธีสลับ, ไฟล์ migration
+(`Backend/Api/Migrations/MySql/`), และ SQL script พร้อมใช้ได้ที่
+[`Backend/Api/Migrations/MySql/README.md`](Backend/Api/Migrations/MySql/README.md)
+
+> **หมายเหตุ:** ไฟล์ `database/AtmInventory.db` ในโฟลเดอร์ root เป็นข้อมูลจาก branch/เวอร์ชันเก่าที่ schema
+> ไม่ตรงกับโค้ดปัจจุบัน (ขาด `StockQuantity`, ไม่มีตาราง `PartImages`/`PartUnits`/`TicketAttachments`) —
+> **ห้ามเอาไปใช้กับโค้ดชุดนี้ตรงๆ** ให้ปล่อยให้แอปสร้าง/seed ข้อมูลใหม่ตามโค้ดปัจจุบันแทน
+
+---
+
+## Deploy ขึ้น IIS
+
+รัน `Publish-IIS.ps1` (หรือดับเบิลคลิก `Publish-IIS.bat`) คำสั่งเดียว จะได้โฟลเดอร์ `publish/`
+พร้อมก็อปปี้ขึ้นเซิร์ฟเวอร์ทันที ไม่ต้อง build/copy เองทีละไฟล์:
+
+```powershell
+.\Publish-IIS.ps1                 # framework-dependent (เซิร์ฟเวอร์ต้องลง ASP.NET Core 9 Hosting Bundle)
+.\Publish-IIS.ps1 -SelfContained  # bundle .NET runtime มาด้วย ไม่ต้องลง Hosting Bundle บนเซิร์ฟเวอร์ (ไฟล์ใหญ่ขึ้น)
+```
+
+โครงสร้างที่ได้ (ตรงกับ IIS: 1 site + `/api` เป็น sub-application):
+
+```
+publish/            → เอาไปวางเป็น physical path ของ IIS site (root = Frontend)
+publish/api/         → เอา subfolder นี้ตั้งเป็น IIS Application "/api" (คลิกขวา → Convert to Application, แยก App Pool)
+                       มี web.config ติดมาด้วยแล้ว ใช้ ASP.NET Core Module ตรง
+```
+
+ก่อน publish จริงไป production ต้องตั้ง `Database:Provider=MySql` และใส่ connection string
+ให้ MySQL/`Sparepart_DB` (ผ่าน environment variable บน IIS app pool หรือ `appsettings.Production.json`
+ที่ไม่ commit ขึ้น git) — ดูรายละเอียดที่
+[`Backend/Api/Migrations/MySql/README.md`](Backend/Api/Migrations/MySql/README.md)
+
+> `Launcher`/`start.exe` **ไม่เกี่ยวกับการ deploy ขึ้น IIS เลย** — ตัวนั้นไว้ใช้เปิดระบบบนเครื่อง dev
+> เท่านั้น (ดับเบิลคลิกแล้วเปิด backend + frontend แยกกันเป็น cmd window) บน IIS จริง ตัว IIS
+> จะคุม process ของ backend เองทั้งหมดผ่าน `web.config`
 
 ---
 

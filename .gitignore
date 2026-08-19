@@ -5,11 +5,26 @@ Backend/Api/*.db
 Backend/Api/*.db-shm
 Backend/Api/*.db-wal
 
+# Build output that sometimes leaks directly into the Api project folder instead of
+# bin/obj/publish (e.g. a misconfigured Visual Studio publish target) — never intentional.
+Backend/Api/*.dll
+Backend/Api/*.exe
+Backend/Api/*.pdb
+Backend/Api/Api.deps.json
+Backend/Api/Api.runtimeconfig.json
+Backend/Api/Api.staticwebassets.endpoints.json
+Backend/Api/dotnet-tools.json
+Backend/Api/runtimes/
+
 # Launcher build output
 Launcher/bin/
 Launcher/obj/
 publish/
+publish_bak/
 publish_sc/
+
+# Stale DB snapshot from another branch/version — schema doesn't match current code, do not use
+database/
 
 # OS
 .DS_Store

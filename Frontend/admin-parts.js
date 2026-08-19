@@ -3,7 +3,6 @@ let allCategories = [];
 let editingId = null;
 let currentPage = 1;
 const PAGE_SIZE = 50;
-const IMG_BASE = API_BASE.replace(/\/api$/, '');
 
 function resetPage() { currentPage = 1; }
 

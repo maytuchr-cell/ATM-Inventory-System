@@ -4,7 +4,7 @@ using Api.Models;
 namespace Api.Controllers;
 
 [ApiController]
-[Route("api/[controller]")]
+[Route("[controller]")]
 public class TrackingController : ControllerBase
 {
     private readonly AppDbContext _context;

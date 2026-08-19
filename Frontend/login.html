@@ -226,7 +226,9 @@
         applyLang();
 
         /* ── Login (real JWT auth) ── */
-        const LOGIN_API = 'http://localhost:5128/api/Auth/login';
+        // See Frontend/shared/api.js for why dev/prod compute this differently (IIS PathBase).
+        const API_BASE = (location.port === '3000') ? 'http://localhost:5128' : location.origin + '/api';
+        const LOGIN_API = API_BASE + '/Auth/login';
         async function handleLogin(event) {
             event.preventDefault();
             const email = document.getElementById("emailInput").value.trim().toLowerCase();

@@ -1,24 +1,53 @@
-<Project Sdk="Microsoft.NET.Sdk.Web">
+﻿<Project Sdk="Microsoft.NET.Sdk.Web">
 
   <PropertyGroup>
-    <TargetFramework>net10.0</TargetFramework>
+    <TargetFramework>net9.0</TargetFramework>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
+    <UserSecretsId>b4fe8fa3-70c0-46aa-a937-c76dfe7f7ebe</UserSecretsId>
   </PropertyGroup>
 
+  <!--
+    Guard: if a publish output ever lands directly in this project folder (e.g. a misconfigured
+    publish profile targeting "."), the SDK's default item globs would otherwise pick those files
+    up as Content/None and collide with the real build output on the next publish (NETSDK1152:
+    "Found multiple publish output files with the same relative path"). Exclude them so a stray
+    publish can't break every subsequent one.
+  -->
   <ItemGroup>
-    <PackageReference Include="Microsoft.AspNetCore.OpenApi" Version="10.0.8" />
-    <PackageReference Include="Microsoft.EntityFrameworkCore.Design" Version="10.0.8">
-      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
-      <PrivateAssets>all</PrivateAssets>
-    </PackageReference>
-    <PackageReference Include="Microsoft.EntityFrameworkCore.Tools" Version="10.0.8">
-      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
-      <PrivateAssets>all</PrivateAssets>
-    </PackageReference>
-    <PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" Version="10.0.8" />
-    <PackageReference Include="Microsoft.EntityFrameworkCore.Sqlite" Version="10.0.8" />
-    <PackageReference Include="MySql.EntityFrameworkCore" Version="10.0.7" />
+    <Content Remove="*.dll;*.exe;*.pdb" />
+    <None Remove="*.dll;*.exe;*.pdb" />
+    <Content Remove="Api.deps.json;Api.runtimeconfig.json;Api.staticwebassets.endpoints.json;dotnet-tools.json" />
+    <None Remove="Api.deps.json;Api.runtimeconfig.json;Api.staticwebassets.endpoints.json;dotnet-tools.json" />
   </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.AspNetCore.OpenApi" Version="9.0.19" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Design" Version="9.0.19">
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+      <PrivateAssets>all</PrivateAssets>
+    </PackageReference>
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Tools" Version="9.0.19">
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+      <PrivateAssets>all</PrivateAssets>
+    </PackageReference>
+    <PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" Version="9.0.19" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Sqlite" Version="9.0.19" />
+    <PackageReference Include="MySql.EntityFrameworkCore" Version="9.0.17" />
+  </ItemGroup>
+
+  <!--
+    Whenever this project is published (Visual Studio "Publish" button, or `dotnet publish`),
+    also copy the static Frontend site into the sibling folder next to the published API output,
+    so the result matches the IIS layout: <PublishDir>\..\ = site root (Frontend), <PublishDir> = /api sub-app.
+  -->
+  <Target Name="CopyFrontendAfterPublish" AfterTargets="Publish">
+    <ItemGroup>
+      <FrontendFiles Include="$(MSBuildProjectDirectory)\..\..\Frontend\**\*" />
+    </ItemGroup>
+    <Copy SourceFiles="@(FrontendFiles)"
+          DestinationFolder="$(PublishDir)..\%(RecursiveDir)"
+          SkipUnchangedFiles="true" />
+  </Target>
 
 </Project>

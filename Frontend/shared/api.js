@@ -1,5 +1,13 @@
 /* ── Centralized API client ── */
-const API_BASE = 'http://localhost:5128/api';
+// Dev: frontend (port 3000) and backend (port 5128) run separately — Kestrel has no PathBase,
+//   so controllers (routed as "[controller]", no "api/" prefix) sit at the backend's own root.
+// Prod (IIS): the API is an IIS Application mounted at "/api". IIS/ANCM sets the app's PathBase
+//   to "/api" and strips it before routing reaches the controllers — so the URL a browser calls
+//   MUST still start with "/api" (that's what tells IIS which app to dispatch to), even though
+//   the controllers themselves don't see that segment anymore.
+const API_BASE = (location.port === '3000') ? 'http://localhost:5128' : location.origin + '/api';
+// Uploaded files (wwwroot/uploads) are served by the same app at the same PathBase as the API.
+const IMG_BASE = API_BASE;
 
 async function apiFetch(path, options = {}) {
   const url = API_BASE + path;

@@ -6,7 +6,7 @@ using Api.Services;
 namespace Api.Controllers;
 
 [ApiController]
-[Route("api/[controller]")]
+[Route("[controller]")]
 public class StockCountController : ControllerBase
 {
     private readonly AppDbContext _context;

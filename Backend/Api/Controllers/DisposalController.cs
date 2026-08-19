@@ -5,7 +5,7 @@ using Api.Services;
 namespace Api.Controllers;
 
 [ApiController]
-[Route("api/[controller]")]
+[Route("[controller]")]
 public class DisposalController : ControllerBase
 {
     private readonly AppDbContext _context;

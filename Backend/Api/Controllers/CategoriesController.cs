@@ -5,7 +5,7 @@ using Api.Models;
 namespace Api.Controllers;
 
 [ApiController]
-[Route("api/[controller]")]
+[Route("[controller]")]
 public class CategoriesController : ControllerBase
 {
     private readonly AppDbContext _context;

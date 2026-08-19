@@ -19,12 +19,23 @@ builder.Services.AddControllers().AddJsonOptions(options =>
 });
 builder.Services.AddEndpointsApiExplorer();
 
-// SQLite for demo — switch to MySQL for production.
-// For MySQL: set ConnectionStrings:DefaultConnection (e.g. "server=localhost;port=3306;database=atm_inventory;user=root;password=...")
-// and swap the line below to:
-//   options.UseMySQL(builder.Configuration.GetConnectionString("DefaultConnection")!);
+// Database:Provider = "Sqlite" (default, demo) or "MySql" (production).
+// For MySQL set ConnectionStrings:MySqlConnection, e.g.
+//   "server=localhost;port=3306;database=atm_inventory;user=root;password=..."
+var dbProvider = builder.Configuration["Database:Provider"] ?? "Sqlite";
 builder.Services.AddDbContext<AppDbContext>(options =>
-    options.UseSqlite(builder.Configuration.GetConnectionString("DefaultConnection") ?? "Data Source=AtmInventory.db"));
+{
+    if (string.Equals(dbProvider, "MySql", StringComparison.OrdinalIgnoreCase))
+    {
+        var mysqlConn = builder.Configuration.GetConnectionString("MySqlConnection")
+            ?? throw new InvalidOperationException("ConnectionStrings:MySqlConnection is required when Database:Provider=MySql");
+        options.UseMySQL(mysqlConn);
+    }
+    else
+    {
+        options.UseSqlite(builder.Configuration.GetConnectionString("DefaultConnection") ?? "Data Source=AtmInventory.db");
+    }
+});
 
 builder.Services.AddScoped<StockService>();
 
@@ -51,9 +62,13 @@ using (var scope = app.Services.CreateScope())
     var context = scope.ServiceProvider.GetRequiredService<AppDbContext>();
     try
     {
-        context.Database.EnsureCreated();
+        if (string.Equals(dbProvider, "MySql", StringComparison.OrdinalIgnoreCase))
+            context.Database.Migrate();
+        else
+            context.Database.EnsureCreated();
 
-        // ── Lightweight migration: add new Part catalog columns if missing (preserves data) ──
+        // ── Lightweight migration (SQLite only): add new Part catalog columns if missing (preserves data) ──
+        if (!string.Equals(dbProvider, "MySql", StringComparison.OrdinalIgnoreCase))
         try
         {
             var existing = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
