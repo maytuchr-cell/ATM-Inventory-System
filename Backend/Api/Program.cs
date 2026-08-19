@@ -312,6 +312,11 @@ using (var scope = app.Services.CreateScope())
                 context.Database.ExecuteSqlRaw("ALTER TABLE TicketPartLines ADD COLUMN Condition TEXT NULL;");
                 Console.WriteLine("✅ Migration: added TicketPartLines.Condition");
             }
+            if (!tplCols.Contains("OriginalPartNo"))
+            {
+                context.Database.ExecuteSqlRaw("ALTER TABLE TicketPartLines ADD COLUMN OriginalPartNo TEXT NULL;");
+                Console.WriteLine("✅ Migration: added TicketPartLines.OriginalPartNo");
+            }
         }
         catch (Exception mex) { Console.WriteLine($"⚠ Tickets/TicketPartLines migration skipped: {mex.Message}"); }
 

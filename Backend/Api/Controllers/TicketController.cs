@@ -45,6 +45,7 @@ public class TicketController : ControllerBase
             .OrderBy(a => a.UploadedAt)
             .ToList();
         var partMap = _context.Parts.ToDictionary(p => p.Id, p => p.PartName);
+        var partNameByNo = _context.Parts.ToDictionary(p => p.PartNo, p => p.PartName);
 
         // Central-warehouse on-hand per part — shown next to each Withdraw line so Admin can see
         // at a glance whether there's enough stock to approve, without opening Parts Master.
@@ -76,7 +77,9 @@ public class TicketController : ControllerBase
                 {
                     l.TicketPartLineId, l.PartId, l.PartNo, l.Quantity, l.LineType, l.Condition,
                     partName = partMap.GetValueOrDefault(l.PartId, l.PartNo),
-                    availableStock = l.LineType == "Withdraw" ? stockByPartId.GetValueOrDefault(l.PartId, 0) : (int?)null
+                    availableStock = l.LineType == "Withdraw" ? stockByPartId.GetValueOrDefault(l.PartId, 0) : (int?)null,
+                    l.OriginalPartNo,
+                    originalPartName = l.OriginalPartNo == null ? null : partNameByNo.GetValueOrDefault(l.OriginalPartNo, l.OriginalPartNo)
                 }),
                 attachments = attachments.Where(a => a.TicketId == t.TicketId).Select(a => new
                 {
@@ -227,6 +230,7 @@ public class TicketController : ControllerBase
             return BadRequest(new { message = $"{dto.PartNo} is not a registered equivalent of {line.PartNo}." });
 
         var originalPartNo = line.PartNo;
+        line.OriginalPartNo ??= originalPartNo; // keep the true original if substituted more than once
         line.PartId = newPart.Id;
         line.PartNo = dto.PartNo;
         ticket.UpdatedAt = DateTime.Now;

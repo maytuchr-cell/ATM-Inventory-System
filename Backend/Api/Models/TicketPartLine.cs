@@ -11,6 +11,12 @@ public class TicketPartLine
     public string PartNo { get; set; } = string.Empty; // snapshot, same pattern as ReturnRequest.PartNo
     public Part? Part { get; set; }
 
+    // Set once, the first time Admin substitutes this line for a registered equivalent
+    // (see TicketController.SubstitutePart) — holds the part the tech originally requested,
+    // so Admin/tech can still see "requested X, got Y" after PartNo is overwritten. Null
+    // means the line was never substituted.
+    public string? OriginalPartNo { get; set; }
+
     public int Quantity { get; set; }
 
     public string LineType { get; set; } = "Withdraw"; // Withdraw | Return
