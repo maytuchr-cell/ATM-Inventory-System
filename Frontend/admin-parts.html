@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Parts Master — ATM Inventory</title>
-  <link rel="stylesheet" href="shared/styles.css">
+  <link rel="stylesheet" href="shared/styles.css?v=29">
 </head>
 <body>
   <div class="app-layout">
@@ -44,14 +44,16 @@
                   <th data-i18n="parts.col.partno">Part No.</th>
                   <th data-i18n="parts.col.name">Part Name</th>
                   <th data-i18n="parts.col.cat">Category</th>
-                  <th data-i18n="parts.col.stock">Stock</th>
+                  <th title="พร้อมให้เบิก — เท่านี้เท่านั้นที่ระบบนับตอนอนุมัติ Ticket">คลังกลาง</th>
+                  <th title="อยู่ในมือช่างที่เบิกไปแล้ว — เบิกซ้ำไม่ได้">อยู่กับช่าง</th>
+                  <th data-i18n="parts.col.stock">รวม</th>
                   <th data-i18n="parts.col.min">Min</th>
                   <th data-i18n="col.status">Status</th>
                   <th data-i18n="col.actions">Actions</th>
                 </tr>
               </thead>
               <tbody id="parts-tbody">
-                <tr><td colspan="7" class="empty-state" data-i18n="connecting">Connecting…</td></tr>
+                <tr><td colspan="9" class="empty-state" data-i18n="connecting">Connecting…</td></tr>
               </tbody>
             </table>
           </div>
@@ -64,12 +66,44 @@
 
   <!-- Modal -->
   <div class="modal-overlay hidden" id="modal-overlay">
-    <div class="modal">
+    <div class="modal" style="max-width:760px;">
       <div class="modal-header">
         <div class="modal-title" id="modal-title" data-i18n="parts.add">Add Part</div>
         <button class="btn btn-secondary btn-sm" onclick="closeModal()">✕</button>
       </div>
-      <form id="part-form" onsubmit="savePart(event)">
+
+      <!-- Batch header (add mode only) — filled once per session -->
+      <div id="batch-header" class="batch-header">
+        <div class="batch-header-title" data-i18n="parts.batch.header">ข้อมูลชุด (Batch)</div>
+        <div class="form-grid-2">
+          <div class="form-group">
+            <label class="form-label" data-i18n="parts.lbl.addedby">ชื่อผู้เพิ่ม</label>
+            <input class="form-input" id="b-addedby">
+          </div>
+          <div class="form-group">
+            <label class="form-label" data-i18n="parts.lbl.lot">Lot</label>
+            <input class="form-input" id="b-lot">
+          </div>
+          <div class="form-group">
+            <label class="form-label" data-i18n="parts.lbl.project">Project</label>
+            <input class="form-input" id="b-project">
+          </div>
+          <div class="form-group">
+            <label class="form-label" data-i18n="parts.lbl.date">วันที่</label>
+            <input class="form-input" id="b-date" type="date">
+          </div>
+        </div>
+      </div>
+
+      <form id="part-form" onsubmit="onFormSubmit(event)">
+        <div class="form-group" id="devtype-group">
+          <label class="form-label" data-i18n="parts.lbl.devtype">ประเภทอุปกรณ์</label>
+          <div id="devtype-toggle" class="devtype-toggle">
+            <button type="button" class="dt-btn" data-dt="ATM" onclick="setDeviceType('ATM')">ATM</button>
+            <button type="button" class="dt-btn" data-dt="ADM" onclick="setDeviceType('ADM')">ADM</button>
+            <button type="button" class="dt-btn" data-dt="CDM" onclick="setDeviceType('CDM')">CDM</button>
+          </div>
+        </div>
         <div class="form-grid-2">
           <div class="form-group">
             <label class="form-label" data-i18n="parts.lbl.partno">Part Number</label>
@@ -84,8 +118,9 @@
             <input class="form-input" id="f-ordernum" data-i18n-ph="parts.ph.ordernum">
           </div>
           <div class="form-group">
-            <label class="form-label" data-i18n="parts.lbl.stock">Stock Quantity</label>
+            <label class="form-label" id="f-stock-label" data-i18n="parts.lbl.stock">Stock Quantity</label>
             <input class="form-input" id="f-stock" type="number" min="0" value="0">
+            <small id="f-stock-hint" class="form-hint" style="display:none;color:var(--muted,#64748b);"></small>
           </div>
           <div class="form-group">
             <label class="form-label" data-i18n="parts.lbl.cat">Category</label>
@@ -110,11 +145,41 @@
           <label class="form-label" data-i18n="parts.lbl.catalogue">Catalogue Ref.</label>
           <input class="form-input" id="f-cat-ref">
         </div>
+        <div class="form-group" id="gallery-section">
+          <label class="form-label">รูปอะไหล่ (แนบได้หลายรูป)</label>
+          <div id="gallery-thumbs" class="gallery-thumbs"></div>
+          <input type="file" id="gallery-file-input" accept="image/*" multiple style="display:none"
+                 onchange="uploadPartImages(this.files); this.value='';">
+          <button type="button" class="btn btn-secondary btn-sm" style="margin-top:8px;"
+                  onclick="document.getElementById('gallery-file-input').click()">+ เพิ่มรูป</button>
+        </div>
         <div class="modal-footer">
-          <button type="button" class="btn btn-secondary" onclick="closeModal()" data-i18n="btn.cancel">Cancel</button>
-          <button type="submit" class="btn btn-primary" data-i18n="btn.save">Save</button>
+          <button type="button" class="btn btn-secondary" id="modal-cancel-btn" onclick="closeModal()" data-i18n="parts.batch.done">เสร็จสิ้น</button>
+          <button type="submit" class="btn btn-primary" id="modal-submit-btn" data-i18n="parts.batch.add">+ เพิ่มลงรายการ</button>
         </div>
       </form>
+
+      <!-- Session list (add mode) — added items stacked with a running count -->
+      <div id="batch-session" class="batch-session">
+        <div class="batch-session-head">
+          <span data-i18n="parts.batch.added">รายการที่เพิ่ม</span>
+          <span class="badge badge-green" id="batch-count">0</span>
+        </div>
+        <div class="tbl-wrap" style="max-height:200px;overflow-y:auto;">
+          <table>
+            <thead><tr>
+              <th>#</th>
+              <th data-i18n="parts.col.partno">Part No.</th>
+              <th data-i18n="parts.col.name">Part Name</th>
+              <th data-i18n="parts.lbl.devtype">Type</th>
+              <th data-i18n="parts.col.stock">Qty</th>
+            </tr></thead>
+            <tbody id="batch-tbody">
+              <tr><td colspan="5" class="empty-state" data-i18n="parts.batch.empty">ยังไม่มีรายการ</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
     </div>
   </div>
 
@@ -132,9 +197,54 @@
     </div>
   </div>
 
+  <!-- ── Holders Popup (who has this part checked out) ── -->
+  <div class="modal-overlay hidden" id="holders-overlay" onclick="if(event.target===this)closeHoldersModal()">
+    <div class="modal" style="max-width:640px;">
+      <div class="modal-header">
+        <span class="modal-title" id="holders-title"></span>
+        <button type="button" class="modal-close" onclick="closeHoldersModal()">✕</button>
+      </div>
+      <div id="holders-body" style="padding:4px 4px 8px;"></div>
+    </div>
+  </div>
+
   <style>
     .part-name-link { color: var(--text-primary); text-decoration: none; cursor: pointer; }
     .part-name-link:hover { color: var(--orange); }
+    /* Batch add */
+    .batch-header { background: var(--bg-subtle, #f6f8fb); border: 1px solid var(--border); border-radius: 10px; padding: 12px 14px; margin-bottom: 14px; }
+    .batch-header-title { font-size: 12px; font-weight: 700; color: var(--text-secondary); text-transform: uppercase; letter-spacing: .3px; margin-bottom: 8px; }
+    .devtype-toggle { display: flex; gap: 8px; }
+    .dt-btn { flex: 1; padding: 9px 0; border: 1.5px solid var(--border); border-radius: 8px; background: var(--bg-card); color: var(--text-secondary); font-weight: 700; cursor: pointer; transition: all .12s; }
+    .dt-btn:hover { border-color: var(--orange); }
+    .dt-btn.active { background: var(--orange); border-color: var(--orange); color: #fff; }
+    .batch-session { margin-top: 16px; }
+    .batch-session-head { display: flex; justify-content: space-between; align-items: center; font-size: 13px; font-weight: 700; margin-bottom: 6px; }
+    /* Edit mode hides batch chrome; gallery only makes sense once a part exists */
+    .modal.edit-mode #batch-header,
+    .modal.edit-mode #batch-session,
+    .modal.edit-mode #devtype-group { display: none; }
+    #gallery-section { display: none; }
+    .modal.edit-mode #gallery-section { display: block; }
+    .gallery-thumbs { display: flex; flex-wrap: wrap; gap: 8px; }
+    .gallery-thumb { position: relative; width: 72px; height: 72px; border-radius: 8px; overflow: hidden;
+                      border: 1px solid var(--border); }
+    .gallery-thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+    .gallery-thumb-remove { position: absolute; top: 2px; right: 2px; width: 18px; height: 18px; border: none;
+                             border-radius: 50%; background: rgba(0,0,0,.6); color: #fff; font-size: 11px;
+                             line-height: 18px; text-align: center; cursor: pointer; padding: 0; }
+    .gallery-thumb-remove:hover { background: var(--red, #dc2626); }
+    /* Part detail carousel */
+    .pd-nav { position: absolute; top: 50%; transform: translateY(-50%); width: 34px; height: 34px;
+               border-radius: 50%; border: 1px solid var(--border); background: var(--bg-card, #fff);
+               color: var(--text-primary); font-size: 20px; line-height: 1; cursor: pointer;
+               display: flex; align-items: center; justify-content: center; box-shadow: 0 1px 4px rgba(0,0,0,.15); }
+    .pd-nav-prev { left: 4px; }
+    .pd-nav-next { right: 4px; }
+    .pd-nav:hover { border-color: var(--orange); color: var(--orange); }
+    .pd-dots { display: flex; justify-content: center; gap: 6px; margin-top: 10px; }
+    .pd-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--border); cursor: pointer; }
+    .pd-dot.active { background: var(--orange); }
     .pd-body { padding: 4px 4px 8px; }
     .pd-image { display: flex; align-items: center; justify-content: center; min-height: 160px; margin-bottom: 16px; }
     .pd-noimg { color: var(--text-muted); font-size: 13px; padding: 40px; text-align: center;
@@ -147,10 +257,10 @@
   </style>
 
   <script src="https://code.iconify.design/iconify-icon/2.1.0/iconify-icon.min.js"></script>
-  <script src="shared/translations.js?v=4"></script>
-  <script src="shared/toast.js"></script>
-  <script src="shared/api.js"></script>
-  <script src="shared/layout.js"></script>
-  <script src="admin-parts.js?v=4"></script>
+  <script src="shared/translations.js?v=29"></script>
+  <script src="shared/toast.js?v=29"></script>
+  <script src="shared/api.js?v=29"></script>
+  <script src="shared/layout.js?v=29"></script>
+  <script src="admin-parts.js?v=29"></script>
 </body>
 </html>

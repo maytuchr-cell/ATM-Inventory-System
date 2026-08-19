@@ -33,6 +33,13 @@ Thumbs.db
 # Office temp lock files
 ~$*
 
+# Part images — stored externally at D:\ATMAssets\parts\ (not in repo)
+Backend/Api/wwwroot/uploads/
+
 # IDE
 .vs/
 *.user
+
+# Test project build output
+Backend/Api.Tests/bin/
+Backend/Api.Tests/obj/

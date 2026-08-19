@@ -227,7 +227,9 @@
 
         /* ── Login (real JWT auth) ── */
         // See Frontend/shared/api.js for why dev/prod compute this differently (IIS PathBase).
-        const API_BASE = (location.port === '3000') ? 'http://localhost:5128' : location.origin + '/api';
+        const API_BASE = (location.port === '3000')
+          ? `http://${location.hostname || 'localhost'}:5128`
+          : location.origin + '/api';
         const LOGIN_API = API_BASE + '/Auth/login';
         async function handleLogin(event) {
             event.preventDefault();
@@ -247,7 +249,10 @@
                 localStorage.setItem("authToken", data.token);
                 localStorage.setItem("userRole", data.role);
                 localStorage.setItem("userEmail", data.email);
-                window.location.href = data.role === "admin" ? "admin.html" : "tech.html";
+                // Admin-side roles land on the admin console; technicians on the workspace.
+                const adminRoles = ["systemadmin", "staff", "auditor", "admin"];
+                const isAdminSide = adminRoles.includes((data.role || "").toLowerCase());
+                window.location.href = isAdminSide ? "admin.html" : "tech.html";
             } catch (err) {
                 alert("Cannot reach server. Please try again.");
             } finally {

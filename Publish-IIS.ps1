@@ -7,7 +7,7 @@
 #   publish\api\         -> IIS sub-application "/api" (published Backend/Api, incl. web.config)
 #
 # Usage:
-#   .\Publish-IIS.ps1                # framework-dependent (needs ASP.NET Core 9 Hosting Bundle on the server)
+#   .\Publish-IIS.ps1                # framework-dependent (needs ASP.NET Core 8 Hosting Bundle on the server)
 #   .\Publish-IIS.ps1 -SelfContained # bundles the .NET runtime (no Hosting Bundle needed, bigger output)
 #
 # Then on the IIS server: copy the whole `publish` folder to the site's physical path, and in

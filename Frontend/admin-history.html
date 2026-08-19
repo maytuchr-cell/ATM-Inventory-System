@@ -3,8 +3,8 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>History &amp; Tracking — ATM Inventory</title>
-  <link rel="stylesheet" href="shared/styles.css">
+  <title>History — ATM Inventory</title>
+  <link rel="stylesheet" href="shared/styles.css?v=29">
   <style>
     /* Filter bar */
     .filter-grid { display:grid; grid-template-columns:1fr 1fr auto; gap:16px; align-items:end; margin-bottom:20px; padding:20px; background:var(--bg-subtle); border-radius:10px; border:1px solid var(--border); }
@@ -14,45 +14,35 @@
     .filter-input:focus, .filter-select:focus { border-color:var(--orange); box-shadow:0 0 0 3px var(--orange-ring); }
     .filter-input::placeholder { color:var(--text-muted); }
 
-    /* Overdue toggle */
-    .overdue-toggle { display:flex; align-items:center; gap:10px; padding:10px 16px; background:var(--red-bg,#fef2f2); border:1.5px solid var(--red); border-radius:9px; cursor:pointer; transition:all .2s; white-space:nowrap; user-select:none; }
-    .overdue-toggle:hover { background:var(--red); }
-    .overdue-toggle:hover .overdue-label,
-    .overdue-toggle:hover .overdue-icon { color:#fff; }
-    .overdue-label { font-size:13px; font-weight:600; color:var(--red-text,#991b1b); transition:color .2s; }
-    .overdue-icon  { font-size:14px; color:var(--red); transition:color .2s; }
-    .overdue-toggle input[type="checkbox"] { width:15px; height:15px; cursor:pointer; accent-color:var(--red); }
-
-    /* Result bar */
     .result-bar { display:flex; align-items:center; justify-content:space-between; margin-bottom:12px; }
     .result-count { font-size:13px; color:var(--text-secondary); }
     .result-count strong { color:var(--text-primary); }
 
-    /* Table */
-    .table-wrap { overflow-x:auto; }
-    table { width:100%; border-collapse:collapse; }
-    thead th { background:var(--bg-subtle); color:var(--text-muted); font-size:11px; font-weight:600; letter-spacing:.6px; text-transform:uppercase; padding:11px 16px; text-align:left; border-bottom:1px solid var(--border); white-space:nowrap; }
-    tbody td { padding:14px 16px; font-size:14px; color:var(--text-primary); border-bottom:1px solid var(--border); vertical-align:middle; }
-    tbody tr:last-child td { border-bottom:none; }
-    tbody tr { transition:background .15s; }
-    tbody tr:hover { background:var(--bg-subtle); }
-    tbody tr.row-overdue { background:var(--red-bg,#fef2f2) !important; }
-    tbody tr.row-overdue:hover { background:rgba(239,68,68,.12) !important; }
-
-    /* Chips & badges */
     .id-chip   { font-size:12px; font-weight:600; color:var(--text-muted); background:var(--bg-subtle); padding:3px 8px; border-radius:5px; font-family:monospace; border:1px solid var(--border); }
     .date-chip { font-size:12px; font-weight:500; color:var(--text-secondary); background:var(--bg-subtle); padding:4px 10px; border-radius:6px; border:1px solid var(--border); display:inline-block; }
-    .due-chip  { font-size:12px; font-weight:600; color:var(--blue-text,#9a3412); background:var(--blue-bg,#fff7ed); padding:4px 10px; border-radius:6px; display:inline-block; }
-    .due-chip.overdue { color:var(--red-text,#991b1b); background:var(--red-bg,#fef2f2); animation:pulse-ring 1.4s ease-in-out infinite; }
-    @keyframes pulse-ring { 0%,100%{box-shadow:0 0 0 0 rgba(239,68,68,.35)} 50%{box-shadow:0 0 0 4px rgba(239,68,68,.1)} }
     .sub-text  { font-size:12px; color:var(--text-muted); margin-top:3px; display:block; }
     .fw-600    { font-weight:600; }
 
-    /* Detail button */
-    .btn-detail { background:var(--bg-subtle); color:var(--text-secondary); border:1.5px solid var(--border); padding:6px 12px; border-radius:7px; font-size:12px; font-weight:600; cursor:pointer; font-family:inherit; transition:all .15s; display:inline-flex; align-items:center; gap:4px; }
-    .btn-detail:hover { background:var(--orange-light,#fff7ed); color:var(--orange); border-color:var(--orange); }
+    .badge-pending  { background:var(--yellow-light); color:var(--yellow); }
+    .badge-pending  .badge-dot { background:var(--yellow); }
+    .badge-approved { background:var(--orange-light); color:var(--orange); }
+    .badge-approved .badge-dot { background:var(--orange); }
+    .badge-teal     { background:#e0f5f3; color:#0f8a7e; }
+    .badge-teal     .badge-dot { background:#0f8a7e; }
+    [data-theme="dark"] .badge-teal { background:rgba(15,138,126,.18); color:#4fd6c6; }
+    [data-theme="dark"] .badge-teal .badge-dot { background:#4fd6c6; }
+    .badge-success  { background:var(--green-light);  color:var(--green); }
+    .badge-success  .badge-dot { background:var(--green); }
+    .badge-danger   { background:var(--red-light);    color:var(--red);   }
+    .badge-danger   .badge-dot { background:var(--red); }
+    .badge-muted    { background:var(--bg-subtle); color:var(--text-secondary); }
+    .badge-muted    .badge-dot { background:var(--text-secondary); }
+    .badge-dot { width:6px; height:6px; border-radius:50%; flex-shrink:0; }
 
-    /* Detail modal */
+    .btn-detail { background:var(--bg-subtle); color:var(--text-secondary); border:1.5px solid var(--border); padding:6px 12px; border-radius:7px; font-size:12px; font-weight:600; cursor:pointer; font-family:inherit; transition:all .15s; display:inline-flex; align-items:center; gap:4px; }
+    .btn-detail:hover { background:var(--orange-light); color:var(--orange); border-color:var(--orange); }
+
+    /* Detail modal — same pattern as admin-tickets.html */
     .detail-overlay { display:none; position:fixed; inset:0; background:rgba(0,0,0,.45); z-index:900; align-items:center; justify-content:center; padding:20px; }
     .detail-overlay.open { display:flex; }
     .detail-modal  { background:var(--bg-card); border-radius:18px; border:1px solid var(--border); width:100%; max-width:580px; max-height:90vh; overflow-y:auto; box-shadow:0 20px 60px rgba(0,0,0,.25); }
@@ -65,10 +55,7 @@
     .detail-section-title { font-size:10px; font-weight:700; letter-spacing:.8px; text-transform:uppercase; color:var(--orange); margin-bottom:12px; }
     .detail-grid   { display:grid; grid-template-columns:1fr 1fr; gap:12px; }
     .detail-field label { font-size:11px; font-weight:600; color:var(--text-muted); letter-spacing:.4px; text-transform:uppercase; display:block; margin-bottom:3px; }
-    .detail-field.full  { grid-column:1/-1; }
-    .detail-value-box   { background:var(--bg-subtle); border:1px solid var(--border); border-radius:8px; padding:10px 14px; font-size:14px; color:var(--text-primary); font-weight:500; }
-    .detail-desc   { font-size:14px; color:var(--text-primary); line-height:1.6; background:var(--bg-subtle); border-radius:8px; padding:12px; border:1px solid var(--border); white-space:pre-wrap; }
-    .detail-img    { width:100%; border-radius:10px; border:1px solid var(--border); margin-top:4px; object-fit:contain; max-height:300px; cursor:zoom-in; }
+    .detail-field span  { font-size:14px; color:var(--text-primary); font-weight:500; }
     .detail-divider { border:none; border-top:1px solid var(--border); margin:16px 0; }
     .detail-empty  { color:var(--text-muted); font-style:italic; font-size:13px; }
 
@@ -82,8 +69,8 @@
 
     <div class="topbar">
       <div>
-        <div class="topbar-title" data-i18n="hist.title">History &amp; Tracking</div>
-        <div class="topbar-sub"   data-i18n="hist.sub">Search and filter all ticket records</div>
+        <div class="topbar-title">History</div>
+        <div class="topbar-sub">ประวัติ Ticket เบิก/คืนอะไหล่ทั้งหมด — ดูรายละเอียด เวลา และรูปภาพที่แนบ</div>
       </div>
     </div>
 
@@ -93,49 +80,45 @@
 
           <div class="filter-grid">
             <div class="filter-group">
-              <span class="filter-label" data-i18n="hist.slabel">Search Technician</span>
+              <span class="filter-label">ค้นหาช่าง / Ticket</span>
               <input type="text" id="searchInput" class="filter-input"
-                     data-i18n-placeholder="hist.sph"
-                     placeholder="Name, department, phone, or TK-xxxx…"
+                     placeholder="ชื่อช่าง, แผนก, หรือเลข Ticket…"
                      oninput="applyFilters()">
             </div>
             <div class="filter-group">
-              <span class="filter-label" data-i18n="hist.flabel">Filter by Part</span>
-              <select id="partFilter" class="filter-select" onchange="applyFilters()">
-                <option value="all" data-i18n="hist.fall">— All Parts —</option>
+              <span class="filter-label">กรองตามสถานะ</span>
+              <select id="statusFilter" class="filter-select" onchange="applyFilters()">
+                <option value="">— ทุกสถานะ —</option>
+                <option value="รอ">รอ</option>
+                <option value="อนุมัติคืน">อนุมัติคืน</option>
+                <option value="เดินทาง">เดินทาง</option>
+                <option value="เบิก">เบิก</option>
+                <option value="คืน">คืน</option>
+                <option value="Reject">Reject</option>
+                <option value="Cancel">Cancel</option>
               </select>
             </div>
-            <label class="overdue-toggle" id="overdueLabel">
-              <input type="checkbox" id="overdueFilter" onchange="applyFilters()">
-              <span class="overdue-icon">🚩</span>
-              <span class="overdue-label" data-i18n="hist.overdue">Overdue Returns Only</span>
-            </label>
           </div>
 
           <div class="result-bar">
-            <span class="result-count">
-              <span data-i18n="hist.showing">Showing</span>
-              <strong id="result-count">—</strong>
-              <span data-i18n="hist.records">records</span>
-            </span>
+            <span class="result-count">แสดง <strong id="result-count">—</strong> รายการ</span>
           </div>
 
           <div class="table-wrap">
             <table>
               <thead>
                 <tr>
-                  <th style="width:7%"  data-i18n="hist.colticket">Ticket</th>
-                  <th style="width:16%" data-i18n="hist.coltech">Technician</th>
-                  <th style="width:12%" data-i18n="hist.coldept">Department</th>
-                  <th style="width:15%" data-i18n="hist.colpart">Part Issued</th>
-                  <th style="width:10%" data-i18n="hist.coldate">Request Date</th>
-                  <th style="width:14%" data-i18n="hist.colstatus">Status</th>
-                  <th style="width:14%" data-i18n="hist.coldue">Return Deadline</th>
-                  <th style="width:12%" data-i18n="hist.coldetail">Detail</th>
+                  <th style="width:9%">Ticket</th>
+                  <th style="width:14%">ช่าง</th>
+                  <th style="width:9%">Phase</th>
+                  <th style="width:24%">อะไหล่</th>
+                  <th style="width:11%">วันที่สร้าง</th>
+                  <th style="width:12%">สถานะ</th>
+                  <th style="width:12%">รายละเอียด</th>
                 </tr>
               </thead>
               <tbody id="historyTableBody">
-                <tr><td colspan="8" class="empty-state"><span data-i18n="connecting">Connecting to server…</span></td></tr>
+                <tr><td colspan="7" class="empty-state">กำลังเชื่อมต่อเซิร์ฟเวอร์…</td></tr>
               </tbody>
             </table>
           </div>
@@ -159,39 +142,36 @@
   </div>
 </div>
 
-<script src="shared/translations.js?v=3"></script>
-<script src="shared/toast.js"></script>
-<script src="shared/api.js"></script>
-<script src="shared/layout.js"></script>
+<script src="shared/translations.js?v=29"></script>
+<script src="shared/toast.js?v=29"></script>
+<script src="shared/api.js?v=29"></script>
+<script src="shared/layout.js?v=29"></script>
 <script>
-  let allTickets = [], allParts = [];
+  const CONDITION_LABEL = { Good: 'ของดี', Bad: 'ของเสีย', Lost: 'สูญหาย' };
+  let allTickets = [];
 
-  window.addEventListener('DOMContentLoaded', () => {
-    initLayout();
-    fetchPartsForDropdown();
-    fetchHistory();
-  });
-
-  async function fetchPartsForDropdown() {
-    try {
-      allParts = await api.parts.getAll({ isActive: true });
-      const sel = document.getElementById('partFilter');
-      allParts.forEach(p => {
-        sel.innerHTML += `<option value="${p.partNo}">${p.partName}</option>`;
-      });
-    } catch (e) { console.error(e); }
-  }
+  initLayout();
+  window.addEventListener('DOMContentLoaded', fetchHistory);
 
   async function fetchHistory() {
     try {
-      const tickets = await api.tickets.getAll();
-      allTickets = tickets.filter(tk => tk.status !== 'Pending');
+      allTickets = (await api.tickets.getAll()).filter(tk => tk.status !== null);
       renderTable(allTickets);
     } catch {
       document.getElementById('historyTableBody').innerHTML =
-        `<tr><td colspan="8" class="empty-state" style="color:var(--red)">${t('error.connect')}</td></tr>`;
+        `<tr><td colspan="7" class="empty-state" style="color:var(--red)">⚠ ไม่สามารถเชื่อมต่อเซิร์ฟเวอร์ได้</td></tr>`;
     }
   }
+
+  const STATUS_BADGE = {
+    "รอ":        { cls: "badge-pending"  },
+    "อนุมัติคืน": { cls: "badge-approved" },
+    "เดินทาง":   { cls: "badge-approved" },
+    "เบิก":      { cls: "badge-teal"     },
+    "คืน":       { cls: "badge-success"  },
+    "Reject":    { cls: "badge-danger"   },
+    "Cancel":    { cls: "badge-muted"    },
+  };
 
   function renderTable(data) {
     const tbody = document.getElementById('historyTableBody');
@@ -199,53 +179,39 @@
     tbody.innerHTML = '';
 
     if (!data.length) {
-      tbody.innerHTML = `<tr><td colspan="8" class="empty-state"><div style="font-size:28px;margin-bottom:8px">🗂</div>${t('hist.noresults')}</td></tr>`;
+      tbody.innerHTML = `<tr><td colspan="7" class="empty-state">🗂 ไม่พบข้อมูล</td></tr>`;
       return;
     }
 
-    const now    = new Date();
-    const locale = getLang() === 'th' ? 'th-TH' : 'en-GB';
-
-    data.forEach(tk => {
-      const isOverdue = tk.status === 'Received' && tk.dueDate && now > new Date(tk.dueDate);
-      const reqDate   = tk.createdAt  ? new Date(tk.createdAt).toLocaleDateString(locale)  : '—';
-      const recDate   = tk.receivedAt ? new Date(tk.receivedAt).toLocaleDateString(locale)  : null;
-      const partText  = tk.approvedPartNav?.partName || tk.approvedPartNo
-                      || tk.requestedPartNav?.partName || tk.requestedPartNo || '—';
-      const phone     = tk.techPhone || '—';
-
-      let statusCell = '';
-      if (tk.status === 'Approved') {
-        statusCell = `<span class="badge badge-approved"><span class="badge-dot"></span>${t('hist.awaiting')}</span>`;
-      } else if (tk.status === 'Rejected') {
-        statusCell = `<span class="badge badge-danger"><span class="badge-dot"></span>${t('hist.rejected')}</span>`;
-      } else if (tk.status === 'Received') {
-        statusCell = isOverdue
-          ? `<span class="badge badge-danger"><span class="badge-dot"></span>${t('status.overdue')}</span>`
-          : `<span class="badge badge-success"><span class="badge-dot"></span>${t('status.received')}</span>`;
-        if (recDate) statusCell += `<span class="sub-text">${t('hist.on')} ${recDate}</span>`;
-      }
-
-      let dueCell = `<span style="color:var(--text-muted)">—</span>`;
-      if (tk.dueDate) {
-        const fmt = new Date(tk.dueDate).toLocaleDateString(locale);
-        dueCell = isOverdue
-          ? `<span class="due-chip overdue">⚠ ${fmt}</span>`
-          : `<span class="due-chip">${fmt}</span>`;
-      }
+    const locale = 'th-TH';
+    data.slice().sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt)).forEach(tk => {
+      const reqDate = tk.createdAt ? new Date(tk.createdAt).toLocaleDateString(locale) : '—';
+      const b = STATUS_BADGE[tk.status] || STATUS_BADGE["รอ"];
+      const badge = `<span class="badge ${b.cls}"><span class="badge-dot"></span>${tk.status}</span>`;
+      const phaseLabel = tk.phase === 'withdraw' ? 'ขาเบิก' : 'ขาคืน';
+      const partsSummary = tk.lines.length
+        ? tk.lines.map(l => `<div style="font-size:12px;">${l.partName} <span class="sub-text" style="display:inline">×${l.quantity}</span> <span style="font-size:10px;color:var(--text-muted)">(${l.lineType === 'Withdraw' ? 'เบิก' : 'คืน'}${l.condition ? ' — ' + CONDITION_LABEL[l.condition] : ''})</span></div>`).join('')
+        : `<span class="sub-text">—</span>`;
 
       tbody.innerHTML += `
-        <tr class="${isOverdue ? 'row-overdue' : ''}">
-          <td><span class="id-chip">${isOverdue ? '⚠ ' : ''}TK-${tk.ticketId.toString().padStart(4,'0')}</span></td>
-          <td><span class="fw-600">${tk.techName}</span><span class="sub-text">📞 ${phone}</span></td>
-          <td style="color:var(--text-secondary);font-size:13px">${tk.techDept || '—'}</td>
-          <td class="fw-600">${partText}</td>
+        <tr>
+          <td><span class="id-chip">${tk.externalTicketNo}</span></td>
+          <td><span class="fw-600">${tk.techName || '—'}</span><span class="sub-text">${tk.techDept || ''}</span></td>
+          <td style="font-size:12px;color:var(--text-secondary);">${phaseLabel}</td>
+          <td>${partsSummary}</td>
           <td><span class="date-chip">${reqDate}</span></td>
-          <td>${statusCell}</td>
-          <td>${dueCell}</td>
-          <td><button class="btn-detail" onclick="showDetail(${tk.ticketId})">🔍 ${t('detail.btn')}</button></td>
+          <td>${badge}</td>
+          <td><button class="btn-detail" onclick="showDetail(${tk.ticketId})">🔍 ดูรายละเอียด</button></td>
         </tr>`;
     });
+  }
+
+  function attachmentGalleryHtml(list) {
+    if (!list || !list.length) return `<span class="detail-empty">—</span>`;
+    return `<div style="display:flex;flex-wrap:wrap;gap:8px;">${list.map(a => `
+        <img src="${IMG_BASE}${a.filePath}" alt="${a.fileName}"
+             style="width:72px;height:72px;object-fit:cover;border-radius:8px;border:1px solid var(--border);cursor:pointer;"
+             onclick="window.open('${IMG_BASE}${a.filePath}','_blank')">`).join('')}</div>`;
   }
 
   /* ── Detail Modal ── */
@@ -253,68 +219,86 @@
     const tk = allTickets.find(t => t.ticketId === id);
     if (!tk) return;
 
-    const locale = getLang() === 'th' ? 'th-TH' : 'en-GB';
-    const fmt    = d => d ? new Date(d).toLocaleString(locale) : '—';
-    const naHtml = `<div class="detail-value-box" style="color:var(--text-muted);font-style:italic;">${t('detail.not.specified')}</div>`;
+    const none = `<span class="detail-empty">ไม่ระบุ</span>`;
+    const fmt  = d => d ? new Date(d).toLocaleString('th-TH') : '—';
 
-    const reqName      = tk.requestedPartNav?.partName || tk.requestedPartNo || '—';
-    const approvedName = tk.approvedPartNav?.partName  || tk.approvedPartNo  || '—';
-    const imgHtml = tk.attachmentPath
-      ? `<img src="${IMG_BASE}${tk.attachmentPath}" class="detail-img" alt="Attachment"
-              onclick="window.open('${IMG_BASE}${tk.attachmentPath}','_blank')">`
-      : `<div style="padding:20px;text-align:center;background:var(--bg-subtle);border-radius:8px;color:var(--text-muted);font-size:13px;">${t('detail.no.image')}</div>`;
+    const withdrawLines = tk.lines.filter(l => l.lineType === 'Withdraw');
+    const returnLines   = tk.lines.filter(l => l.lineType === 'Return');
+    const lineListHtml = list => list.length
+      ? list.map(l => `<div style="display:flex;justify-content:space-between;padding:4px 0;border-bottom:1px solid var(--border);"><span>${l.partName}${l.condition ? ` <span style="color:var(--text-muted);font-size:11px;">(${CONDITION_LABEL[l.condition]})</span>` : ''}</span><span class="fw-600">×${l.quantity}</span></div>`).join('')
+      : `<span class="detail-empty">—</span>`;
 
-    const isOverdue = tk.status === 'Received' && tk.dueDate && new Date() > new Date(tk.dueDate);
-    const statusBadge = isOverdue
-      ? `<span class="badge badge-danger"><span class="badge-dot"></span>${t('status.overdue')}</span>`
-      : tk.status === 'Received' ? `<span class="badge badge-success"><span class="badge-dot"></span>${t('status.received')}</span>`
-      : tk.status === 'Approved' ? `<span class="badge badge-approved"><span class="badge-dot"></span>${t('status.awaiting')}</span>`
-      : tk.status === 'Rejected' ? `<span class="badge badge-danger"><span class="badge-dot"></span>${t('status.rejected')}</span>`
-      : `<span>${tk.status}</span>`;
-
-    document.getElementById('detailTitle').textContent =
-      `TK-${id.toString().padStart(4,'0')} — ${tk.techName}`;
+    document.getElementById('detailTitle').textContent = `${tk.externalTicketNo} — ${tk.techName}`;
 
     document.getElementById('detailBody').innerHTML = `
       <div class="detail-section">
-        <div class="detail-section-title">${t('detail.tech')}</div>
+        <div class="detail-section-title">👤 ข้อมูลช่างเทคนิค</div>
         <div class="detail-grid">
-          <div class="detail-field"><label>${t('detail.name')}</label><div class="detail-value-box">${tk.techName || '—'}</div></div>
-          <div class="detail-field"><label>${t('detail.dept')}</label><div class="detail-value-box">${tk.techDept || '—'}</div></div>
-          <div class="detail-field"><label>${t('detail.phone')}</label><div class="detail-value-box">${tk.techPhone || '—'}</div></div>
-          <div class="detail-field"><label>${t('detail.date')}</label><div class="detail-value-box">${fmt(tk.createdAt)}</div></div>
+          <div class="detail-field"><label>ชื่อ</label><span>${tk.techName || none}</span></div>
+          <div class="detail-field"><label>แผนก / โซน</label><span>${tk.techDept || none}</span></div>
+          <div class="detail-field"><label>สถานะ</label><span>${tk.status} (${tk.phase === 'withdraw' ? 'ขาเบิก' : 'ขาคืน'})</span></div>
+          <div class="detail-field"><label>ผู้อนุมัติ</label><span>${tk.approverName || none}</span></div>
         </div>
       </div>
+
       <hr class="detail-divider">
+
       <div class="detail-section">
-        <div class="detail-section-title">${t('detail.parts')}</div>
+        <div class="detail-section-title">⏱ เวลา</div>
         <div class="detail-grid">
-          <div class="detail-field"><label>${t('detail.requested')}</label><div class="detail-value-box">${reqName}</div></div>
-          <div class="detail-field"><label>${t('detail.approved')}</label><div class="detail-value-box">${approvedName}</div></div>
-          <div class="detail-field"><label>${t('detail.status')}</label><div style="margin-top:2px">${statusBadge}</div></div>
-          <div class="detail-field"><label>${t('detail.received.date')}</label><div class="detail-value-box">${fmt(tk.receivedAt)}</div></div>
-          <div class="detail-field full"><label>${t('detail.due')}</label>
-            <div class="detail-value-box" style="${isOverdue ? 'color:var(--red);border-color:var(--red);background:var(--red-bg);' : ''}">
-              ${tk.dueDate ? `${fmt(tk.dueDate)} ${isOverdue ? t('detail.overdue') : ''}` : '—'}
-            </div>
-          </div>
+          <div class="detail-field"><label>วันที่สร้าง Ticket</label><span>${fmt(tk.createdAt)}</span></div>
+          <div class="detail-field"><label>อนุมัติเมื่อ</label><span>${fmt(tk.approvedAt)}</span></div>
+          <div class="detail-field full" style="grid-column:1/-1;"><label>อัปเดตล่าสุด</label><span>${fmt(tk.updatedAt)}</span></div>
         </div>
       </div>
+
+      <hr class="detail-divider">
+
+      <div class="detail-section">
+        <div class="detail-section-title">รายการอะไหล่ — เบิก</div>
+        ${lineListHtml(withdrawLines)}
+      </div>
+
+      <div class="detail-section">
+        <div class="detail-section-title">รายการอะไหล่ — คืน</div>
+        ${lineListHtml(returnLines)}
+      </div>
+
+      <hr class="detail-divider">
+
+      <div class="detail-section">
+        <div class="detail-section-title">รูปภาพแนบ — เบิก</div>
+        ${attachmentGalleryHtml((tk.attachments || []).filter(a => a.phase === 'Withdraw'))}
+      </div>
+      <div class="detail-section">
+        <div class="detail-section-title">รูปภาพแนบ — คืน</div>
+        ${attachmentGalleryHtml((tk.attachments || []).filter(a => a.phase === 'Return'))}
+      </div>
+
+      ${tk.withdrawDescription ? `
       <hr class="detail-divider">
       <div class="detail-section">
-        <div class="detail-section-title">${t('detail.faulty')}</div>
+        <div class="detail-section-title">หมายเหตุ / อาการเสีย</div>
+        <div style="font-size:13px;color:var(--text-primary);background:var(--bg-subtle);border:1px solid var(--border);border-radius:8px;padding:10px 12px;white-space:pre-wrap;">${tk.withdrawDescription}</div>
+      </div>` : ''}
+
+      <hr class="detail-divider">
+
+      <div class="detail-section">
+        <div class="detail-section-title">ที่อยู่จัดส่ง</div>
         <div class="detail-grid">
-          <div class="detail-field"><label>${t('detail.sn')}</label>${tk.faultySerialNo ? `<div class="detail-value-box">${tk.faultySerialNo}</div>` : naHtml}</div>
-          <div class="detail-field"><label>${t('detail.partno')}</label>${tk.faultyPartNo ? `<div class="detail-value-box">${tk.faultyPartNo}</div>` : naHtml}</div>
-          <div class="detail-field full"><label>${t('detail.model')}</label>${tk.machineModel ? `<div class="detail-value-box">${tk.machineModel}</div>` : naHtml}</div>
-          <div class="detail-field full"><label>${t('detail.desc')}</label>${tk.description ? `<div class="detail-desc">${tk.description}</div>` : naHtml}</div>
+          <div class="detail-field"><label>ที่อยู่จัดส่งเบิก</label><span>${tk.withdrawAddress || none}</span></div>
+          <div class="detail-field"><label>ที่อยู่จัดส่งคืน</label><span>${tk.returnAddress || none}</span></div>
         </div>
       </div>
+
+      ${tk.rejectReason ? `
       <hr class="detail-divider">
       <div class="detail-section">
-        <div class="detail-section-title">${t('detail.attachment')}</div>
-        ${imgHtml}
-      </div>`;
+        <div class="detail-section-title">เหตุผลที่ Reject</div>
+        <div class="detail-empty" style="font-style:normal;color:var(--text-primary);">${tk.rejectReason}</div>
+      </div>` : ''}
+    `;
 
     document.getElementById('detailOverlay').classList.add('open');
   }
@@ -324,23 +308,14 @@
   document.addEventListener('keydown', e => { if (e.key === 'Escape') closeDetailModal(); });
 
   function applyFilters() {
-    const search  = document.getElementById('searchInput').value.toLowerCase();
-    const partNo  = document.getElementById('partFilter').value;
-    const overdue = document.getElementById('overdueFilter').checked;
-    const now     = new Date();
+    const search = document.getElementById('searchInput').value.toLowerCase();
+    const status = document.getElementById('statusFilter').value;
 
     const filtered = allTickets.filter(tk => {
-      const name  = (tk.techName  || '').toLowerCase();
-      const phone = (tk.techPhone || '').toLowerCase();
-      const dept  = (tk.techDept  || '').toLowerCase();
-      const tkId  = 'tk-' + tk.ticketId.toString().padStart(4,'0');
-
-      const matchSearch  = !search || name.includes(search) || phone.includes(search) || dept.includes(search) || tkId.includes(search);
-      const tkPartNo     = tk.approvedPartNo || tk.requestedPartNo;
-      const matchPart    = partNo === 'all' || tkPartNo === partNo;
-      const matchOverdue = !overdue || (tk.status === 'Received' && tk.dueDate && now > new Date(tk.dueDate));
-
-      return matchSearch && matchPart && matchOverdue;
+      const hay = `${tk.externalTicketNo} ${tk.techName} ${tk.techDept}`.toLowerCase();
+      const matchSearch = !search || hay.includes(search);
+      const matchStatus = !status || tk.status === status;
+      return matchSearch && matchStatus;
     });
 
     renderTable(filtered);

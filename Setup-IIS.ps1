@@ -9,8 +9,8 @@
 #     (survive re-copying `publish` on future deploys, since they live in IIS config, not in the files)
 #
 # Prereqs on this server:
-#   - IIS with ASP.NET Core Module v2 installed (comes with the ASP.NET Core 9 Hosting Bundle,
-#     https://dotnet.microsoft.com/download/dotnet/9.0 -> "Hosting Bundle")
+#   - IIS with ASP.NET Core Module v2 installed (comes with the ASP.NET Core 8 Hosting Bundle,
+#     https://dotnet.microsoft.com/download/dotnet/8.0 -> "Hosting Bundle")
 #   - Windows Server 2019+ (for AppPool-level EnvironmentVariables support)
 #
 # Usage:
@@ -83,5 +83,5 @@ Write-Host "==> Done."
 Write-Host "    Site : http://<server>:$Port/"
 Write-Host "    API  : http://<server>:$Port/api/swagger"
 Write-Host ""
-Write-Host "    Reminder: make sure the ASP.NET Core 9 Hosting Bundle is installed, then"
+Write-Host "    Reminder: make sure the ASP.NET Core 8 Hosting Bundle is installed, then"
 Write-Host "    'iisreset' once so ANCM picks up the new app pool."

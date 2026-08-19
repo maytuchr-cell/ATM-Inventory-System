@@ -1,12 +1,17 @@
-/* ── Centralized API client ── */
-// Dev: frontend (port 3000) and backend (port 5128) run separately — Kestrel has no PathBase,
-//   so controllers (routed as "[controller]", no "api/" prefix) sit at the backend's own root.
-// Prod (IIS): the API is an IIS Application mounted at "/api". IIS/ANCM sets the app's PathBase
-//   to "/api" and strips it before routing reaches the controllers — so the URL a browser calls
-//   MUST still start with "/api" (that's what tells IIS which app to dispatch to), even though
-//   the controllers themselves don't see that segment anymore.
-const API_BASE = (location.port === '3000') ? 'http://localhost:5128' : location.origin + '/api';
-// Uploaded files (wwwroot/uploads) are served by the same app at the same PathBase as the API.
+/* ── Centralized API client ──
+   Dev (frontend served on port 3000, PC or phone on the same LAN): frontend and backend run as
+     two separate processes, so hit the backend directly on port 5128 of whatever hostname the
+     page itself was loaded from (localhost from the PC, or the PC's LAN IP from a phone) — no
+     PathBase involved, so controllers (routed as "[controller]", no "api/" prefix) sit at the
+     backend's own root.
+   Prod (IIS): the API is an IIS Application mounted at "/api". IIS/ANCM sets the app's PathBase
+     to "/api" and strips it before routing reaches the controllers — so the URL a browser calls
+     MUST still start with "/api" (that's what tells IIS which app to dispatch to), even though
+     the controllers themselves don't see that segment anymore. */
+const API_BASE = (location.port === '3000')
+  ? `http://${location.hostname || 'localhost'}:5128`
+  : location.origin + '/api';
+// Uploaded files are served by the same app at the same PathBase as the API.
 const IMG_BASE = API_BASE;
 
 async function apiFetch(path, options = {}) {
@@ -38,6 +43,33 @@ async function apiFetch(path, options = {}) {
   return res.json();
 }
 
+// Same auth/error handling as apiFetch, but for multipart/form-data uploads — must NOT set
+// Content-Type manually, or the browser can't attach its own multipart boundary.
+async function apiUpload(path, formData) {
+  const url = API_BASE + path;
+  const token = localStorage.getItem('authToken');
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: { ...(token ? { 'Authorization': 'Bearer ' + token } : {}) },
+    body: formData
+  });
+  if (res.status === 401) {
+    localStorage.removeItem('authToken');
+    if (!location.pathname.endsWith('login.html')) location.href = 'login.html';
+    const err = new Error('Session expired. Please sign in again.');
+    err.status = 401;
+    throw err;
+  }
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    const err = new Error(body.message || `HTTP ${res.status}`);
+    err.status = res.status;
+    throw err;
+  }
+  if (res.status === 204) return null;
+  return res.json();
+}
+
 const api = {
   parts: {
     getAll:  (params = {}) => apiFetch('/Parts?' + new URLSearchParams(params)),
@@ -46,6 +78,9 @@ const api = {
     update:  (id, data)    => apiFetch(`/Parts/${id}`, { method: 'PUT',    body: JSON.stringify(data) }),
     remove:  (id)          => apiFetch(`/Parts/${id}`, { method: 'DELETE' }),
     restore: (id)          => apiFetch(`/Parts/${id}/restore`, { method: 'PATCH' }),
+    holders: (id)          => apiFetch(`/Parts/${id}/holders`),
+    uploadImage: (id, file) => { const fd = new FormData(); fd.append('file', file); return apiUpload(`/Parts/${id}/images`, fd); },
+    deleteImage: (id, imageId) => apiFetch(`/Parts/${id}/images/${imageId}`, { method: 'DELETE' }),
   },
   categories: {
     getAll:  (params = {}) => apiFetch('/Categories?' + new URLSearchParams(params)),
@@ -69,12 +104,21 @@ const api = {
     remove:  (id)          => apiFetch(`/Vendors/${id}`, { method: 'DELETE' }),
   },
   tickets: {
-    getAll:   ()        => apiFetch('/Ticket'),
-    create:   (data)    => apiFetch('/Ticket',              { method: 'POST',  body: JSON.stringify(data) }),
-    approve:  (id, dto) => apiFetch(`/Ticket/${id}/approve`, { method: 'PUT',   body: JSON.stringify(dto) }),
-    reject:   (id)      => apiFetch(`/Ticket/${id}/reject`,  { method: 'PUT' }),
-    receive:  (id)      => apiFetch(`/Ticket/${id}/receive`, { method: 'PUT' }),
-    doa:      (id)      => apiFetch(`/Ticket/${id}/doa`,     { method: 'PUT' }),
+    getAll:       ()             => apiFetch('/Ticket'),
+    sync:         (data)         => apiFetch('/Ticket/sync',            { method: 'POST', body: JSON.stringify(data) }),
+    createAdditionalWithdraw: (data) => apiFetch('/Ticket/additional-withdraw', { method: 'POST', body: JSON.stringify(data) }),
+    submitWithdraw: (id, dto)    => apiFetch(`/Ticket/${id}/withdraw`,   { method: 'PUT',  body: JSON.stringify(dto) }),
+    approve:      (id)           => apiFetch(`/Ticket/${id}/approve`,   { method: 'PUT' }),
+    reject:       (id, reason)   => apiFetch(`/Ticket/${id}/reject`,    { method: 'PUT',  body: JSON.stringify({ reason }) }),
+    cancel:       (id)           => apiFetch(`/Ticket/${id}/cancel`,    { method: 'PUT' }),
+    receive:      (id)           => apiFetch(`/Ticket/${id}/receive`,   { method: 'PUT' }),
+    submitReturn: (id, dto)      => apiFetch(`/Ticket/${id}/return`,    { method: 'PUT',  body: JSON.stringify(dto) }),
+    approveReturn:(id)           => apiFetch(`/Ticket/${id}/approve-return`, { method: 'PUT' }),
+    ship:         (id)           => apiFetch(`/Ticket/${id}/ship`,      { method: 'PUT' }),
+    confirmReturn:(id)           => apiFetch(`/Ticket/${id}/confirm-return`, { method: 'PUT' }),
+    substitutePart:(id, lineId, partNo) => apiFetch(`/Ticket/${id}/lines/${lineId}/substitute`, { method: 'PUT', body: JSON.stringify({ partNo }) }),
+    uploadAttachment: (file) => { const fd = new FormData(); fd.append('file', file); return apiUpload('/Ticket/upload', fd); },
+    remove: (id) => apiFetch(`/Ticket/${id}`, { method: 'DELETE' }),
   },
   goodsReceipt: {
     getAll:  (params = {}) => apiFetch('/GoodsReceipt?' + new URLSearchParams(params)),
@@ -126,9 +170,18 @@ const api = {
     remove:       (id)         => apiFetch(`/EquivalentGroup/${id}`, { method: 'DELETE' }),
     addMember:    (id, partNo) => apiFetch(`/EquivalentGroup/${id}/members`, { method: 'POST', body: JSON.stringify({ partNo }) }),
     removeMember: (id, memberId) => apiFetch(`/EquivalentGroup/${id}/members/${memberId}`, { method: 'DELETE' }),
+    forPart:      (partNo)     => apiFetch(`/EquivalentGroup/for-part/${encodeURIComponent(partNo)}`),
+    importExcel:  (file)       => { const fd = new FormData(); fd.append('file', file); return apiUpload('/EquivalentGroup/import', fd); },
   },
   tracking: {
     bySerial: (sn) => apiFetch(`/Tracking/serial/${encodeURIComponent(sn)}`),
+  },
+  users: {
+    getAll:        ()           => apiFetch('/Users'),
+    roles:         ()           => apiFetch('/Users/roles'),
+    create:        (data)       => apiFetch('/Users', { method: 'POST', body: JSON.stringify(data) }),
+    update:        (id, data)   => apiFetch(`/Users/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
+    resetPassword: (id, password) => apiFetch(`/Users/${id}/password`, { method: 'PUT', body: JSON.stringify({ password }) }),
   },
   atmModels: {
     getAll:        (params = {}) => apiFetch('/AtmModel?' + new URLSearchParams(params)),

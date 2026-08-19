@@ -14,7 +14,9 @@ public class EquivalentGroupMember
 {
     public int Id { get; set; }
     public int GroupId { get; set; }
-    public string PartNo { get; set; } = string.Empty;
+    public int PartId { get; set; }              // FK to Part
+    public string PartNo { get; set; } = string.Empty; // snapshot
+    public Part? Part { get; set; }
 
     public EquivalentGroup? Group { get; set; }
 }

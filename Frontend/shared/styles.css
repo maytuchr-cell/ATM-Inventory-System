@@ -452,8 +452,31 @@ tbody tr:last-child td { border-bottom: none; }
 
 /* ── Responsive ── */
 @media (max-width: 768px) {
-  .sidebar { transform: translateX(-100%); }
+  .sidebar { width: var(--sidebar-w); transform: translateX(-100%); transition: transform var(--sidebar-transition); }
+  .sidebar.mobile-open { transform: translateX(0); box-shadow: 0 0 0 2000px rgba(0,0,0,.35); }
   .main-content { margin-left: 0; }
   .form-grid-2, .form-grid-3 { grid-template-columns: 1fr; }
   .page-body { padding: 16px; }
 }
+
+/* Read-only mode (Auditor): hide write controls. Backend also enforces this (403). */
+/* [data-write] is added at runtime to write-action .btn-primary buttons (see layout.js).
+   The button classes below are always write/destructive actions, so hide them outright. */
+.readonly-mode [data-write],
+.readonly-mode .write-action,
+.readonly-mode .btn-danger,
+.readonly-mode .btn-approve,
+.readonly-mode .btn-reject,
+.readonly-mode .btn-receive,
+.readonly-mode .btn-return,
+.readonly-mode .btn-remove,
+.readonly-mode .btn-import { display: none !important; }
+/* Control buttons (logout / theme / language) are UI controls, not data writes — keep them
+   even though logout is styled with .btn-danger. */
+.readonly-mode .ctrl-btn { display: flex !important; }
+.readonly-banner {
+  display: none;
+  background: #fff7ed; color: #b45309; border: 1px solid #fed7aa;
+  border-radius: 8px; padding: 8px 14px; margin-bottom: 14px; font-size: 13px;
+}
+.readonly-mode .readonly-banner { display: block; }

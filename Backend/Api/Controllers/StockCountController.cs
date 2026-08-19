@@ -71,6 +71,7 @@ public class StockCountController : ControllerBase
         {
             count.Lines.Add(new StockCountLine
             {
+                PartId     = s.PartId,
                 PartNo     = partMap.GetValueOrDefault(s.PartId, ""),
                 LocationId = s.LocationId,
                 SystemQty  = s.GoodQty
