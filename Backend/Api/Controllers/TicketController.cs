@@ -247,22 +247,27 @@ public class TicketController : ControllerBase
         if (ticket == null) return NotFound(new { message = "Ticket not found." });
         if (ticket.Status != "รอ") return BadRequest(new { message = "Only a waiting ticket can be approved." });
 
-        // Guard against approving a request the central warehouse can't actually fulfill — stock
-        // is only checked here (a live snapshot), not reserved; the real deduction happens at
-        // ReceiveTicket, which re-validates and will fail the same way if stock moved in between.
+        // Stock is deducted from the central warehouse right here, not at ReceiveTicket — once
+        // Admin approves, that quantity is committed to this ticket and can't be double-approved
+        // into another request. It does NOT land in OL-TECH yet (the part is still in transit);
+        // ReceiveTicket only adds it there once the tech actually has it in hand. If the ticket is
+        // Cancelled while เดินทาง (approved but not yet received), CancelTicket puts it back.
         var mainWh = _context.Locations.FirstOrDefault(l => l.Code == "WH-RAT");
         var withdrawLines = _context.TicketPartLines.Where(l => l.TicketId == id && l.LineType == "Withdraw").ToList();
-        var shortages = new List<string>();
         foreach (var line in withdrawLines)
         {
-            var part = _context.Parts.FirstOrDefault(p => p.PartNo == line.PartNo);
-            var available = part == null || mainWh == null ? 0
-                : _context.PartStocks.FirstOrDefault(s => s.PartId == part.Id && s.LocationId == mainWh.Id)?.GoodQty ?? 0;
-            if (available < line.Quantity)
-                shortages.Add($"{line.PartNo} (ต้องการ {line.Quantity}, คงเหลือ {available})");
+            try
+            {
+                _stock.AdjustStock(
+                    partNo: line.PartNo, locationId: mainWh?.Id ?? 0, qtyDelta: -line.Quantity, condition: "Good",
+                    movementType: "Approve", refType: "Ticket", refId: id.ToString(),
+                    userName: User?.Identity?.Name ?? "admin", remarks: $"Approved for ticket {ticket.ExternalTicketNo}");
+            }
+            catch (InvalidOperationException ex)
+            {
+                return BadRequest(new { message = ex.Message });
+            }
         }
-        if (shortages.Count > 0)
-            return BadRequest(new { message = $"สต็อกไม่พอสำหรับ: {string.Join(", ", shortages)}" });
 
         ticket.Status = "เดินทาง";
         ticket.ApproverName = User?.Identity?.Name ?? "admin";
@@ -301,6 +306,22 @@ public class TicketController : ControllerBase
         if (ticket.Status is "Reject" or "Cancel" or "คืน")
             return BadRequest(new { message = "Ticket is already closed." });
 
+        // ApproveTicket deducts from WH-RAT the moment it approves (see there), so a ticket
+        // cancelled while เดินทาง (approved but not yet physically received) has stock sitting
+        // in limbo — put it back. Tickets cancelled at รอ never had stock touched, nothing to undo.
+        if (ticket.Status == "เดินทาง")
+        {
+            var mainWh = _context.Locations.FirstOrDefault(l => l.Code == "WH-RAT");
+            var withdrawLines = _context.TicketPartLines.Where(l => l.TicketId == id && l.LineType == "Withdraw").ToList();
+            foreach (var line in withdrawLines)
+            {
+                _stock.AdjustStock(
+                    partNo: line.PartNo, locationId: mainWh?.Id ?? 0, qtyDelta: line.Quantity, condition: "Good",
+                    movementType: "Cancel", refType: "Ticket", refId: id.ToString(),
+                    userName: User?.Identity?.Name ?? "admin", remarks: $"Cancelled ticket {ticket.ExternalTicketNo} — returned to warehouse");
+            }
+        }
+
         ticket.Status = "Cancel";
         ticket.UpdatedAt = DateTime.Now;
         _context.SaveChanges();
@@ -318,28 +339,16 @@ public class TicketController : ControllerBase
 
         var withdrawLines = _context.TicketPartLines.Where(l => l.TicketId == id && l.LineType == "Withdraw").ToList();
         var techLoc = _context.Locations.FirstOrDefault(l => l.LocationType == "OL_TECHNICIAN");
-        var mainWh = _context.Locations.FirstOrDefault(l => l.Code == "WH-RAT");
 
+        // The WH-RAT side already left the books at ApproveTicket — this only lands the part in
+        // the tech's on-hand bucket now that they actually have it in hand. Pure addition, so
+        // there's no negative-stock case to guard against here.
         foreach (var line in withdrawLines)
         {
-            try
-            {
-                // Real transfer out of the central warehouse into the tech's on-hand bucket —
-                // previously this only added stock at the tech location and never actually
-                // deducted from the warehouse, so a part could be "withdrawn" indefinitely.
-                _stock.AdjustStock(
-                    partNo: line.PartNo, locationId: mainWh?.Id ?? 0, qtyDelta: -line.Quantity, condition: "Good",
-                    movementType: "Issue", refType: "Ticket", refId: id.ToString(),
-                    userName: ticket.TechName, remarks: $"Issued for ticket {ticket.ExternalTicketNo}");
-                _stock.AdjustStock(
-                    partNo: line.PartNo, locationId: techLoc?.Id ?? 0, qtyDelta: line.Quantity, condition: "Good",
-                    movementType: "Issue", refType: "Ticket", refId: id.ToString(),
-                    userName: ticket.TechName, remarks: $"Issued for ticket {ticket.ExternalTicketNo}");
-            }
-            catch (InvalidOperationException ex)
-            {
-                return BadRequest(new { message = ex.Message });
-            }
+            _stock.AdjustStock(
+                partNo: line.PartNo, locationId: techLoc?.Id ?? 0, qtyDelta: line.Quantity, condition: "Good",
+                movementType: "Issue", refType: "Ticket", refId: id.ToString(),
+                userName: ticket.TechName, remarks: $"Issued for ticket {ticket.ExternalTicketNo}");
         }
 
         ticket.Status = "เบิก";
