@@ -172,7 +172,7 @@ public class TicketWorkflowTests
     }
 
     [Fact]
-    public void ApproveTicket_WithInsufficientWarehouseStock_ReturnsBadRequest_AndReceiveActuallyMovesStock()
+    public void ApproveTicket_WithInsufficientWarehouseStock_ReturnsBadRequest_AndLeavesStockUntouched()
     {
         var (controller, context) = TicketControllerFixture.Create();
         // Fixture seeds 100 GoodQty at WH-RAT by default — drop it below what's requested.
@@ -193,14 +193,43 @@ public class TicketWorkflowTests
 
         Assert.IsType<BadRequestObjectResult>(result);
         Assert.Equal("รอ", context.Tickets.First(t => t.TicketId == ticket.TicketId).Status);
+
+        // ApproveTicket never called SaveChanges (it returned before reaching it), so nothing was
+        // actually persisted — only the in-memory change tracker still holds the failed attempt.
+        // A real request gets a fresh DbContext next time, so clear it here to check what the
+        // database would actually show.
+        context.ChangeTracker.Clear();
         Assert.Equal(2, context.PartStocks.First(s => s.LocationId == mainWh.Id).GoodQty); // untouched
     }
 
     [Fact]
-    public void ReceiveTicket_DeductsFromWarehouse_AndAddsToTechLocation()
+    public void ApproveTicket_DeductsFromWarehouseImmediately_BeforeReceive()
+    {
+        // Stock now leaves WH-RAT the moment Admin approves — not at Receive — so a second
+        // ticket can't be approved into stock this one already claimed while still in transit.
+        var (controller, context) = TicketControllerFixture.Create();
+        controller.SyncFromAservice(new SyncTicketDto { ExternalTicketNo = "T14", TechName = "Tech" });
+        var ticket = context.Tickets.First(t => t.ExternalTicketNo == "T14");
+        controller.SubmitWithdraw(ticket.TicketId, new SubmitLinesDto
+        {
+            Lines = new() { new LineDto { PartNo = TicketControllerFixture.PartNo, Quantity = 4 } },
+            Address = "Addr"
+        });
+
+        controller.ApproveTicket(ticket.TicketId);
+
+        var mainWh  = context.Locations.First(l => l.Code == "WH-RAT");
+        var techLoc = context.Locations.First(l => l.LocationType == "OL_TECHNICIAN");
+        Assert.Equal(96, context.PartStocks.First(s => s.LocationId == mainWh.Id).GoodQty); // seeded 100 - 4
+        Assert.Null(context.PartStocks.FirstOrDefault(s => s.LocationId == techLoc.Id)); // not yet at the tech
+        Assert.Equal("เดินทาง", context.Tickets.First(t => t.TicketId == ticket.TicketId).Status);
+    }
+
+    [Fact]
+    public void ReceiveTicket_OnlyAddsToTechLocation_WarehouseAlreadyDeductedAtApprove()
     {
         var (controller, context) = TicketControllerFixture.Create();
-        var ticket = TicketControllerFixture.CreateReceivedTicket(controller, context, "T14", qty: 4);
+        var ticket = TicketControllerFixture.CreateReceivedTicket(controller, context, "T15", qty: 4);
         Assert.Equal("เบิก", ticket.Status);
 
         var mainWh  = context.Locations.First(l => l.Code == "WH-RAT");
@@ -208,8 +237,50 @@ public class TicketWorkflowTests
         var whStock = context.PartStocks.First(s => s.LocationId == mainWh.Id);
         var techStock = context.PartStocks.First(s => s.LocationId == techLoc.Id);
 
-        Assert.Equal(96, whStock.GoodQty); // seeded 100 - 4
+        Assert.Equal(96, whStock.GoodQty); // seeded 100 - 4, unchanged since ApproveTicket
         Assert.Equal(4, techStock.GoodQty);
+    }
+
+    [Fact]
+    public void CancelTicket_WhileInTransit_RestocksWarehouse()
+    {
+        var (controller, context) = TicketControllerFixture.Create();
+        controller.SyncFromAservice(new SyncTicketDto { ExternalTicketNo = "T16", TechName = "Tech" });
+        var ticket = context.Tickets.First(t => t.ExternalTicketNo == "T16");
+        controller.SubmitWithdraw(ticket.TicketId, new SubmitLinesDto
+        {
+            Lines = new() { new LineDto { PartNo = TicketControllerFixture.PartNo, Quantity = 4 } },
+            Address = "Addr"
+        });
+        controller.ApproveTicket(ticket.TicketId);
+        var mainWh = context.Locations.First(l => l.Code == "WH-RAT");
+        Assert.Equal(96, context.PartStocks.First(s => s.LocationId == mainWh.Id).GoodQty);
+
+        var result = controller.CancelTicket(ticket.TicketId);
+
+        Assert.IsType<OkObjectResult>(result);
+        Assert.Equal("Cancel", context.Tickets.First(t => t.TicketId == ticket.TicketId).Status);
+        Assert.Equal(100, context.PartStocks.First(s => s.LocationId == mainWh.Id).GoodQty); // back to seeded 100
+    }
+
+    [Fact]
+    public void CancelTicket_WhileWaiting_DoesNotTouchStock()
+    {
+        // Stock is only ever deducted starting at Approve — cancelling before that (status รอ)
+        // has nothing to undo.
+        var (controller, context) = TicketControllerFixture.Create();
+        controller.SyncFromAservice(new SyncTicketDto { ExternalTicketNo = "T17", TechName = "Tech" });
+        var ticket = context.Tickets.First(t => t.ExternalTicketNo == "T17");
+        controller.SubmitWithdraw(ticket.TicketId, new SubmitLinesDto
+        {
+            Lines = new() { new LineDto { PartNo = TicketControllerFixture.PartNo, Quantity = 4 } },
+            Address = "Addr"
+        });
+
+        controller.CancelTicket(ticket.TicketId);
+
+        var mainWh = context.Locations.First(l => l.Code == "WH-RAT");
+        Assert.Equal(100, context.PartStocks.First(s => s.LocationId == mainWh.Id).GoodQty); // untouched
     }
 
     [Fact]
