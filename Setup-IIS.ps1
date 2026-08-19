@@ -5,7 +5,7 @@
 # Sets up:
 #   - IIS Site "ATM-Inventory" -> C:\playground\ATM-Inventory-System\publish  (Frontend, static)
 #   - IIS Application "/api"   -> ...\publish\api  (Backend API, its own App Pool, No Managed Code)
-#   - MySQL connection string + Database:Provider as durable App Pool environment variables
+#   - MySQL connection string + DatabaseProvider as durable App Pool environment variables
 #     (survive re-copying `publish` on future deploys, since they live in IIS config, not in the files)
 #
 # Prereqs on this server:
@@ -15,6 +15,7 @@
 #
 # Usage:
 #   .\Setup-IIS.ps1 -MySqlConnection "server=172.22.100.22;port=3306;database=Sparepart_DB;user=workbench_user;password=...;connectiontimeout=60;"
+#   .\Setup-IIS.ps1 -AssetPath "D:\ATMAssets" -MySqlConnection "..."   # only if this server has a D: drive and you want part images stored outside the publish folder
 #
 
 param(
@@ -22,6 +23,10 @@ param(
     [string]$PhysicalPath   = "C:\playground\ATM-Inventory-System\publish",
     [string]$Port           = 80,
     [string]$ApiAppPoolName = "ATM-Inventory-API",
+    # Leave blank (default) to let the app store part images/attachments under its own
+    # <api>\wwwroot folder — always exists, no drive-letter assumptions. Only pass -AssetPath
+    # if you specifically want them on external storage (e.g. a dedicated data drive).
+    [string]$AssetPath      = "",
     [Parameter(Mandatory = $true)]
     [string]$MySqlConnection
 )
@@ -50,14 +55,21 @@ if (-not (Test-Path "IIS:\AppPools\$ApiAppPoolName")) {
 Set-ItemProperty "IIS:\AppPools\$ApiAppPoolName" -Name managedRuntimeVersion -Value ""
 
 # ── Durable environment variables on the App Pool (survive future re-deploys of `publish`) ──
-Write-Host "==> Setting App Pool environment variables (Database:Provider, MySQL connection string)"
+# Names match appsettings.json's flat "DatabaseProvider" key and "ConnectionStrings:DefaultConnection"
+# (ASP.NET Core maps env var "__" to config ":" — a flat key has no "__" prefix at all).
+Write-Host "==> Setting App Pool environment variables (DatabaseProvider, MySQL connection string$(if ($AssetPath) { ', AssetPath' }))"
 Clear-ItemProperty "IIS:\AppPools\$ApiAppPoolName" -Name environmentVariables -ErrorAction SilentlyContinue
-Set-WebConfigurationProperty -PSPath "IIS:\" `
+Add-WebConfigurationProperty -PSPath "IIS:\" `
     -Filter "system.applicationHost/applicationPools/add[@name='$ApiAppPoolName']/environmentVariables" `
-    -Name "." -Value @{ name = "Database__Provider"; value = "MySql" }
-Set-WebConfigurationProperty -PSPath "IIS:\" `
+    -Name "." -Value @{ name = "DatabaseProvider"; value = "MySql" }
+Add-WebConfigurationProperty -PSPath "IIS:\" `
     -Filter "system.applicationHost/applicationPools/add[@name='$ApiAppPoolName']/environmentVariables" `
-    -Name "." -Value @{ name = "ConnectionStrings__MySqlConnection"; value = $MySqlConnection }
+    -Name "." -Value @{ name = "ConnectionStrings__DefaultConnection"; value = $MySqlConnection }
+if ($AssetPath) {
+    Add-WebConfigurationProperty -PSPath "IIS:\" `
+        -Filter "system.applicationHost/applicationPools/add[@name='$ApiAppPoolName']/environmentVariables" `
+        -Name "." -Value @{ name = "AssetPath"; value = $AssetPath }
+}
 
 # ── /api Application ──
 if (-not (Get-WebApplication -Site $SiteName -Name "api" -ErrorAction SilentlyContinue)) {
@@ -69,19 +81,25 @@ if (-not (Get-WebApplication -Site $SiteName -Name "api" -ErrorAction SilentlyCo
     Set-ItemProperty "IIS:\Sites\$SiteName\api" -Name applicationPool -Value $ApiAppPoolName
 }
 
-# ── Permissions: app pool identity needs write access for uploads + ANCM stdout logs ──
+# ── Permissions: app pool identity needs write access for uploads/attachments (either the
+#    default <api>\wwwroot, or -AssetPath if given) and ANCM stdout logs ──
 $identity = "IIS AppPool\$ApiAppPoolName"
-foreach ($dir in @("wwwroot\uploads", "logs")) {
+foreach ($dir in @("wwwroot", "wwwroot\uploads", "logs")) {
     $path = Join-Path $apiPhysicalPath $dir
     New-Item -ItemType Directory -Path $path -Force | Out-Null
     Write-Host "==> Granting Modify to '$identity' on $path"
     icacls $path /grant "${identity}:(OI)(CI)M" | Out-Null
 }
+if ($AssetPath) {
+    New-Item -ItemType Directory -Path $AssetPath -Force | Out-Null
+    Write-Host "==> Granting Modify to '$identity' on $AssetPath"
+    icacls $AssetPath /grant "${identity}:(OI)(CI)M" | Out-Null
+}
 
 Write-Host ""
 Write-Host "==> Done."
 Write-Host "    Site : http://<server>:$Port/"
-Write-Host "    API  : http://<server>:$Port/api/swagger"
+Write-Host "    API  : http://<server>:$Port/api/Auth/login  (no Swagger UI is registered in Program.cs)"
 Write-Host ""
 Write-Host "    Reminder: make sure the ASP.NET Core 8 Hosting Bundle is installed, then"
 Write-Host "    'iisreset' once so ANCM picks up the new app pool."

@@ -12,8 +12,8 @@
 #
 # Then on the IIS server: copy the whole `publish` folder to the site's physical path, and in
 # IIS Manager convert the `api` subfolder into an Application (right-click -> Convert to Application)
-# so it gets its own app pool. See Backend/Api/Migrations/MySql/README.md for the MySQL connection
-# string setup (Database:Provider / ConnectionStrings:MySqlConnection via environment variables on
+# so it gets its own app pool. See Setup-IIS.ps1 for the MySQL connection string setup
+# (DatabaseProvider / ConnectionStrings:DefaultConnection via environment variables on
 # the App Pool — don't commit real credentials).
 #
 

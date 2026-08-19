@@ -1387,8 +1387,9 @@ app.Use(async (ctx, next) =>
 
 app.UseAuthentication();
 
-// Serve part images from external asset folder (configurable via AssetPath in appsettings.json)
-// Default: D:\ATMAssets — kept outside the repo so images don't bloat git
+// Serve part images/attachments from an asset folder — defaults to <app root>/wwwroot (always
+// exists, no drive-letter assumptions), or override via AssetPath in appsettings.json / the
+// AssetPath environment variable to point at external storage (e.g. a dedicated data drive).
 var assetPath = builder.Configuration["AssetPath"] ?? Path.Combine(Directory.GetCurrentDirectory(), "wwwroot");
 Directory.CreateDirectory(assetPath);
 app.UseStaticFiles(new StaticFileOptions {
