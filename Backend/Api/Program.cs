@@ -226,6 +226,20 @@ using (var scope = app.Services.CreateScope())
                 );");
             context.Database.ExecuteSqlRaw(
                 "CREATE INDEX IF NOT EXISTS IX_DailyReportImportRows_BatchId ON DailyReportImportRows (BatchId);");
+
+            var driCols = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            using (var cmd = context.Database.GetDbConnection().CreateCommand())
+            {
+                if (cmd.Connection!.State != System.Data.ConnectionState.Open) cmd.Connection.Open();
+                cmd.CommandText = "PRAGMA table_info(DailyReportImportRows);";
+                using var reader = cmd.ExecuteReader();
+                while (reader.Read()) driCols.Add(reader.GetString(1));
+            }
+            if (!driCols.Contains("CaseNo"))
+            {
+                context.Database.ExecuteSqlRaw("ALTER TABLE DailyReportImportRows ADD COLUMN CaseNo TEXT NULL;");
+                Console.WriteLine("✅ Migration: added DailyReportImportRows.CaseNo");
+            }
         }
         catch (Exception mex) { Console.WriteLine($"⚠ DailyReportImport migration skipped: {mex.Message}"); }
 

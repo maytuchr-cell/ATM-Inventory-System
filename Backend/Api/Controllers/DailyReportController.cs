@@ -78,6 +78,7 @@ public class DailyReportController : ControllerBase
                 Qty = r.Qty,
                 DhlStatus = r.DhlStatus,
                 Problem = r.Problem,
+                CaseNo = r.CaseNo,
                 MatchType = r.MatchType,
                 TicketId = r.TicketId,
                 PartUnitId = r.PartUnitId
@@ -178,6 +179,7 @@ public class DailyReportController : ControllerBase
         public int Qty { get; set; }
         public string Status { get; set; } = string.Empty; // GOOD | BAD
         public string? Problem { get; set; }
+        public string? CaseNo { get; set; } // present on newer exports only — see Process()
     }
 
     // Finds the "Return inbound" sheet by header text (not hardcoded position) so a reordered or
@@ -195,7 +197,7 @@ public class DailyReportController : ControllerBase
             using var wb = new XLWorkbook(stream);
 
             IXLWorksheet? ws = null;
-            int headerRow = -1, cPartNo = -1, cPartName = -1, cSerial = -1, cQty = -1, cStatus = -1, cProblem = -1;
+            int headerRow = -1, cPartNo = -1, cPartName = -1, cSerial = -1, cQty = -1, cStatus = -1, cProblem = -1, cCaseNo = -1;
 
             var preferred = wb.Worksheets.Contains("Return inbound")
                 ? new[] { wb.Worksheet("Return inbound") }.Concat(wb.Worksheets)
@@ -203,7 +205,7 @@ public class DailyReportController : ControllerBase
 
             foreach (var candidate in preferred)
             {
-                int r1 = -1, p1 = -1, pn1 = -1, s1 = -1, q1 = -1, st1 = -1, pr1 = -1;
+                int r1 = -1, p1 = -1, pn1 = -1, s1 = -1, q1 = -1, st1 = -1, pr1 = -1, cn1 = -1;
                 var lastRowScan = Math.Min(5, candidate.LastRowUsed()?.RowNumber() ?? 1);
                 var lastColScan = candidate.LastColumnUsed()?.ColumnNumber() ?? 1;
                 for (int r = 1; r <= lastRowScan; r++)
@@ -216,10 +218,15 @@ public class DailyReportController : ControllerBase
                         else if (val.Equals("QTY", StringComparison.OrdinalIgnoreCase)) q1 = c;
                         else if (val.Replace("\n", "").Contains("INVENTORY STATUS", StringComparison.OrdinalIgnoreCase) || val.Equals("Status", StringComparison.OrdinalIgnoreCase)) st1 = c;
                         else if (val.Equals("Problem", StringComparison.OrdinalIgnoreCase)) pr1 = c;
+                        // Newer Daily Report exports (Mar 2026+) added this column — when present it
+                        // ties a row straight to the Aservice ticket (== our ExternalTicketNo),
+                        // letting us match exactly instead of guessing by Part No. Older exports
+                        // don't have it at all, so it stays optional (cn1 can remain -1).
+                        else if (val.Equals("Case No", StringComparison.OrdinalIgnoreCase)) cn1 = c;
                     }
                 if (p1 >= 0 && s1 >= 0 && q1 >= 0 && st1 >= 0)
                 {
-                    ws = candidate; headerRow = r1; cPartNo = p1; cPartName = pn1; cSerial = s1; cQty = q1; cStatus = st1; cProblem = pr1;
+                    ws = candidate; headerRow = r1; cPartNo = p1; cPartName = pn1; cSerial = s1; cQty = q1; cStatus = st1; cProblem = pr1; cCaseNo = cn1;
                     break;
                 }
             }
@@ -240,6 +247,7 @@ public class DailyReportController : ControllerBase
                 var status = ws.Cell(r, cStatus).GetString().Trim().ToUpperInvariant();
                 if (status != "GOOD" && status != "BAD") continue; // skip section headers/blank separators
 
+                var caseNo = cCaseNo > 0 ? ws.Cell(r, cCaseNo).GetString().Trim() : "";
                 rows.Add(new ParsedRow
                 {
                     RowIndex = r,
@@ -248,7 +256,8 @@ public class DailyReportController : ControllerBase
                     SerialNo = ws.Cell(r, cSerial).GetString().Trim(),
                     Qty = (int)(ws.Cell(r, cQty).GetValue<double?>() ?? 1),
                     Status = status,
-                    Problem = cProblem > 0 ? ws.Cell(r, cProblem).GetString().Trim() : null
+                    Problem = cProblem > 0 ? ws.Cell(r, cProblem).GetString().Trim() : null,
+                    CaseNo = string.IsNullOrWhiteSpace(caseNo) ? null : caseNo
                 });
             }
             return rows;
@@ -271,6 +280,7 @@ public class DailyReportController : ControllerBase
         public int Qty { get; set; }
         public string DhlStatus { get; set; } = string.Empty;
         public string? Problem { get; set; }
+        public string? CaseNo { get; set; }
         public string MatchType { get; set; } = string.Empty;
         public int? TicketId { get; set; }
         public string? ExternalTicketNo { get; set; }
@@ -346,18 +356,27 @@ public class DailyReportController : ControllerBase
                         _context.SaveChanges();
                         unitId = unit.Id;
                     }
-                    results.Add(new RowResult { RowIndex = row.RowIndex, PartNo = row.PartNo, PartName = row.PartName, SerialNo = row.SerialNo, Qty = row.Qty, DhlStatus = row.Status, Problem = row.Problem, MatchType = "RepairCompleted", PartUnitId = unitId, Note = "ซ่อมเสร็จ กลับเข้าสต็อกดี" });
+                    results.Add(new RowResult { RowIndex = row.RowIndex, PartNo = row.PartNo, PartName = row.PartName, SerialNo = row.SerialNo, Qty = row.Qty, DhlStatus = row.Status, Problem = row.Problem, CaseNo = row.CaseNo, MatchType = "RepairCompleted", PartUnitId = unitId, Note = "ซ่อมเสร็จ กลับเข้าสต็อกดี" });
                 }
                 else
                 {
                     summary.StillInRepair++;
-                    results.Add(new RowResult { RowIndex = row.RowIndex, PartNo = row.PartNo, PartName = row.PartName, SerialNo = row.SerialNo, Qty = row.Qty, DhlStatus = row.Status, Problem = row.Problem, MatchType = "StillInRepair", Note = "ยังซ่อมไม่เสร็จ" });
+                    results.Add(new RowResult { RowIndex = row.RowIndex, PartNo = row.PartNo, PartName = row.PartName, SerialNo = row.SerialNo, Qty = row.Qty, DhlStatus = row.Status, Problem = row.Problem, CaseNo = row.CaseNo, MatchType = "StillInRepair", Note = "ยังซ่อมไม่เสร็จ" });
                 }
                 continue;
             }
 
             // Rule 2 — first-time return confirmation against an open return line.
-            var line = openReturnLines.FirstOrDefault(l => l.PartNo == row.PartNo && remaining.GetValueOrDefault(l.TicketPartLineId) > 0);
+            // Prefer an exact match by Case No. (== Ticket.ExternalTicketNo) when the file gives
+            // one — newer Daily Report exports (Mar 2026+) always do, and it removes the FIFO
+            // guesswork entirely. If a Case No. IS present but matches no open line, that's
+            // Unmatched rather than silently falling back to a Part No. guess (a wrong guess is
+            // worse than flagging it for Admin). Only guess by Part No. + FIFO when the row has no
+            // Case No. at all — i.e. an older export.
+            var matchedByCaseNo = !string.IsNullOrWhiteSpace(row.CaseNo);
+            var line = matchedByCaseNo
+                ? openReturnLines.FirstOrDefault(l => l.PartNo == row.PartNo && l.Ticket!.ExternalTicketNo == row.CaseNo && remaining.GetValueOrDefault(l.TicketPartLineId) > 0)
+                : openReturnLines.FirstOrDefault(l => l.PartNo == row.PartNo && remaining.GetValueOrDefault(l.TicketPartLineId) > 0);
             if (line != null)
             {
                 remaining[line.TicketPartLineId] = Math.Max(0, remaining[line.TicketPartLineId] - row.Qty);
@@ -397,19 +416,26 @@ public class DailyReportController : ControllerBase
                     _context.SaveChanges();
                 }
 
+                var matchNote = row.Status == "GOOD" ? "คืนสำเร็จ — เข้าสต็อกดี" : "คืนสำเร็จ — เข้าสถานะกำลังซ่อม";
+                matchNote += matchedByCaseNo ? " (จับคู่ตรงด้วย Case No.)" : " (จับคู่แบบเดาด้วย Part No. — ไฟล์นี้ไม่มี Case No.)";
                 results.Add(new RowResult
                 {
                     RowIndex = row.RowIndex, PartNo = row.PartNo, PartName = row.PartName, SerialNo = row.SerialNo, Qty = row.Qty,
-                    DhlStatus = row.Status, Problem = row.Problem, MatchType = "ReturnConfirmed",
+                    DhlStatus = row.Status, Problem = row.Problem, MatchType = "ReturnConfirmed", CaseNo = row.CaseNo,
                     TicketId = line.TicketId, ExternalTicketNo = line.Ticket?.ExternalTicketNo, PartUnitId = unitId,
-                    Note = row.Status == "GOOD" ? "คืนสำเร็จ — เข้าสต็อกดี" : "คืนสำเร็จ — เข้าสถานะกำลังซ่อม"
+                    Note = matchNote
                 });
                 continue;
             }
 
             // Rule 3 — nothing matched.
             summary.Unmatched++;
-            results.Add(new RowResult { RowIndex = row.RowIndex, PartNo = row.PartNo, PartName = row.PartName, SerialNo = row.SerialNo, Qty = row.Qty, DhlStatus = row.Status, Problem = row.Problem, MatchType = "Unmatched", Note = "ไม่พบ Ticket ที่รอคืนอยู่สำหรับอะไหล่นี้" });
+            results.Add(new RowResult
+            {
+                RowIndex = row.RowIndex, PartNo = row.PartNo, PartName = row.PartName, SerialNo = row.SerialNo, Qty = row.Qty,
+                DhlStatus = row.Status, Problem = row.Problem, MatchType = "Unmatched", CaseNo = row.CaseNo,
+                Note = matchedByCaseNo ? $"มี Case No. ({row.CaseNo}) แต่ไม่พบ Ticket ที่รอคืนอยู่ตรงกัน" : "ไม่พบ Ticket ที่รอคืนอยู่สำหรับอะไหล่นี้"
+            });
         }
 
         return (results, summary);

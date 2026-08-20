@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Daily Report — ATM Inventory</title>
-  <link rel="stylesheet" href="shared/styles.css?v=32">
+  <link rel="stylesheet" href="shared/styles.css?v=33">
   <style>
     .dr-stats { display:grid; grid-template-columns:repeat(4,1fr); gap:10px; margin:14px 0 18px; }
     .dr-stat { background:var(--bg-subtle); border-radius:10px; padding:14px; text-align:center; border:1px solid var(--border); }
@@ -78,6 +78,7 @@
                     <tr>
                       <th>Part No.</th>
                       <th>Serial No.</th>
+                      <th>Case No.</th>
                       <th>Qty</th>
                       <th>DHL Status</th>
                       <th>ผลการจับคู่</th>
@@ -143,10 +144,10 @@
   </div>
 
   <script src="https://code.iconify.design/iconify-icon/2.1.0/iconify-icon.min.js"></script>
-  <script src="shared/translations.js?v=32"></script>
-  <script src="shared/toast.js?v=32"></script>
-  <script src="shared/api.js?v=32"></script>
-  <script src="shared/layout.js?v=32"></script>
+  <script src="shared/translations.js?v=33"></script>
+  <script src="shared/toast.js?v=33"></script>
+  <script src="shared/api.js?v=33"></script>
+  <script src="shared/layout.js?v=33"></script>
   <script>
     let pendingFile = null;
     let lastPreviewRows = [];
@@ -198,12 +199,13 @@
           <tr>
             <td><code>${r.partNo}</code></td>
             <td>${r.serialNo || '—'}</td>
+            <td>${r.caseNo ? `<code>${r.caseNo}</code>` : '<span class="dr-note">— (ไฟล์เก่า)</span>'}</td>
             <td>${r.qty}</td>
             <td>${r.dhlStatus}</td>
             <td><span class="dr-badge ${r.matchType}">${MATCH_LABEL[r.matchType] || r.matchType}</span></td>
             <td class="dr-note">${r.note || ''}${r.externalTicketNo ? ` (Ticket ${r.externalTicketNo})` : ''}</td>
           </tr>`).join('')
-        : `<tr><td colspan="6" class="empty-state">ไม่พบแถวข้อมูลในไฟล์นี้</td></tr>`;
+        : `<tr><td colspan="7" class="empty-state">ไม่พบแถวข้อมูลในไฟล์นี้</td></tr>`;
 
       document.getElementById('dr-preview-section').style.display = 'block';
     }

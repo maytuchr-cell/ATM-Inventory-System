@@ -92,6 +92,40 @@ public class DailyReportControllerTests
         return new FormFile(stream, 0, stream.Length, "file", "daily-report.xlsx") { Headers = new HeaderDictionary(), ContentType = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" };
     }
 
+    // Mar 2026+ exports add a "Case No" column — this builds that newer shape.
+    private static IFormFile BuildDailyReportFileWithCaseNo(params (string PartNo, string PartName, string Serial, int Qty, string Status, string? Problem, string CaseNo)[] rows)
+    {
+        using var wb = new XLWorkbook();
+        var ws = wb.Worksheets.Add("Return inbound");
+        ws.Cell(2, 1).Value = "No";
+        ws.Cell(2, 2).Value = "Part Number";
+        ws.Cell(2, 3).Value = "Part Description";
+        ws.Cell(2, 4).Value = "SERIAL_NUMBER";
+        ws.Cell(2, 5).Value = "QTY";
+        ws.Cell(2, 6).Value = "INVENTORY STATUS";
+        ws.Cell(2, 7).Value = "Problem";
+        ws.Cell(2, 8).Value = "Case No";
+
+        int r = 3;
+        foreach (var row in rows)
+        {
+            ws.Cell(r, 1).Value = r - 2;
+            ws.Cell(r, 2).Value = row.PartNo;
+            ws.Cell(r, 3).Value = row.PartName;
+            ws.Cell(r, 4).Value = row.Serial;
+            ws.Cell(r, 5).Value = row.Qty;
+            ws.Cell(r, 6).Value = row.Status;
+            ws.Cell(r, 7).Value = row.Problem ?? "";
+            ws.Cell(r, 8).Value = row.CaseNo;
+            r++;
+        }
+
+        var stream = new MemoryStream();
+        wb.SaveAs(stream);
+        stream.Position = 0;
+        return new FormFile(stream, 0, stream.Length, "file", "daily-report.xlsx") { Headers = new HeaderDictionary(), ContentType = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" };
+    }
+
     [Fact]
     public void Preview_MatchesOpenReturnTicket_ButDoesNotPersist()
     {
@@ -201,6 +235,56 @@ public class DailyReportControllerTests
         Assert.Equal(99, context.PartStocks.First(s => s.LocationId == mainWh.Id).GoodQty); // back to withdrawn-only baseline
         Assert.Equal("เดินทาง", context.Tickets.First(t => t.TicketId == ticket.TicketId).Status);
         Assert.True(context.DailyReportImportRows.First(r => r.Id == row.Id).Undone);
+    }
+
+    // ── Case No. matching (Mar 2026+ exports) ──────────────────────────────────
+
+    [Fact]
+    public void Confirm_WithCaseNo_MatchesExactTicket_EvenWhenFifoWouldGuessWrong()
+    {
+        // Two techs both return the same Part No. — Ticket "OLDER" shipped its return first
+        // (so plain FIFO would pick it), but the Daily Report row's Case No. actually belongs to
+        // Ticket "NEWER". Case No. must win over the FIFO guess.
+        var (tickets, dailyReport, context, mainWh, _) = Create();
+        var older = CreateShippedReturnTicket(tickets, context, "OLDER");
+        var newer = CreateShippedReturnTicket(tickets, context, "NEWER");
+
+        var file = BuildDailyReportFileWithCaseNo((PartNo, "Test Part", "SN-CASE-001", 1, "GOOD", null, "NEWER"));
+        var result = dailyReport.Confirm(file);
+
+        Assert.IsType<OkObjectResult>(result);
+        Assert.Equal("คืน", context.Tickets.First(t => t.TicketId == newer.TicketId).Status); // the actual match
+        Assert.Equal("เดินทาง", context.Tickets.First(t => t.TicketId == older.TicketId).Status); // untouched, despite being "older"
+    }
+
+    [Fact]
+    public void Confirm_WithCaseNoButNoMatchingTicket_IsUnmatched_NotAGuess()
+    {
+        // A row carries a Case No. that doesn't correspond to any open return line — must not
+        // silently fall back to guessing by Part No. against some unrelated open ticket.
+        var (tickets, dailyReport, context, mainWh, _) = Create();
+        var ticket = CreateShippedReturnTicket(tickets, context, "DR-CASE-2");
+        var file = BuildDailyReportFileWithCaseNo((PartNo, "Test Part", "SN-CASE-002", 1, "GOOD", null, "NO-SUCH-CASE"));
+
+        var result = dailyReport.Confirm(file);
+
+        Assert.IsType<OkObjectResult>(result);
+        Assert.Equal("เดินทาง", context.Tickets.First(t => t.TicketId == ticket.TicketId).Status); // untouched
+        Assert.Equal(99, context.PartStocks.First(s => s.LocationId == mainWh.Id).GoodQty); // untouched
+    }
+
+    [Fact]
+    public void Confirm_WithoutCaseNoColumn_StillFallsBackToPartNoGuess()
+    {
+        // Older-format files (no Case No. column at all) must keep working exactly as before.
+        var (tickets, dailyReport, context, mainWh, _) = Create();
+        var ticket = CreateShippedReturnTicket(tickets, context, "DR-NOCASE");
+        var file = BuildDailyReportFile((PartNo, "Test Part", "SN-NOCASE-001", 1, "GOOD", null));
+
+        var result = dailyReport.Confirm(file);
+
+        Assert.IsType<OkObjectResult>(result);
+        Assert.Equal("คืน", context.Tickets.First(t => t.TicketId == ticket.TicketId).Status);
     }
 
     private class FakeEnv : IWebHostEnvironment

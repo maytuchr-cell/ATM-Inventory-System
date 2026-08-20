@@ -35,6 +35,10 @@ public class DailyReportImportRow
     public string DhlStatus { get; set; } = string.Empty; // GOOD | BAD, as DHL reported it
     public string? Problem { get; set; } // DHL's free-text defect note, Bad rows only
 
+    // Aservice Case No. from the source row, when the export includes it (Mar 2026+ exports do;
+    // older ones are null). Matches Ticket.ExternalTicketNo — see DailyReportController.Process.
+    public string? CaseNo { get; set; }
+
     // ReturnConfirmed | RepairCompleted | StillInRepair | Unmatched — see DailyReportController.
     public string MatchType { get; set; } = string.Empty;
 
