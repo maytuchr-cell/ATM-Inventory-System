@@ -176,6 +176,13 @@ const api = {
   tracking: {
     bySerial: (sn) => apiFetch(`/Tracking/serial/${encodeURIComponent(sn)}`),
   },
+  dailyReport: {
+    preview: (file) => { const fd = new FormData(); fd.append('file', file); return apiUpload('/DailyReport/preview', fd); },
+    confirm: (file) => { const fd = new FormData(); fd.append('file', file); return apiUpload('/DailyReport/confirm', fd); },
+    history: () => apiFetch('/DailyReport/history'),
+    batch:   (id) => apiFetch(`/DailyReport/batches/${id}`),
+    undoRow: (id) => apiFetch(`/DailyReport/rows/${id}/undo`, { method: 'PUT' }),
+  },
   users: {
     getAll:        ()           => apiFetch('/Users'),
     roles:         ()           => apiFetch('/Users/roles'),

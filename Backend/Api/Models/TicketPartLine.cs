@@ -21,6 +21,12 @@ public class TicketPartLine
 
     public string LineType { get; set; } = "Withdraw"; // Withdraw | Return
 
+    // Return lines only — how much of Quantity has been confirmed physically received so far via
+    // Daily Report imports (see DailyReportController). A DHL file may only cover part of what a
+    // tech returned; the ticket only finalizes to คืน once every Return line's ConfirmedQty
+    // reaches its Quantity. Withdraw lines never touch this.
+    public int ConfirmedQty { get; set; }
+
     // Only meaningful on a Return line — the tech states what shape the part came back in.
     // Good/Bad land in the matching PartStock bucket; Lost means it never physically came
     // back (missing, or a non-circulating "baby part") so no stock is added at confirm-return.

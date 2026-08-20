@@ -189,6 +189,7 @@ const TRANSLATIONS = {
 
     /* ── Tickets (เบิก/คืน) ── */
     'nav.tickets': 'Tickets',
+    'nav.dailyreport': 'Daily Report',
 
     /* ── Goods Receipt ── */
     'nav.goodsreceipt':   'Goods Receipt',
@@ -749,6 +750,7 @@ const TRANSLATIONS = {
 
     /* ── Tickets (เบิก/คืน) ── */
     'nav.tickets': 'Tickets เบิก/คืน',
+    'nav.dailyreport': 'Daily Report',
 
     /* ── Goods Receipt ── */
     'nav.goodsreceipt':   'รับอะไหล่เข้าคลัง',

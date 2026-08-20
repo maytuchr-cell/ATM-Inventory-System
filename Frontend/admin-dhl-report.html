@@ -1,0 +1,303 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Daily Report — ATM Inventory</title>
+  <link rel="stylesheet" href="shared/styles.css?v=32">
+  <style>
+    .dr-stats { display:grid; grid-template-columns:repeat(4,1fr); gap:10px; margin:14px 0 18px; }
+    .dr-stat { background:var(--bg-subtle); border-radius:10px; padding:14px; text-align:center; border:1px solid var(--border); }
+    .dr-stat-num { font-size:24px; font-weight:800; }
+    .dr-stat-label { font-size:11px; color:var(--text-secondary); margin-top:3px; }
+    .dr-stat.good .dr-stat-num { color:var(--green); }
+    .dr-stat.repair .dr-stat-num { color:var(--orange); }
+    .dr-stat.stillrepair .dr-stat-num { color:var(--text-secondary); }
+    .dr-stat.warn .dr-stat-num { color:#b8860b; }
+
+    .dr-badge { display:inline-flex; align-items:center; gap:4px; padding:3px 9px; border-radius:20px; font-size:11px; font-weight:600; white-space:nowrap; }
+    .dr-badge.ReturnConfirmed { background:var(--green-light); color:var(--green); }
+    .dr-badge.RepairCompleted { background:var(--orange-light); color:var(--orange); }
+    .dr-badge.StillInRepair   { background:var(--bg-subtle); color:var(--text-secondary); }
+    .dr-badge.Unmatched       { background:#fff3cd; color:#b8860b; }
+
+    .dr-upload-box { border:2px dashed var(--border); border-radius:12px; padding:28px; text-align:center; margin-bottom:18px; }
+    .dr-upload-box.dragover { border-color:var(--orange); background:var(--orange-light); }
+
+    .dr-tabs { display:flex; gap:4px; border-bottom:1px solid var(--border); margin-bottom:16px; }
+    .dr-tab { background:none; border:none; padding:10px 16px; font-family:inherit; font-size:13px; font-weight:600; color:var(--text-secondary); cursor:pointer; border-bottom:2.5px solid transparent; margin-bottom:-1px; }
+    .dr-tab.active { color:var(--orange); border-bottom-color:var(--orange); }
+
+    .dr-note { font-size:12px; color:var(--text-secondary); }
+    .dr-undo-btn { background:none; border:1px solid var(--border); color:var(--text-secondary); border-radius:6px; padding:3px 8px; font-size:11px; cursor:pointer; font-family:inherit; }
+    .dr-undo-btn:hover { border-color:var(--red); color:var(--red); }
+    .dr-undo-btn:disabled { opacity:.4; cursor:default; }
+    .dr-undo-btn:disabled:hover { border-color:var(--border); color:var(--text-secondary); }
+  </style>
+</head>
+<body>
+  <div class="app-layout">
+    <div id="sidebar-root"></div>
+    <div class="main-content">
+      <div class="topbar">
+        <div>
+          <div class="topbar-title">Daily Report</div>
+          <div class="topbar-sub">นำเข้าไฟล์ Daily Report จาก DHL — ยืนยันคืนอะไหล่และปิดรอบซ่อมอัตโนมัติ</div>
+        </div>
+      </div>
+
+      <div class="page-body">
+        <div class="dr-tabs">
+          <button class="dr-tab active" id="tab-import" onclick="switchTab('import')">นำเข้าไฟล์</button>
+          <button class="dr-tab" id="tab-history" onclick="switchTab('history')">ประวัติการนำเข้า</button>
+        </div>
+
+        <!-- ── Import tab ── -->
+        <div id="panel-import">
+          <div class="card">
+            <div class="dr-upload-box" id="upload-box">
+              <div style="font-size:32px;margin-bottom:8px;">📄</div>
+              <div style="font-weight:600;margin-bottom:4px;">อัปโหลดไฟล์ Daily Report (.xlsx)</div>
+              <div class="dr-note" style="margin-bottom:14px;">ระบบจะอ่านชีต "Return inbound" อัตโนมัติ</div>
+              <input type="file" id="dr-file-input" accept=".xlsx" style="display:none" onchange="handleFileSelected(this.files[0])">
+              <button class="btn btn-primary" onclick="document.getElementById('dr-file-input').click()">เลือกไฟล์</button>
+              <div id="dr-filename" class="dr-note" style="margin-top:10px;"></div>
+            </div>
+
+            <div id="dr-preview-section" style="display:none;">
+              <div class="dr-stats">
+                <div class="dr-stat good"><div class="dr-stat-num" id="stat-confirmed">0</div><div class="dr-stat-label">คืนสำเร็จ</div></div>
+                <div class="dr-stat repair"><div class="dr-stat-num" id="stat-repaircomplete">0</div><div class="dr-stat-label">ซ่อมเสร็จ กลับเข้าสต็อก</div></div>
+                <div class="dr-stat stillrepair"><div class="dr-stat-num" id="stat-stillrepair">0</div><div class="dr-stat-label">ยังซ่อมไม่เสร็จ</div></div>
+                <div class="dr-stat warn"><div class="dr-stat-num" id="stat-unmatched">0</div><div class="dr-stat-label">ยังไม่จับคู่</div></div>
+              </div>
+
+              <div class="tbl-wrap" style="max-height:420px;overflow-y:auto;">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Part No.</th>
+                      <th>Serial No.</th>
+                      <th>Qty</th>
+                      <th>DHL Status</th>
+                      <th>ผลการจับคู่</th>
+                      <th>รายละเอียด</th>
+                    </tr>
+                  </thead>
+                  <tbody id="preview-tbody"></tbody>
+                </table>
+              </div>
+
+              <div style="display:flex;gap:10px;margin-top:16px;">
+                <button class="btn" onclick="cancelPreview()">ยกเลิก</button>
+                <button class="btn btn-primary" id="confirm-btn" onclick="confirmImport()">✅ ยืนยัน Import</button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- ── History tab ── -->
+        <div id="panel-history" style="display:none;">
+          <div class="card">
+            <div class="tbl-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>วันที่ Import</th>
+                    <th>ไฟล์</th>
+                    <th>โดย</th>
+                    <th>คืนสำเร็จ</th>
+                    <th>ซ่อมเสร็จ</th>
+                    <th>ยังซ่อมไม่เสร็จ</th>
+                    <th>ยังไม่จับคู่</th>
+                    <th></th>
+                  </tr>
+                </thead>
+                <tbody id="history-tbody">
+                  <tr><td colspan="8" class="empty-state">Connecting…</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          <div class="card" id="batch-detail-card" style="display:none;margin-top:16px;">
+            <div style="font-weight:700;margin-bottom:12px;" id="batch-detail-title"></div>
+            <div class="tbl-wrap" style="max-height:420px;overflow-y:auto;">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Part No.</th>
+                    <th>Serial No.</th>
+                    <th>ผลการจับคู่</th>
+                    <th>รายละเอียด</th>
+                    <th></th>
+                  </tr>
+                </thead>
+                <tbody id="batch-detail-tbody"></tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="https://code.iconify.design/iconify-icon/2.1.0/iconify-icon.min.js"></script>
+  <script src="shared/translations.js?v=32"></script>
+  <script src="shared/toast.js?v=32"></script>
+  <script src="shared/api.js?v=32"></script>
+  <script src="shared/layout.js?v=32"></script>
+  <script>
+    let pendingFile = null;
+    let lastPreviewRows = [];
+
+    window.addEventListener('DOMContentLoaded', () => {
+      initLayout();
+      loadHistory();
+    });
+
+    function switchTab(tab) {
+      document.getElementById('tab-import').classList.toggle('active', tab === 'import');
+      document.getElementById('tab-history').classList.toggle('active', tab === 'history');
+      document.getElementById('panel-import').style.display = tab === 'import' ? 'block' : 'none';
+      document.getElementById('panel-history').style.display = tab === 'history' ? 'block' : 'none';
+      if (tab === 'history') loadHistory();
+    }
+
+    const MATCH_LABEL = {
+      ReturnConfirmed: '✅ คืนสำเร็จ',
+      RepairCompleted: '🔧 ซ่อมเสร็จ',
+      StillInRepair:   '⏳ ยังซ่อมไม่เสร็จ',
+      Unmatched:       '⚠️ ยังไม่จับคู่'
+    };
+
+    async function handleFileSelected(file) {
+      if (!file) return;
+      pendingFile = file;
+      document.getElementById('dr-filename').textContent = `ไฟล์: ${file.name} — กำลังประมวลผล...`;
+      try {
+        const res = await api.dailyReport.preview(file);
+        lastPreviewRows = res.rows;
+        renderPreview(res.rows, res.summary);
+        document.getElementById('dr-filename').textContent = `ไฟล์: ${file.name}`;
+      } catch (e) {
+        showToast?.(e.message || t('toast.error'), 'error');
+        document.getElementById('dr-filename').textContent = '';
+        pendingFile = null;
+      }
+    }
+
+    function renderPreview(rows, summary) {
+      document.getElementById('stat-confirmed').textContent = summary.returnConfirmed ?? 0;
+      document.getElementById('stat-repaircomplete').textContent = summary.repairCompleted ?? 0;
+      document.getElementById('stat-stillrepair').textContent = summary.stillInRepair ?? 0;
+      document.getElementById('stat-unmatched').textContent = summary.unmatched ?? 0;
+
+      document.getElementById('preview-tbody').innerHTML = rows.length
+        ? rows.map(r => `
+          <tr>
+            <td><code>${r.partNo}</code></td>
+            <td>${r.serialNo || '—'}</td>
+            <td>${r.qty}</td>
+            <td>${r.dhlStatus}</td>
+            <td><span class="dr-badge ${r.matchType}">${MATCH_LABEL[r.matchType] || r.matchType}</span></td>
+            <td class="dr-note">${r.note || ''}${r.externalTicketNo ? ` (Ticket ${r.externalTicketNo})` : ''}</td>
+          </tr>`).join('')
+        : `<tr><td colspan="6" class="empty-state">ไม่พบแถวข้อมูลในไฟล์นี้</td></tr>`;
+
+      document.getElementById('dr-preview-section').style.display = 'block';
+    }
+
+    function cancelPreview() {
+      pendingFile = null;
+      lastPreviewRows = [];
+      document.getElementById('dr-preview-section').style.display = 'none';
+      document.getElementById('dr-filename').textContent = '';
+      document.getElementById('dr-file-input').value = '';
+    }
+
+    async function confirmImport() {
+      if (!pendingFile) return;
+      const btn = document.getElementById('confirm-btn');
+      btn.disabled = true;
+      btn.textContent = 'กำลัง Import...';
+      try {
+        const res = await api.dailyReport.confirm(pendingFile);
+        showToast?.(`Import สำเร็จ — คืนสำเร็จ ${res.summary.returnConfirmed}, ซ่อมเสร็จ ${res.summary.repairCompleted}`, 'success');
+        cancelPreview();
+        switchTab('history');
+      } catch (e) {
+        showToast?.(e.message || t('toast.error'), 'error');
+      } finally {
+        btn.disabled = false;
+        btn.textContent = '✅ ยืนยัน Import';
+      }
+    }
+
+    async function loadHistory() {
+      try {
+        const batches = await api.dailyReport.history();
+        document.getElementById('history-tbody').innerHTML = batches.length
+          ? batches.map(b => `
+            <tr>
+              <td>${new Date(b.importedAt).toLocaleString('th-TH')}</td>
+              <td>${b.fileName}</td>
+              <td>${b.importedBy}</td>
+              <td>${b.returnConfirmedCount}</td>
+              <td>${b.repairCompletedCount}</td>
+              <td>${b.stillInRepairCount}</td>
+              <td>${b.unmatchedCount}</td>
+              <td><button class="btn btn-secondary btn-sm" onclick="viewBatch(${b.id})">ดูรายละเอียด</button></td>
+            </tr>`).join('')
+          : `<tr><td colspan="8" class="empty-state">ยังไม่มีประวัติการ import</td></tr>`;
+      } catch (e) {
+        document.getElementById('history-tbody').innerHTML = `<tr><td colspan="8" class="empty-state" style="color:var(--red)">${e.message || t('error.connect')}</td></tr>`;
+      }
+    }
+
+    async function viewBatch(id) {
+      try {
+        const { batch, rows } = await api.dailyReport.batch(id);
+        document.getElementById('batch-detail-title').textContent = `${batch.fileName} — ${new Date(batch.importedAt).toLocaleString('th-TH')}`;
+        document.getElementById('batch-detail-tbody').innerHTML = rows.length
+          ? rows.map(r => `
+            <tr style="${r.undone ? 'opacity:.5;' : ''}">
+              <td><code>${r.partNo}</code></td>
+              <td>${r.serialNo || '—'}</td>
+              <td><span class="dr-badge ${r.matchType}">${MATCH_LABEL[r.matchType] || r.matchType}</span></td>
+              <td class="dr-note">${r.undone ? 'ย้อนกลับแล้ว' : ''}</td>
+              <td>
+                <button class="dr-undo-btn" ${(r.undone || (r.matchType !== 'ReturnConfirmed' && r.matchType !== 'RepairCompleted')) ? 'disabled' : ''}
+                        onclick="undoRow(${r.id}, ${id})">ย้อนกลับ</button>
+              </td>
+            </tr>`).join('')
+          : `<tr><td colspan="5" class="empty-state">ไม่มีแถวข้อมูล</td></tr>`;
+        document.getElementById('batch-detail-card').style.display = 'block';
+      } catch (e) {
+        showToast?.(e.message || t('toast.error'), 'error');
+      }
+    }
+
+    async function undoRow(rowId, batchId) {
+      if (!confirm('ย้อนกลับแถวนี้? สต็อก/สถานะ Ticket ที่เกี่ยวข้องจะถูกคืนกลับ')) return;
+      try {
+        await api.dailyReport.undoRow(rowId);
+        showToast?.('ย้อนกลับแล้ว', 'success');
+        viewBatch(batchId);
+        loadHistory();
+      } catch (e) { showToast?.(e.message || t('toast.error'), 'error'); }
+    }
+
+    // Drag & drop onto the upload box
+    const box = document.getElementById('upload-box');
+    box.addEventListener('dragover', e => { e.preventDefault(); box.classList.add('dragover'); });
+    box.addEventListener('dragleave', () => box.classList.remove('dragover'));
+    box.addEventListener('drop', e => {
+      e.preventDefault();
+      box.classList.remove('dragover');
+      const f = e.dataTransfer.files[0];
+      if (f) handleFileSelected(f);
+    });
+  </script>
+</body>
+</html>

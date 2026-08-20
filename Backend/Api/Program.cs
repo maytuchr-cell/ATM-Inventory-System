@@ -135,6 +135,11 @@ using (var scope = app.Services.CreateScope())
                 context.Database.ExecuteSqlRaw("ALTER TABLE PartStocks RENAME COLUMN DefectiveQty TO BadQty;");
                 Console.WriteLine("✅ Migration: renamed PartStocks.DefectiveQty to BadQty");
             }
+            if (!psCols.Contains("RepairQty"))
+            {
+                context.Database.ExecuteSqlRaw("ALTER TABLE PartStocks ADD COLUMN RepairQty INTEGER NOT NULL DEFAULT 0;");
+                Console.WriteLine("✅ Migration: added PartStocks.RepairQty");
+            }
         }
         catch (Exception mex) { Console.WriteLine($"⚠ PartStock columns migration skipped: {mex.Message}"); }
 
@@ -185,6 +190,44 @@ using (var scope = app.Services.CreateScope())
                 "CREATE UNIQUE INDEX IF NOT EXISTS IX_PartUnits_SerialNo ON PartUnits (SerialNo);");
         }
         catch (Exception mex) { Console.WriteLine($"⚠ PartUnit migration skipped: {mex.Message}"); }
+
+        // ── Lightweight migration: create DailyReportImportBatches/Rows tables on existing DBs ──
+        if (isSqlite) try
+        {
+            context.Database.ExecuteSqlRaw(@"
+                CREATE TABLE IF NOT EXISTS DailyReportImportBatches (
+                    Id INTEGER NOT NULL CONSTRAINT PK_DailyReportImportBatches PRIMARY KEY AUTOINCREMENT,
+                    FileName TEXT NOT NULL,
+                    ImportedAt TEXT NOT NULL,
+                    ImportedBy TEXT NOT NULL,
+                    TotalRows INTEGER NOT NULL,
+                    ReturnConfirmedCount INTEGER NOT NULL,
+                    RepairCompletedCount INTEGER NOT NULL,
+                    StillInRepairCount INTEGER NOT NULL,
+                    UnmatchedCount INTEGER NOT NULL
+                );");
+            context.Database.ExecuteSqlRaw(@"
+                CREATE TABLE IF NOT EXISTS DailyReportImportRows (
+                    Id INTEGER NOT NULL CONSTRAINT PK_DailyReportImportRows PRIMARY KEY AUTOINCREMENT,
+                    BatchId INTEGER NOT NULL,
+                    RowIndex INTEGER NOT NULL,
+                    PartNo TEXT NOT NULL,
+                    PartName TEXT NOT NULL,
+                    SerialNo TEXT NOT NULL,
+                    Qty INTEGER NOT NULL,
+                    DhlStatus TEXT NOT NULL,
+                    Problem TEXT NULL,
+                    MatchType TEXT NOT NULL,
+                    TicketId INTEGER NULL,
+                    PartUnitId INTEGER NULL,
+                    Undone INTEGER NOT NULL,
+                    UndoneAt TEXT NULL,
+                    CONSTRAINT FK_DailyReportImportRows_Batches FOREIGN KEY (BatchId) REFERENCES DailyReportImportBatches (Id) ON DELETE CASCADE
+                );");
+            context.Database.ExecuteSqlRaw(
+                "CREATE INDEX IF NOT EXISTS IX_DailyReportImportRows_BatchId ON DailyReportImportRows (BatchId);");
+        }
+        catch (Exception mex) { Console.WriteLine($"⚠ DailyReportImport migration skipped: {mex.Message}"); }
 
         // ── Lightweight migration: create TicketAttachments table on existing DBs (technician
         //    photos attached to a withdraw/return submission) ──
@@ -324,6 +367,11 @@ using (var scope = app.Services.CreateScope())
             {
                 context.Database.ExecuteSqlRaw("ALTER TABLE TicketPartLines ADD COLUMN OriginalPartNo TEXT NULL;");
                 Console.WriteLine("✅ Migration: added TicketPartLines.OriginalPartNo");
+            }
+            if (!tplCols.Contains("ConfirmedQty"))
+            {
+                context.Database.ExecuteSqlRaw("ALTER TABLE TicketPartLines ADD COLUMN ConfirmedQty INTEGER NOT NULL DEFAULT 0;");
+                Console.WriteLine("✅ Migration: added TicketPartLines.ConfirmedQty");
             }
         }
         catch (Exception mex) { Console.WriteLine($"⚠ Tickets/TicketPartLines migration skipped: {mex.Message}"); }

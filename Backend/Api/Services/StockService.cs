@@ -39,10 +39,12 @@ public class StockService
 
         if (condition == "Bad")
             stock.BadQty += qtyDelta;
+        else if (condition == "Repair")
+            stock.RepairQty += qtyDelta; // DHL reported it Bad and took it for repair — see DailyReportController
         else
             stock.GoodQty += qtyDelta;
 
-        if (stock.GoodQty < 0 || stock.BadQty < 0)
+        if (stock.GoodQty < 0 || stock.BadQty < 0 || stock.RepairQty < 0)
             throw new InvalidOperationException($"Insufficient stock for {partNo} at location {locationId}.");
 
         stock.UpdatedAt = DateTime.Now;

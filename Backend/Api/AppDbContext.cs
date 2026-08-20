@@ -17,6 +17,8 @@ public class AppDbContext : DbContext
     public DbSet<AuditLog> AuditLogs { get; set; }
     public DbSet<PartStock> PartStocks { get; set; }
     public DbSet<PartUnit> PartUnits { get; set; }
+    public DbSet<DailyReportImportBatch> DailyReportImportBatches { get; set; }
+    public DbSet<DailyReportImportRow> DailyReportImportRows { get; set; }
     public DbSet<StockMovement> StockMovements { get; set; }
     public DbSet<GoodsReceipt> GoodsReceipts { get; set; }
     public DbSet<GoodsReceiptLine> GoodsReceiptLines { get; set; }
