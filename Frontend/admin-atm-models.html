@@ -4,18 +4,9 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Parts Configuration — ATM Inventory</title>
-  <link rel="stylesheet" href="shared/styles.css?v=33">
+  <link rel="stylesheet" href="shared/styles.css?v=34">
   <script src="https://code.iconify.design/iconify-icon/2.1.0/iconify-icon.min.js"></script>
   <style>
-    /* ── Tabs ── */
-    .tab-bar { display:flex; gap:4px; margin-bottom:20px; background:var(--bg-subtle);
-               border-radius:10px; padding:4px; width:fit-content; }
-    .tab-btn { padding:7px 20px; border-radius:7px; font-size:13px; font-weight:600;
-               border:none; cursor:pointer; background:transparent; color:var(--text-secondary);
-               transition:all .18s; font-family:'Inter','Sarabun',sans-serif; }
-    .tab-btn.active { background:var(--bg-card); color:var(--orange);
-                      box-shadow:0 1px 6px rgba(0,0,0,.08); }
-
     /* ── Part chips ── */
     .parts-chips { display:flex; flex-wrap:wrap; gap:6px; min-height:24px; }
     .part-chip { display:inline-flex; align-items:center; gap:5px; background:var(--orange-light);
@@ -57,18 +48,6 @@
     .add-combo-row { display:flex; gap:8px; margin-top:10px; }
     .add-combo-row .combo-wrap { flex:1; }
 
-    /* ── Equivalent group cards ── */
-    .group-card { border:1.5px solid var(--border); border-radius:12px; padding:18px 20px;
-                  margin-bottom:12px; background:var(--bg-card); }
-    .group-header { display:flex; justify-content:space-between; align-items:flex-start; gap:12px; }
-    .group-name { font-size:15px; font-weight:700; color:var(--text-primary); }
-    .group-desc { font-size:12px; color:var(--text-secondary); margin-top:2px; }
-    .group-actions { display:flex; gap:6px; flex-shrink:0; }
-    .member-chip { display:inline-flex; align-items:center; gap:5px; padding:4px 10px;
-                   border-radius:20px; background:var(--orange-light); color:var(--orange);
-                   border:1px solid var(--orange); font-size:12px; font-weight:600; }
-    .member-chip .rm { cursor:pointer; opacity:.7; background:none; border:none; padding:0; font-size:13px; }
-    .member-chip .rm:hover { color:var(--red); opacity:1; }
     .section-divider { font-size:11px; font-weight:700; letter-spacing:.7px; text-transform:uppercase;
                        color:var(--orange); margin:4px 0 10px; display:block; }
   </style>
@@ -82,44 +61,24 @@
         <div class="topbar-title" data-i18n="atm.title">ATM Group Compatibility</div>
         <div class="topbar-sub" data-i18n="atm.sub">Define which parts are compatible with each ATM group</div>
       </div>
-      <button id="topbarBtn" class="btn btn-primary" onclick="topbarAction()">+ New Group</button>
+      <button id="topbarBtn" class="btn btn-primary" onclick="openCreateModel()">+ New Group</button>
     </div>
 
     <div class="page-body">
-      <!-- Tabs -->
-      <div class="tab-bar">
-        <button class="tab-btn active" id="tab-models" onclick="switchTab('models')">
-          <iconify-icon icon="material-symbols:join" width="15" style="vertical-align:-3px"></iconify-icon> ATM Groups
-        </button>
-        <button class="tab-btn" id="tab-equiv" onclick="switchTab('equiv')">
-          <iconify-icon icon="lsicon:switch-filled" width="15" style="vertical-align:-3px"></iconify-icon> Equivalent Groups
-        </button>
-      </div>
-
-      <!-- ── Tab 1: ATM Models ── -->
-      <div id="pane-models">
-        <div class="card">
-          <div class="table-wrap">
-            <table>
-              <thead><tr>
-                <th style="width:12%" data-i18n="atm.col.code">Group Code</th>
-                <th style="width:22%" data-i18n="atm.col.name">Group Name</th>
-                <th style="width:12%" data-i18n="atm.col.maker">Manufacturer</th>
-                <th data-i18n="atm.col.parts">Compatible Parts</th>
-                <th style="width:10%" data-i18n="atm.col.action">Action</th>
-              </tr></thead>
-              <tbody id="modelsBody">
-                <tr><td colspan="5" class="empty-state" data-i18n="connecting">Connecting…</td></tr>
-              </tbody>
-            </table>
-          </div>
-        </div>
-      </div>
-
-      <!-- ── Tab 2: Equivalent Groups ── -->
-      <div id="pane-equiv" style="display:none">
-        <div id="groupsContainer">
-          <div class="empty-state" data-i18n="connecting">Connecting…</div>
+      <div class="card">
+        <div class="table-wrap">
+          <table>
+            <thead><tr>
+              <th style="width:12%" data-i18n="atm.col.code">Group Code</th>
+              <th style="width:22%" data-i18n="atm.col.name">Group Name</th>
+              <th style="width:12%" data-i18n="atm.col.maker">Manufacturer</th>
+              <th data-i18n="atm.col.parts">Compatible Parts</th>
+              <th style="width:10%" data-i18n="atm.col.action">Action</th>
+            </tr></thead>
+            <tbody id="modelsBody">
+              <tr><td colspan="5" class="empty-state" data-i18n="connecting">Connecting…</td></tr>
+            </tbody>
+          </table>
         </div>
       </div>
     </div>
@@ -173,32 +132,11 @@
   </div>
 </div>
 
-<!-- ── Equivalent Group Modal ── -->
-<div class="modal-overlay" id="groupModal" onclick="if(event.target===this)closeGroupModal()">
-  <div class="modal" style="max-width:440px">
-    <div class="modal-header">
-      <span class="modal-title" id="groupModalTitle">New Group</span>
-      <button class="modal-close" onclick="closeGroupModal()">✕</button>
-    </div>
-    <div class="form-group" style="margin-bottom:14px">
-      <label class="form-label" data-i18n="eg.lbl.name">Group Name *</label>
-      <input class="form-input" id="gName" placeholder="e.g. Display Module Group">
-    </div>
-    <div class="form-group" style="margin-bottom:20px">
-      <label class="form-label" data-i18n="eg.lbl.desc">Description</label>
-      <input class="form-input" id="gDesc" placeholder="Optional">
-    </div>
-    <div style="display:flex;gap:10px;justify-content:flex-end">
-      <button class="btn btn-ghost" onclick="closeGroupModal()" data-i18n="btn.cancel">Cancel</button>
-      <button class="btn btn-primary" style="width:auto;margin-top:0" onclick="saveGroup()" data-i18n="btn.save">Save</button>
-    </div>
-  </div>
-</div>
 
-<script src="shared/translations.js?v=33"></script>
-<script src="shared/toast.js?v=33"></script>
-<script src="shared/api.js?v=33"></script>
-<script src="shared/layout.js?v=33"></script>
+<script src="shared/translations.js?v=34"></script>
+<script src="shared/toast.js?v=34"></script>
+<script src="shared/api.js?v=34"></script>
+<script src="shared/layout.js?v=34"></script>
 <script>
 /* ════════════════════════════════════════════════════════
    Searchable Combobox component
@@ -282,14 +220,11 @@ function buildCombo(wrapEl, parts, placeholder) {
 /* ════════ State ════════ */
 let allModels  = [];
 let allParts   = [];
-let allGroups  = [];
 let editModelId = null;
 let editModel   = null;
-let editGroupId = null;
-let currentTab  = 'models';
 let compatCombo = null;
 
-function onLangChange() { renderModels(); renderGroups(); }
+function onLangChange() { renderModels(); }
 
 window.addEventListener('DOMContentLoaded', () => {
   initLayout();
@@ -298,30 +233,12 @@ window.addEventListener('DOMContentLoaded', () => {
 
 async function loadAll() {
   try {
-    [allModels, allParts, allGroups] = await Promise.all([
+    [allModels, allParts] = await Promise.all([
       api.atmModels.getAll({ isActive: true }),
-      api.parts.getAll({ isActive: true }),
-      api.equivalentGroups.getAll()
+      api.parts.getAll({ isActive: true })
     ]);
     renderModels();
-    renderGroups();
   } catch(e) { showToast(e.message || t('error.connect'), 'error'); }
-}
-
-/* ════════ Tabs ════════ */
-function switchTab(tab) {
-  currentTab = tab;
-  document.getElementById('pane-models').style.display = tab === 'models' ? '' : 'none';
-  document.getElementById('pane-equiv').style.display  = tab === 'equiv'  ? '' : 'none';
-  document.getElementById('tab-models').classList.toggle('active', tab === 'models');
-  document.getElementById('tab-equiv').classList.toggle('active',  tab === 'equiv');
-  const btn = document.getElementById('topbarBtn');
-  btn.textContent = tab === 'models' ? '+ New Group' : '+ New Group';
-}
-
-function topbarAction() {
-  if (currentTab === 'models') openCreateModel();
-  else openCreateGroup();
 }
 
 /* ════════ ATM Models ════════ */
@@ -445,119 +362,6 @@ function closeModelModal() {
   document.getElementById('modelModal').classList.remove('open');
 }
 
-/* ════════ Equivalent Groups ════════ */
-function renderGroups() {
-  const container = document.getElementById('groupsContainer');
-  if (!allGroups.length) {
-    container.innerHTML = `<div class="empty-state">${t('eg.empty')}</div>`;
-    return;
-  }
-  container.innerHTML = allGroups.map(g => `
-    <div class="group-card" id="gc-${g.id}">
-      <div class="group-header">
-        <div>
-          <div class="group-name">${g.name}</div>
-          ${g.description ? `<div class="group-desc">${g.description}</div>` : ''}
-        </div>
-        <div class="group-actions">
-          <button class="btn btn-ghost" style="padding:5px 10px;font-size:12px" onclick="openEditGroup(${g.id})">✏️ Edit</button>
-          <button class="btn btn-ghost" style="padding:5px 10px;font-size:12px;color:var(--red)" onclick="deleteGroup(${g.id})">🗑 Delete</button>
-        </div>
-      </div>
-      <div class="parts-chips" style="margin-top:12px">
-        ${g.members.map(m => `
-          <span class="member-chip">${m.partNo}${m.partName && m.partName !== m.partNo ? ' — ' + m.partName : ''}
-            <button class="rm" onclick="removeMember(${g.id},${m.id})">✕</button>
-          </span>`).join('')}
-        ${!g.members.length ? `<span style="font-size:12px;color:var(--text-muted)">ยังไม่มีสมาชิก</span>` : ''}
-      </div>
-      <!-- Searchable add-member row -->
-      <div class="add-combo-row" style="margin-top:10px">
-        <div class="combo-wrap" id="gcw-${g.id}"></div>
-        <button class="btn btn-primary" style="width:auto;padding:8px 14px;white-space:nowrap" onclick="addMember(${g.id})">+ Add</button>
-      </div>
-    </div>`).join('');
-
-  // Build a combo for each group card
-  allGroups.forEach(g => {
-    const existing = new Set(g.members.map(m => m.partNo));
-    const available = allParts.filter(p => !existing.has(p.partNo));
-    const wrap = document.getElementById(`gcw-${g.id}`);
-    if (wrap) wrap._combo = buildCombo(wrap, available, 'ค้นหาหรือเลือกอะไหล่…');
-  });
-}
-
-function openCreateGroup() {
-  editGroupId = null;
-  document.getElementById('groupModalTitle').textContent = t('eg.modal.new');
-  document.getElementById('gName').value = '';
-  document.getElementById('gDesc').value = '';
-  document.getElementById('groupModal').classList.add('open');
-}
-
-function openEditGroup(id) {
-  const g = allGroups.find(x => x.id === id);
-  if (!g) return;
-  editGroupId = id;
-  document.getElementById('groupModalTitle').textContent = t('eg.modal.edit');
-  document.getElementById('gName').value = g.name;
-  document.getElementById('gDesc').value = g.description || '';
-  document.getElementById('groupModal').classList.add('open');
-}
-
-function closeGroupModal() {
-  document.getElementById('groupModal').classList.remove('open');
-}
-
-async function saveGroup() {
-  const name = document.getElementById('gName').value.trim();
-  const desc = document.getElementById('gDesc').value.trim();
-  if (!name) { showToast('Group name จำเป็น', 'error'); return; }
-  try {
-    if (editGroupId) {
-      await api.equivalentGroups.update(editGroupId, { name, description: desc || null });
-      showToast('บันทึกแล้ว', 'success');
-    } else {
-      await api.equivalentGroups.create({ name, description: desc || null });
-      showToast('สร้างกลุ่มแล้ว', 'success');
-    }
-    allGroups = await api.equivalentGroups.getAll();
-    renderGroups();
-    closeGroupModal();
-  } catch(e) { showToast(e.message, 'error'); }
-}
-
-async function deleteGroup(id) {
-  if (!confirm('ลบกลุ่มนี้?')) return;
-  try {
-    await api.equivalentGroups.remove(id);
-    showToast('ลบแล้ว', 'success');
-    allGroups = await api.equivalentGroups.getAll();
-    renderGroups();
-  } catch(e) { showToast(e.message, 'error'); }
-}
-
-async function addMember(groupId) {
-  const wrap = document.getElementById(`gcw-${groupId}`);
-  const combo = wrap?._combo;
-  const partNo = combo?.getValue();
-  if (!partNo) { showToast('กรุณาเลือกอะไหล่', 'error'); return; }
-  try {
-    await api.equivalentGroups.addMember(groupId, partNo);
-    showToast(`เพิ่ม ${partNo} แล้ว`, 'success');
-    allGroups = await api.equivalentGroups.getAll();
-    renderGroups();
-  } catch(e) { showToast(e.message, 'error'); }
-}
-
-async function removeMember(groupId, memberId) {
-  try {
-    await api.equivalentGroups.removeMember(groupId, memberId);
-    showToast('ลบสมาชิกแล้ว', 'success');
-    allGroups = await api.equivalentGroups.getAll();
-    renderGroups();
-  } catch(e) { showToast(e.message, 'error'); }
-}
 </script>
 </body>
 </html>
