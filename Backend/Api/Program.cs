@@ -267,6 +267,14 @@ using (var scope = app.Services.CreateScope())
                 context.Database.ExecuteSqlRaw("ALTER TABLE Tickets ADD COLUMN WithdrawDescription TEXT NULL;");
                 Console.WriteLine("✅ Migration: added Tickets.WithdrawDescription");
             }
+            if (!ticketCols.Contains("WithdrawSlipNo"))
+            {
+                context.Database.ExecuteSqlRaw("ALTER TABLE Tickets ADD COLUMN WithdrawSlipNo TEXT NULL;");
+                context.Database.ExecuteSqlRaw("ALTER TABLE Tickets ADD COLUMN WithdrawDate TEXT NULL;");
+                context.Database.ExecuteSqlRaw("ALTER TABLE Tickets ADD COLUMN EmployeeCode TEXT NULL;");
+                context.Database.ExecuteSqlRaw("ALTER TABLE Tickets ADD COLUMN UsageStatus TEXT NULL;");
+                Console.WriteLine("✅ Migration: added Tickets.WithdrawSlipNo/WithdrawDate/EmployeeCode/UsageStatus");
+            }
             // One Aservice Ticket can now carry multiple independent ใบเบิก (withdraw slips) —
             // drop the old unique index on ExternalTicketNo on DBs created before this, so a
             // second/third withdraw under the same ticket number is no longer blocked.

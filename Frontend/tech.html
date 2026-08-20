@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Tech Workspace — ATM Inventory</title>
-    <link rel="stylesheet" href="shared/styles.css?v=29">
+    <link rel="stylesheet" href="shared/styles.css?v=30">
     <style>
         .section-head { display:flex; align-items:center; gap:10px; margin-bottom:20px; }
         .section-accent { width:4px; height:22px; background:var(--orange); border-radius:2px; }
@@ -135,6 +135,7 @@
             <div class="tk-readonly-box">
                 <div class="tk-readonly-grid">
                     <div class="tk-readonly-field"><label>Ticket No.</label><span id="wdTicketNo">—</span></div>
+                    <div class="tk-readonly-field"><label>เลขที่ใบเบิก</label><span id="wdSlipNo">จะออกให้หลังส่งคำขอ</span></div>
                     <div class="tk-readonly-field"><label>ช่าง</label><span id="wdTechName">—</span></div>
                     <div class="tk-readonly-field"><label>Zone / Dept</label><span id="wdTechDept">—</span></div>
                     <div class="tk-readonly-field"><label>วันที่สร้าง</label><span id="wdCreatedAt">—</span></div>
@@ -144,6 +145,29 @@
             <div id="wdRejectBox" style="display:none;background:var(--red-light);border:1px solid var(--red);border-radius:10px;padding:12px 14px;margin-bottom:18px;">
                 <div style="font-size:10.5px;font-weight:700;letter-spacing:.4px;text-transform:uppercase;color:var(--red);margin-bottom:3px;">Admin ปฏิเสธ — เหตุผล</div>
                 <div id="wdRejectReason" style="font-size:13px;color:var(--text-primary);"></div>
+            </div>
+
+            <span class="tk-section-label">ข้อมูลใบเบิก</span>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px;">
+                <div>
+                    <label style="font-size:11px;color:var(--text-muted);display:block;margin-bottom:4px;">วันที่เบิกอะไหล่</label>
+                    <input id="wdWithdrawDate" type="date" class="select-part" style="margin-bottom:0;">
+                </div>
+                <div>
+                    <label style="font-size:11px;color:var(--text-muted);display:block;margin-bottom:4px;">รหัสพนักงาน</label>
+                    <input id="wdEmployeeCode" type="text" placeholder="รหัสพนักงาน" class="select-part" style="margin-bottom:0;">
+                </div>
+            </div>
+            <div style="margin-bottom:10px;">
+                <label style="font-size:11px;color:var(--text-muted);display:block;margin-bottom:4px;">Case No. (Aservice)</label>
+                <input id="wdCaseNo" type="text" placeholder="เช่น TS-20260730-01171" class="select-part" style="margin-bottom:0;" readonly>
+            </div>
+            <div style="margin-bottom:18px;">
+                <label style="font-size:11px;color:var(--text-muted);display:block;margin-bottom:4px;">Status การใช้งาน</label>
+                <select id="wdUsageStatus" class="select-part" style="margin-bottom:0;" onchange="onUsageStatusChange('wd')">
+                    <option value="Repair">เบิกไปซ่อม</option>
+                    <option value="Keep">เก็บ (สต็อกสำรองติดตัวช่าง)</option>
+                </select>
             </div>
 
             <span class="tk-section-label">เลือกอะไหล่ที่ต้องการเบิก</span>
@@ -221,9 +245,32 @@
         </div>
         <div class="tk-modal-body">
             <span class="tk-section-label">ข้อมูลช่าง</span>
-            <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:18px;">
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px;">
                 <input id="nrTechName" type="text" placeholder="ชื่อช่าง" class="select-part" style="margin-bottom:0;">
                 <input id="nrTechDept" type="text" placeholder="Zone / แผนก" class="select-part" style="margin-bottom:0;">
+            </div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px;">
+                <div>
+                    <label style="font-size:11px;color:var(--text-muted);display:block;margin-bottom:4px;">วันที่เบิกอะไหล่</label>
+                    <input id="nrWithdrawDate" type="date" class="select-part" style="margin-bottom:0;">
+                </div>
+                <div>
+                    <label style="font-size:11px;color:var(--text-muted);display:block;margin-bottom:4px;">รหัสพนักงาน</label>
+                    <input id="nrEmployeeCode" type="text" placeholder="รหัสพนักงาน" class="select-part" style="margin-bottom:0;">
+                </div>
+            </div>
+            <div style="margin-bottom:10px;">
+                <label style="font-size:11px;color:var(--text-muted);display:block;margin-bottom:4px;">
+                    Case No. (Aservice) <span id="nrCaseNoRequired" style="color:var(--red);">*</span>
+                </label>
+                <input id="nrCaseNo" type="text" placeholder="เช่น TS-20260730-01171" class="select-part" style="margin-bottom:0;">
+            </div>
+            <div style="margin-bottom:18px;">
+                <label style="font-size:11px;color:var(--text-muted);display:block;margin-bottom:4px;">Status การใช้งาน</label>
+                <select id="nrUsageStatus" class="select-part" style="margin-bottom:0;" onchange="onUsageStatusChange('nr')">
+                    <option value="Repair">เบิกไปซ่อม</option>
+                    <option value="Keep">เก็บ (สต็อกสำรองติดตัวช่าง)</option>
+                </select>
             </div>
 
             <span class="tk-section-label">เลือกอะไหล่ที่ต้องการเบิก</span>
@@ -249,10 +296,10 @@
     </div>
 </div>
 
-<script src="shared/translations.js?v=29"></script>
-<script src="shared/toast.js?v=29"></script>
-<script src="shared/api.js?v=29"></script>
-<script src="shared/layout.js?v=29"></script>
+<script src="shared/translations.js?v=30"></script>
+<script src="shared/toast.js?v=30"></script>
+<script src="shared/api.js?v=30"></script>
+<script src="shared/layout.js?v=30"></script>
 <script>
     /* Status: รอ / เดินทาง / เบิก / คืน / Reject / Cancel   (null = ยังไม่เริ่มเบิก) */
     const currentEmail = localStorage.getItem('userEmail') || 'tech@atm.com';
@@ -359,9 +406,10 @@
                     // job needs more parts while the first request is still open) — always
                     // offered, regardless of this row's own status.
                     const addlBtn = `<button class="btn-add-line" style="margin-top:4px;font-size:11px;padding:4px 8px;width:auto;" onclick="requestAdditionalWithdraw(${tk.ticketId})">➕ เบิกเพิ่ม (ใบใหม่)</button>`;
-                    const ticketLabel = tk.siblingCount > 1
+                    const slipNoLine = tk.withdrawSlipNo ? `<div class="text-muted" style="font-size:10.5px;margin-top:2px;">${tk.withdrawSlipNo}</div>` : '';
+                    const ticketLabel = (tk.siblingCount > 1
                         ? `<span class="id-chip ticket-id">${tk.externalTicketNo}</span><div class="text-muted" style="font-size:11px;margin-top:2px;">ใบที่ ${tk.siblingIndex} จาก ${tk.siblingCount}</div>`
-                        : `<span class="id-chip ticket-id">${tk.externalTicketNo}</span>`;
+                        : `<span class="id-chip ticket-id">${tk.externalTicketNo}</span>`) + slipNoLine;
 
                     body += `
                         <tr>
@@ -572,10 +620,15 @@
         pendingAdditionalSrc = src;
         activeTicketId = null;
         document.getElementById('wdTicketNo').textContent = src.externalTicketNo;
+        document.getElementById('wdSlipNo').textContent = 'จะออกให้หลังส่งคำขอ';
         document.getElementById('wdTechName').textContent = src.techName;
         document.getElementById('wdTechDept').textContent = src.techDept;
         document.getElementById('wdCreatedAt').textContent = new Date().toLocaleString('th-TH');
         document.getElementById('wdRejectBox').style.display = 'none';
+        document.getElementById('wdWithdrawDate').value = todayIso();
+        document.getElementById('wdEmployeeCode').value = '';
+        document.getElementById('wdCaseNo').value = src.externalTicketNo;
+        document.getElementById('wdUsageStatus').value = 'Repair';
         document.getElementById('wdAddress').value = '';
         document.getElementById('wdDescription').value = '';
         document.getElementById('wdLines').innerHTML = '';
@@ -586,6 +639,18 @@
         document.getElementById('withdrawOverlay').classList.add('open');
     }
 
+    function todayIso() { return new Date().toISOString().slice(0, 10); }
+
+    // "Repair" ties this withdraw to a specific Case No.; "Keep" is buffer stock the tech just
+    // holds onto, not tied to any job — so Case No. is only required for Repair. Only the New
+    // Request form's Case No. is actually editable (the other forms' Case No. already comes from
+    // an existing Ticket), so this only needs to toggle the "required" marker there.
+    function onUsageStatusChange(prefix) {
+        if (prefix !== 'nr') return;
+        const required = document.getElementById('nrUsageStatus').value === 'Repair';
+        document.getElementById('nrCaseNoRequired').style.display = required ? 'inline' : 'none';
+    }
+
     /* ── Withdraw form (also handles resubmit-after-Reject) ── */
     function openWithdrawModal(id) {
         const tk = cachedTickets.find(t => t.ticketId === id);
@@ -593,9 +658,14 @@
         activeTicketId = id;
         pendingAdditionalSrc = null;
         document.getElementById('wdTicketNo').textContent = tk.externalTicketNo;
+        document.getElementById('wdSlipNo').textContent = tk.withdrawSlipNo || 'จะออกให้หลังส่งคำขอ';
         document.getElementById('wdTechName').textContent = tk.techName;
         document.getElementById('wdTechDept').textContent = tk.techDept;
         document.getElementById('wdCreatedAt').textContent = new Date(tk.createdAt).toLocaleString('th-TH');
+        document.getElementById('wdWithdrawDate').value = (tk.withdrawDate || '').slice(0, 10) || todayIso();
+        document.getElementById('wdEmployeeCode').value = tk.employeeCode || '';
+        document.getElementById('wdCaseNo').value = tk.externalTicketNo;
+        document.getElementById('wdUsageStatus').value = tk.usageStatus || 'Repair';
 
         const rejectBox = document.getElementById('wdRejectBox');
         if (tk.status === 'Reject' && tk.rejectReason) {
@@ -631,6 +701,9 @@
         const lines = collectLines('wd', wdLineCount);
         const address = document.getElementById('wdAddress').value.trim();
         const description = document.getElementById('wdDescription').value.trim();
+        const withdrawDate = document.getElementById('wdWithdrawDate').value || null;
+        const employeeCode = document.getElementById('wdEmployeeCode').value.trim();
+        const usageStatus = document.getElementById('wdUsageStatus').value;
         if (!lines.length) { showToast?.('เลือกอะไหล่อย่างน้อย 1 รายการ', 'error'); return; }
         if (!address) { showToast?.('กรุณากรอกที่อยู่จัดส่ง', 'error'); return; }
 
@@ -653,11 +726,12 @@
 
         try {
             const attachments = await uploadPendingPhotos('wd');
-            await api.tickets.submitWithdraw(ticketId, { lines, address, description, attachments });
+            const res = await api.tickets.submitWithdraw(ticketId, { lines, address, description, attachments, withdrawDate, employeeCode, usageStatus });
             photoFiles.wd = [];
             closeWithdrawModal();
             await fetchTickets();
-            showToast?.('ส่งคำขอเบิกแล้ว รอ Admin อนุมัติ', 'success');
+            const slipNo = res?.ticket?.withdrawSlipNo;
+            showToast?.(slipNo ? `ส่งคำขอเบิกแล้ว เลขที่ใบเบิก ${slipNo} — รอ Admin อนุมัติ` : 'ส่งคำขอเบิกแล้ว รอ Admin อนุมัติ', 'success');
         } catch (e) {
             if (createdTicketId) { try { await api.tickets.remove(createdTicketId); } catch {} }
             showToast?.(e.message || t('toast.error'), 'error');
@@ -731,6 +805,11 @@
         const last = cachedTickets.find(t => t.techName);
         document.getElementById('nrTechName').value = last?.techName || '';
         document.getElementById('nrTechDept').value = last?.techDept || '';
+        document.getElementById('nrWithdrawDate').value = todayIso();
+        document.getElementById('nrEmployeeCode').value = '';
+        document.getElementById('nrCaseNo').value = '';
+        document.getElementById('nrUsageStatus').value = 'Repair';
+        onUsageStatusChange('nr');
         document.getElementById('nrAddress').value = '';
         document.getElementById('nrDescription').value = '';
         document.getElementById('nrLines').innerHTML = '';
@@ -749,20 +828,29 @@
         const lines = collectLines('nr', nrLineCount);
         const address = document.getElementById('nrAddress').value.trim();
         const description = document.getElementById('nrDescription').value.trim();
+        const withdrawDate = document.getElementById('nrWithdrawDate').value || null;
+        const employeeCode = document.getElementById('nrEmployeeCode').value.trim();
+        const caseNo = document.getElementById('nrCaseNo').value.trim();
+        const usageStatus = document.getElementById('nrUsageStatus').value;
         if (!techName) { showToast?.('กรอกชื่อช่าง', 'error'); return; }
         if (!lines.length) { showToast?.('เลือกอะไหล่อย่างน้อย 1 รายการ', 'error'); return; }
         if (!address) { showToast?.('กรุณากรอกที่อยู่จัดส่ง', 'error'); return; }
+        // Case No. only matters when this withdraw is tied to a specific repair job — "เก็บ"
+        // (buffer stock) isn't tied to any job, so it's fine left blank (falls back to a
+        // self-generated placeholder number, same as before this feature existed).
+        if (usageStatus === 'Repair' && !caseNo) { showToast?.('กรอก Case No. (จำเป็นสำหรับ "เบิกไปซ่อม")', 'error'); return; }
         let syncedTicketId = null;
         try {
-            const externalTicketNo = `SELF-${Date.now()}`;
+            const externalTicketNo = caseNo || `SELF-${Date.now()}`;
             const synced = await api.tickets.sync({ externalTicketNo, techName, techEmail: currentEmail, techDept });
             syncedTicketId = synced.ticket.ticketId;
             const attachments = await uploadPendingPhotos('nr');
-            await api.tickets.submitWithdraw(syncedTicketId, { lines, address, description, attachments });
+            const res = await api.tickets.submitWithdraw(syncedTicketId, { lines, address, description, attachments, withdrawDate, employeeCode, usageStatus });
             photoFiles.nr = [];
             closeNewRequestModal();
             await fetchTickets();
-            showToast?.('ส่งคำขอเบิกแล้ว รอ Admin อนุมัติ', 'success');
+            const slipNo = res?.ticket?.withdrawSlipNo;
+            showToast?.(slipNo ? `ส่งคำขอเบิกแล้ว เลขที่ใบเบิก ${slipNo} — รอ Admin อนุมัติ` : 'ส่งคำขอเบิกแล้ว รอ Admin อนุมัติ', 'success');
         } catch (e) {
             // If sync succeeded but a later step (photo upload, withdraw) failed, don't leave a
             // dangling empty ticket behind — clean it up so retrying doesn't pile up duplicates.

@@ -28,6 +28,20 @@ public class Ticket
     // ปลั๊ก Sensor ขาด") — optional, shown to Admin alongside the withdraw request.
     public string? WithdrawDescription { get; set; }
 
+    // Set once, at the moment a withdraw request is actually submitted (SubmitWithdraw) —
+    // "WD-{year}-{5-digit running no.}", resets every calendar year. System-generated, the tech
+    // never types it in.
+    public string? WithdrawSlipNo { get; set; }
+
+    // Tech-entered date/employee code on the withdraw form — informational, doesn't drive any
+    // state transition (CreatedAt/UpdatedAt already track when the system recorded things).
+    public DateTime? WithdrawDate { get; set; }
+    public string? EmployeeCode { get; set; }
+
+    // "Repair" (เบิกไปซ่อม — tied to a specific job/Case No., expected back after the job closes)
+    // or "Keep" (เก็บ — the tech holds it as personal buffer stock, not tied to any job).
+    public string? UsageStatus { get; set; }
+
     public DateTime CreatedAt { get; set; } = DateTime.Now;
     public DateTime UpdatedAt { get; set; } = DateTime.Now;
 

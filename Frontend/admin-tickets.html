@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Tickets — ATM Inventory</title>
-    <link rel="stylesheet" href="shared/styles.css?v=29">
+    <link rel="stylesheet" href="shared/styles.css?v=30">
     <style>
         /* Page-specific overrides */
         .section-head { display:flex; align-items:center; gap:10px; margin-bottom:20px; }
@@ -294,10 +294,10 @@
     </div>
 </div>
 
-<script src="shared/translations.js?v=29"></script>
-<script src="shared/toast.js?v=29"></script>
-<script src="shared/api.js?v=29"></script>
-<script src="shared/layout.js?v=29"></script>
+<script src="shared/translations.js?v=30"></script>
+<script src="shared/toast.js?v=30"></script>
+<script src="shared/api.js?v=30"></script>
+<script src="shared/layout.js?v=30"></script>
 <script>
     let cachedTickets = [];
     let rejectTargetId = null;
@@ -719,6 +719,26 @@
                     </div>
                 </div>
             </div>
+
+            ${tk.withdrawSlipNo ? `
+            <hr class="detail-divider">
+            <div class="detail-section">
+                <div class="detail-section-title">📋 ข้อมูลใบเบิก</div>
+                <div class="detail-grid">
+                    <div class="detail-field">
+                        <label>เลขที่ใบเบิก</label><span>${tk.withdrawSlipNo}</span>
+                    </div>
+                    <div class="detail-field">
+                        <label>วันที่เบิกอะไหล่</label><span>${tk.withdrawDate ? new Date(tk.withdrawDate).toLocaleDateString('th-TH') : none}</span>
+                    </div>
+                    <div class="detail-field">
+                        <label>รหัสพนักงาน</label><span>${tk.employeeCode || none}</span>
+                    </div>
+                    <div class="detail-field">
+                        <label>Status การใช้งาน</label><span>${tk.usageStatus === 'Keep' ? 'เก็บ (สต็อกสำรอง)' : tk.usageStatus === 'Repair' ? 'เบิกไปซ่อม' : none}</span>
+                    </div>
+                </div>
+            </div>` : ''}
 
             <hr class="detail-divider">
 

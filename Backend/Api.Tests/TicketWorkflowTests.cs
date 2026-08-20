@@ -593,4 +593,81 @@ public class TicketWorkflowTests
         Assert.Equal(TicketControllerFixture.PartNo, lineJson.GetProperty("OriginalPartNo").GetString());
         Assert.Equal("Test Part", lineJson.GetProperty("originalPartName").GetString());
     }
+
+    // ── Withdraw slip number / usage status ────────────────────────────────────
+
+    [Fact]
+    public void SubmitWithdraw_GeneratesWithdrawSlipNo_AndStoresFormFields()
+    {
+        var (controller, context) = TicketControllerFixture.Create();
+        controller.SyncFromAservice(new SyncTicketDto { ExternalTicketNo = "WD-T1", TechName = "Tech" });
+        var ticket = context.Tickets.First(t => t.ExternalTicketNo == "WD-T1");
+
+        var result = controller.SubmitWithdraw(ticket.TicketId, new SubmitLinesDto
+        {
+            Lines = new() { new LineDto { PartNo = TicketControllerFixture.PartNo, Quantity = 1 } },
+            Address = "Addr",
+            WithdrawDate = new DateTime(2026, 3, 2),
+            EmployeeCode = "EMP001",
+            UsageStatus = "Repair"
+        });
+
+        Assert.IsType<OkObjectResult>(result);
+        var ticketAfter = context.Tickets.First(t => t.TicketId == ticket.TicketId);
+        Assert.Matches(@"^WD-\d{4}-\d{5}$", ticketAfter.WithdrawSlipNo);
+        Assert.Equal(new DateTime(2026, 3, 2), ticketAfter.WithdrawDate);
+        Assert.Equal("EMP001", ticketAfter.EmployeeCode);
+        Assert.Equal("Repair", ticketAfter.UsageStatus);
+    }
+
+    [Fact]
+    public void SubmitWithdraw_TwoTicketsSameYear_GetSequentialSlipNumbers()
+    {
+        var (controller, context) = TicketControllerFixture.Create();
+        TicketControllerFixture.SeedEquivalentPart(context); // second part so both lines have stock
+
+        controller.SyncFromAservice(new SyncTicketDto { ExternalTicketNo = "WD-T2A", TechName = "Tech" });
+        var t1 = context.Tickets.First(t => t.ExternalTicketNo == "WD-T2A");
+        controller.SubmitWithdraw(t1.TicketId, new SubmitLinesDto
+        {
+            Lines = new() { new LineDto { PartNo = TicketControllerFixture.PartNo, Quantity = 1 } }, Address = "Addr"
+        });
+
+        controller.SyncFromAservice(new SyncTicketDto { ExternalTicketNo = "WD-T2B", TechName = "Tech" });
+        var t2 = context.Tickets.First(t => t.ExternalTicketNo == "WD-T2B");
+        controller.SubmitWithdraw(t2.TicketId, new SubmitLinesDto
+        {
+            Lines = new() { new LineDto { PartNo = TicketControllerFixture.EquivalentPartNo, Quantity = 1 } }, Address = "Addr"
+        });
+
+        var slip1 = context.Tickets.First(t => t.TicketId == t1.TicketId).WithdrawSlipNo;
+        var slip2 = context.Tickets.First(t => t.TicketId == t2.TicketId).WithdrawSlipNo;
+        Assert.NotEqual(slip1, slip2);
+        var year = DateTime.Now.Year;
+        Assert.Equal($"WD-{year}-00001", slip1);
+        Assert.Equal($"WD-{year}-00002", slip2);
+    }
+
+    [Fact]
+    public void RejectTicket_ThenResubmit_KeepsTheSameWithdrawSlipNo()
+    {
+        // Resubmitting after Reject is still the same ใบเบิก, not a new one.
+        var (controller, context) = TicketControllerFixture.Create();
+        controller.SyncFromAservice(new SyncTicketDto { ExternalTicketNo = "WD-T3", TechName = "Tech" });
+        var ticket = context.Tickets.First(t => t.ExternalTicketNo == "WD-T3");
+        controller.SubmitWithdraw(ticket.TicketId, new SubmitLinesDto
+        {
+            Lines = new() { new LineDto { PartNo = TicketControllerFixture.PartNo, Quantity = 1 } }, Address = "Addr"
+        });
+        var firstSlipNo = context.Tickets.First(t => t.TicketId == ticket.TicketId).WithdrawSlipNo;
+
+        controller.RejectTicket(ticket.TicketId, new RejectDto { Reason = "ผิดรุ่น" });
+        controller.SubmitWithdraw(ticket.TicketId, new SubmitLinesDto
+        {
+            Lines = new() { new LineDto { PartNo = TicketControllerFixture.PartNo, Quantity = 2 } }, Address = "Addr2"
+        });
+
+        var secondSlipNo = context.Tickets.First(t => t.TicketId == ticket.TicketId).WithdrawSlipNo;
+        Assert.Equal(firstSlipNo, secondSlipNo);
+    }
 }

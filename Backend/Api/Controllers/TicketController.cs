@@ -70,6 +70,7 @@ public class TicketController : ControllerBase
                 t.TicketId, t.ExternalTicketNo, t.TechEmail, t.TechName, t.TechDept,
                 t.Status, t.RejectReason, t.ApproverName, t.ApprovedAt,
                 t.WithdrawAddress, t.ReturnAddress, t.WithdrawDescription, t.CreatedAt, t.UpdatedAt,
+                t.WithdrawSlipNo, t.WithdrawDate, t.EmployeeCode, t.UsageStatus,
                 phase = Phase(t.ReturnAddress, tLines),
                 siblingIndex = siblings.IndexOf(t.TicketId) + 1,
                 siblingCount = siblings.Count,
@@ -203,9 +204,24 @@ public class TicketController : ControllerBase
         ticket.Status = "รอ";
         ticket.WithdrawAddress = dto.Address;
         ticket.WithdrawDescription = dto.Description;
+        ticket.WithdrawSlipNo ??= GenerateWithdrawSlipNo(); // never renumber a resubmit-after-reject
+        ticket.WithdrawDate = dto.WithdrawDate ?? DateTime.Now;
+        ticket.EmployeeCode = dto.EmployeeCode;
+        ticket.UsageStatus = dto.UsageStatus;
         ticket.UpdatedAt = DateTime.Now;
         _context.SaveChanges();
         return Ok(new { message = "Withdraw request submitted.", ticket });
+    }
+
+    // "WD-{year}-{5-digit running no.}" — resets every calendar year. Counts existing slip
+    // numbers for the current year rather than a dedicated sequence table; fine at this scale
+    // (small internal tool, low concurrent-submit volume).
+    private string GenerateWithdrawSlipNo()
+    {
+        var year = DateTime.Now.Year;
+        var prefix = $"WD-{year}-";
+        var count = _context.Tickets.Count(t => t.WithdrawSlipNo != null && t.WithdrawSlipNo.StartsWith(prefix));
+        return $"{prefix}{(count + 1):D5}";
     }
 
     // PUT /api/Ticket/{id}/lines/{lineId}/substitute — Admin swaps a requested part for a
@@ -532,6 +548,10 @@ public class SubmitLinesDto
     public List<AttachmentDto>? Attachments { get; set; }
     // Withdraw only — free-text note on why these parts are needed (e.g. "Card reader เสีย").
     public string? Description { get; set; }
+    // Withdraw only — see Ticket.WithdrawDate/EmployeeCode/UsageStatus.
+    public DateTime? WithdrawDate { get; set; }
+    public string? EmployeeCode { get; set; }
+    public string? UsageStatus { get; set; } // "Repair" | "Keep"
 }
 
 public class AttachmentDto
