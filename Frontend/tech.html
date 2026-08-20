@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Tech Workspace — ATM Inventory</title>
-    <link rel="stylesheet" href="shared/styles.css?v=30">
+    <link rel="stylesheet" href="shared/styles.css?v=31">
     <style>
         .section-head { display:flex; align-items:center; gap:10px; margin-bottom:20px; }
         .section-accent { width:4px; height:22px; background:var(--orange); border-radius:2px; }
@@ -37,6 +37,8 @@
         .btn-return:hover { background:var(--green); color:#fff; }
         .btn-ship     { background:var(--bg-subtle); color:var(--text-secondary); border:1.5px solid var(--border); padding:7px 14px; font-size:12.5px; font-weight:600; border-radius:8px; font-family:inherit; cursor:pointer; }
         .btn-ship:hover { background:var(--text-secondary); color:#fff; }
+        .btn-cancel-withdraw { display:block; margin-top:6px; background:none; color:var(--red-light,#dc2626); border:none; padding:0; font-size:11.5px; font-weight:600; font-family:inherit; cursor:pointer; text-decoration:underline; text-underline-offset:2px; }
+        .btn-cancel-withdraw:hover { color:#dc2626; }
 
         /* ── Ticket form modal (withdraw / return) ── */
         .tk-overlay { display:none; position:fixed; inset:0; background:rgba(0,0,0,.45); z-index:900; align-items:center; justify-content:center; padding:16px; }
@@ -296,10 +298,10 @@
     </div>
 </div>
 
-<script src="shared/translations.js?v=30"></script>
-<script src="shared/toast.js?v=30"></script>
-<script src="shared/api.js?v=30"></script>
-<script src="shared/layout.js?v=30"></script>
+<script src="shared/translations.js?v=31"></script>
+<script src="shared/toast.js?v=31"></script>
+<script src="shared/api.js?v=31"></script>
+<script src="shared/layout.js?v=31"></script>
 <script>
     /* Status: รอ / เดินทาง / เบิก / คืน / Reject / Cancel   (null = ยังไม่เริ่มเบิก) */
     const currentEmail = localStorage.getItem('userEmail') || 'tech@atm.com';
@@ -387,7 +389,8 @@
                     if (tk.status === null) {
                         action = `<button class="btn-withdraw" onclick="openWithdrawModal(${tk.ticketId})">📤 เบิก</button>`;
                     } else if (tk.status === 'เดินทาง' && tk.phase === 'withdraw') {
-                        action = `<button class="btn-return" onclick="confirmReceive(${tk.ticketId})">✅ ยืนยันรับของ</button>`;
+                        const eta = deliveryEtaHtml(tk.approvedAt);
+                        action = `<button class="btn-return" onclick="confirmReceive(${tk.ticketId})">✅ ยืนยันรับของ</button>${eta}`;
                     } else if (tk.status === 'เบิก' && tk.phase === 'withdraw') {
                         action = `<button class="btn-return" onclick="openReturnModal(${tk.ticketId})">📥 คืน</button>`;
                     } else if (tk.status === 'อนุมัติคืน' && tk.phase === 'return') {
@@ -395,7 +398,8 @@
                     } else if (tk.status === 'รอ' && tk.phase === 'return') {
                         action = `<span class="text-muted" style="font-size:12px;">รอ Admin ยืนยัน</span>`;
                     } else if (tk.status === 'รอ' && tk.phase === 'withdraw') {
-                        action = `<span class="text-muted" style="font-size:12px;">รอ Admin อนุมัติ</span>`;
+                        action = `<span class="text-muted" style="font-size:12px;">รอ Admin อนุมัติ</span>
+                            <button class="btn-cancel-withdraw" onclick="cancelWithdraw(${tk.ticketId})">ยกเลิกคำขอ</button>`;
                     } else if (tk.status === 'เดินทาง' && tk.phase === 'return') {
                         action = `<span class="text-muted" style="font-size:12px;">รอถึง DHL</span>`;
                     } else if (tk.status === 'Reject') {
@@ -736,6 +740,26 @@
             if (createdTicketId) { try { await api.tickets.remove(createdTicketId); } catch {} }
             showToast?.(e.message || t('toast.error'), 'error');
         }
+    }
+
+    // Tech can only pull back their own request before Admin has acted on it — once approved
+    // (เดินทาง) stock has already left the warehouse for this ticket, so cancelling from there is
+    // an Admin-side decision (existing Cancel button on admin-tickets.html), not the tech's.
+    async function cancelWithdraw(id) {
+        if (!confirm('ยกเลิกคำขอเบิกนี้?')) return;
+        try {
+            await api.tickets.cancel(id);
+            await fetchTickets();
+            showToast?.('ยกเลิกคำขอเบิกแล้ว', 'success');
+        } catch (e) { showToast?.(e.message || t('toast.error'), 'error'); }
+    }
+
+    // Once Admin approves, the tech is told the part will reach them the next day.
+    function deliveryEtaHtml(approvedAt) {
+        if (!approvedAt) return '';
+        const eta = new Date(approvedAt);
+        eta.setDate(eta.getDate() + 1);
+        return `<div class="text-muted" style="font-size:11px;margin-top:4px;">📦 คาดว่าจะได้รับของภายในวันที่ ${eta.toLocaleDateString('th-TH')}</div>`;
     }
 
     async function confirmReceive(id) {
