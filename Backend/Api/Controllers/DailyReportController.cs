@@ -131,8 +131,8 @@ public class DailyReportController : ControllerBase
                     return BadRequest(new { message = "ไม่พบ Ticket/รายการที่เกี่ยวข้องแล้ว — อาจถูกลบหรือแก้ไขไปหลังจาก import" });
 
                 // Put it back where it was: tech's on-hand bucket, minus whichever central bucket it landed in.
-                _stock.AdjustStock(row.PartNo, techLoc?.Id ?? 0, row.Qty, "Good", "UndoImport", "DailyReportRow", id.ToString(), userName, $"ย้อนกลับแถว import #{id}");
-                _stock.AdjustStock(row.PartNo, mainWh?.Id ?? 0, -row.Qty, row.DhlStatus == "GOOD" ? "Good" : "Repair", "UndoImport", "DailyReportRow", id.ToString(), userName, $"ย้อนกลับแถว import #{id}");
+                _stock.AdjustStock(row.PartNo, techLoc?.Id ?? 0, row.Qty, "Good", "UndoImport", "DailyReportRow", id.ToString(), userName, $"ย้อนกลับแถว import #{id}", serialNo: row.SerialNo);
+                _stock.AdjustStock(row.PartNo, mainWh?.Id ?? 0, -row.Qty, row.DhlStatus == "GOOD" ? "Good" : "Repair", "UndoImport", "DailyReportRow", id.ToString(), userName, $"ย้อนกลับแถว import #{id}", serialNo: row.SerialNo);
 
                 line.ConfirmedQty = Math.Max(0, line.ConfirmedQty - row.Qty);
                 if (ticket.Status == "คืน") ticket.Status = "เดินทาง"; // reopen — no longer fully confirmed
@@ -149,8 +149,8 @@ public class DailyReportController : ControllerBase
                 if (unit == null || unit.Status != "InStock")
                     return BadRequest(new { message = "สถานะอะไหล่ชิ้นนี้เปลี่ยนไปแล้วหลังจาก import — ย้อนกลับไม่ได้อัตโนมัติ" });
 
-                _stock.AdjustStock(row.PartNo, mainWh?.Id ?? 0, -row.Qty, "Good", "UndoImport", "DailyReportRow", id.ToString(), userName, $"ย้อนกลับแถว import #{id}");
-                _stock.AdjustStock(row.PartNo, mainWh?.Id ?? 0, row.Qty, "Repair", "UndoImport", "DailyReportRow", id.ToString(), userName, $"ย้อนกลับแถว import #{id}");
+                _stock.AdjustStock(row.PartNo, mainWh?.Id ?? 0, -row.Qty, "Good", "UndoImport", "DailyReportRow", id.ToString(), userName, $"ย้อนกลับแถว import #{id}", serialNo: row.SerialNo, partUnitId: unit.Id);
+                _stock.AdjustStock(row.PartNo, mainWh?.Id ?? 0, row.Qty, "Repair", "UndoImport", "DailyReportRow", id.ToString(), userName, $"ย้อนกลับแถว import #{id}", serialNo: row.SerialNo, partUnitId: unit.Id);
                 unit.Status = "InRepair";
             }
             // StillInRepair / Unmatched rows never touched anything — nothing to undo.
@@ -339,8 +339,8 @@ public class DailyReportController : ControllerBase
                     if (commit)
                     {
                         var unit = _context.PartUnits.First(u => u.SerialNo == row.SerialNo);
-                        _stock.AdjustStock(row.PartNo, mainWh?.Id ?? 0, -row.Qty, "Repair", "RepairComplete", "DailyReportRow", null, userName, $"ซ่อมเสร็จ (Daily Report) SN {row.SerialNo}");
-                        _stock.AdjustStock(row.PartNo, mainWh?.Id ?? 0, row.Qty, "Good", "RepairComplete", "DailyReportRow", null, userName, $"ซ่อมเสร็จ (Daily Report) SN {row.SerialNo}");
+                        _stock.AdjustStock(row.PartNo, mainWh?.Id ?? 0, -row.Qty, "Repair", "RepairComplete", "DailyReportRow", null, userName, $"ซ่อมเสร็จ (Daily Report) SN {row.SerialNo}", serialNo: row.SerialNo, partUnitId: unit.Id);
+                        _stock.AdjustStock(row.PartNo, mainWh?.Id ?? 0, row.Qty, "Good", "RepairComplete", "DailyReportRow", null, userName, $"ซ่อมเสร็จ (Daily Report) SN {row.SerialNo}", serialNo: row.SerialNo, partUnitId: unit.Id);
                         unit.Status = "InStock";
                         unit.Condition = "Good";
                         _context.SaveChanges();
@@ -367,8 +367,8 @@ public class DailyReportController : ControllerBase
                 int? unitId = null;
                 if (commit)
                 {
-                    _stock.AdjustStock(row.PartNo, techLoc?.Id ?? 0, -row.Qty, "Good", "Return", "Ticket", line.TicketId.ToString(), userName, $"คืนผ่าน Daily Report SN {row.SerialNo}");
-                    _stock.AdjustStock(row.PartNo, mainWh?.Id ?? 0, row.Qty, row.Status == "GOOD" ? "Good" : "Repair", "Return", "Ticket", line.TicketId.ToString(), userName, $"คืนผ่าน Daily Report SN {row.SerialNo}");
+                    _stock.AdjustStock(row.PartNo, techLoc?.Id ?? 0, -row.Qty, "Good", "Return", "Ticket", line.TicketId.ToString(), userName, $"คืนผ่าน Daily Report SN {row.SerialNo}", serialNo: row.SerialNo);
+                    _stock.AdjustStock(row.PartNo, mainWh?.Id ?? 0, row.Qty, row.Status == "GOOD" ? "Good" : "Repair", "Return", "Ticket", line.TicketId.ToString(), userName, $"คืนผ่าน Daily Report SN {row.SerialNo}", serialNo: row.SerialNo);
 
                     if (!string.IsNullOrWhiteSpace(row.SerialNo) && partsByNo.TryGetValue(row.PartNo, out var part))
                     {

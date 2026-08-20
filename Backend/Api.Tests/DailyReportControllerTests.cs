@@ -120,6 +120,10 @@ public class DailyReportControllerTests
         Assert.Equal("คืน", ticketAfter.Status);
         Assert.Equal(100, context.PartStocks.First(s => s.LocationId == mainWh.Id).GoodQty); // 100 - 1 (withdrawn) + 1 (returned)
         Assert.True(context.PartUnits.Any(u => u.SerialNo == "SN-002" && u.Status == "InStock"));
+
+        // Serial No. must land on the StockMovement ledger itself (not just in Remarks text) —
+        // that's what the existing Serial Tracking page (TrackingController.bySerial) queries by.
+        Assert.True(context.StockMovements.Any(m => m.SerialNo == "SN-002"));
     }
 
     [Fact]
