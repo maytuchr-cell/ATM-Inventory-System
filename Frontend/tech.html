@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Tech Workspace — ATM Inventory</title>
-    <link rel="stylesheet" href="shared/styles.css?v=36">
+    <link rel="stylesheet" href="shared/styles.css?v=37">
     <style>
         .section-head { display:flex; align-items:center; gap:10px; margin-bottom:20px; }
         .section-accent { width:4px; height:22px; background:var(--orange); border-radius:2px; }
@@ -312,10 +312,10 @@
     </div>
 </div>
 
-<script src="shared/translations.js?v=36"></script>
-<script src="shared/toast.js?v=36"></script>
-<script src="shared/api.js?v=36"></script>
-<script src="shared/layout.js?v=36"></script>
+<script src="shared/translations.js?v=37"></script>
+<script src="shared/toast.js?v=37"></script>
+<script src="shared/api.js?v=37"></script>
+<script src="shared/layout.js?v=37"></script>
 <script>
     /* Status: รอ / เดินทาง / เบิก / คืน / Reject / Cancel   (null = ยังไม่เริ่มเบิก) */
     const currentEmail = localStorage.getItem('userEmail') || 'tech@atm.com';
@@ -406,7 +406,16 @@
                         const eta = deliveryEtaHtml(tk.approvedAt);
                         action = `<button class="btn-return" onclick="confirmReceive(${tk.ticketId})">✅ ยืนยันรับของ</button>${eta}`;
                     } else if (tk.status === 'เบิก' && tk.phase === 'withdraw') {
-                        action = `<button class="btn-return" onclick="openReturnModal(${tk.ticketId})">📥 คืน</button>`;
+                        // Same Case No. can have more than one ใบเบิก sitting at "เบิก" (received)
+                        // at once — combine them into a single Return form instead of one-by-one.
+                        const returnGroup = cachedTickets.filter(t => t.status === 'เบิก' && t.phase === 'withdraw' && t.externalTicketNo === tk.externalTicketNo);
+                        if (returnGroup.length > 1) {
+                            action = returnGroup[0].ticketId === tk.ticketId
+                                ? `<button class="btn-return" onclick="openReturnModal([${returnGroup.map(g => g.ticketId).join(',')}])">📥 คืนรวม (${returnGroup.length} ใบ)</button>`
+                                : `<span class="text-muted" style="font-size:12px;">รวมคืนพร้อมใบที่ 1 แล้ว</span>`;
+                        } else {
+                            action = `<button class="btn-return" onclick="openReturnModal([${tk.ticketId}])">📥 คืน</button>`;
+                        }
                     } else if (tk.status === 'อนุมัติคืน' && tk.phase === 'return') {
                         action = `<button class="btn-ship" onclick="markShipped(${tk.ticketId})">🚚 จัดส่งแล้ว</button>`;
                     } else if (tk.status === 'รอ' && tk.phase === 'return') {
@@ -501,7 +510,7 @@
         { value: 'Bad',       label: 'ของเสีย' },
         { value: 'Lost',      label: 'สูญหาย' },
     ];
-    function lineRowHtml(prefix, idx, partNo, qty, condition) {
+    function lineRowHtml(prefix, idx, partNo, qty, condition, ticketId) {
         const selected = cachedParts.find(p => p.partNo === partNo);
         const val = selected ? partLabel(selected) : '';
         const dataAttr = selected ? ` data-partno="${selected.partNo}"` : '';
@@ -511,7 +520,12 @@
             ? `<select class="tk-condition" id="${prefix}-cond-${idx}">${CONDITION_OPTIONS.map(o =>
                 `<option value="${o.value}" ${o.value === (condition || 'Good') ? 'selected' : ''}>${o.label}</option>`).join('')}</select>`
             : '';
-        return `<div class="tk-line-row" id="${prefix}-row-${idx}">
+        // ticketId: which underlying Ticket this Return line belongs to — only meaningful for "rt"
+        // rows when the tech is returning several ใบเบิก under the same Case No. in one form (see
+        // openReturnModal). collectReturnLinesGrouped() reads it back to split the combined form
+        // into one submitReturn call per original Ticket.
+        const ticketAttr = prefix === 'rt' ? ` data-ticketid="${ticketId || ''}"` : '';
+        return `<div class="tk-line-row" id="${prefix}-row-${idx}"${ticketAttr}>
             <div class="tk-part-picker">
                 <input type="text" id="${prefix}-part-${idx}"${dataAttr}
                     placeholder="พิมพ์ชื่ออะไหล่เพื่อค้นหา..." autocomplete="off" value="${val}"
@@ -560,6 +574,11 @@
         if (!e.target.closest('.tk-part-picker')) closeAllPartDropdowns(null);
     });
 
+    // When the Return form is combining several ใบเบิก (see openReturnModal), a manually-added
+    // "+ เพิ่มอะไหล่" row has no natural Ticket of its own — default it to the last ticket in the
+    // group so it still submits somewhere sensible.
+    let activeReturnTicketIds = [];
+
     function addLine(kind) {
         if (kind === 'withdraw') {
             wdLineCount++;
@@ -569,7 +588,8 @@
             document.getElementById('nrLines').insertAdjacentHTML('beforeend', lineRowHtml('nr', nrLineCount));
         } else {
             rtLineCount++;
-            document.getElementById('rtLines').insertAdjacentHTML('beforeend', lineRowHtml('rt', rtLineCount));
+            const defaultTicketId = activeReturnTicketIds[activeReturnTicketIds.length - 1];
+            document.getElementById('rtLines').insertAdjacentHTML('beforeend', lineRowHtml('rt', rtLineCount, null, null, null, defaultTicketId));
         }
     }
     function removeLine(prefix, idx) {
@@ -592,6 +612,26 @@
             lines.push(line);
         }
         return lines;
+    }
+
+    // Return-only: same as collectLines('rt', ...) but split by which original Ticket each row
+    // belongs to, so a combined "คืนรวม" submission still records against the right ใบเบิก.
+    function collectReturnLinesGrouped() {
+        const grouped = {};
+        for (let i = 1; i <= rtLineCount; i++) {
+            const row = document.getElementById(`rt-row-${i}`);
+            if (!row) continue;
+            const partInp = document.getElementById(`rt-part-${i}`);
+            const qtyInp  = document.getElementById(`rt-qty-${i}`);
+            const condInp = document.getElementById(`rt-cond-${i}`);
+            const partNo = partInp?.dataset.partno || null;
+            const quantity = parseInt(qtyInp?.value, 10) || 0;
+            if (!partNo || quantity <= 0) continue;
+            const ticketId = parseInt(row.dataset.ticketid, 10) || activeReturnTicketIds[0];
+            if (!grouped[ticketId]) grouped[ticketId] = [];
+            grouped[ticketId].push({ partNo, quantity, condition: condInp?.value || 'Good' });
+        }
+        return grouped;
     }
 
     /* ── Photo attachments (withdraw + return share this) ──
@@ -784,47 +824,74 @@
         } catch (e) { showToast?.(e.message || t('toast.error'), 'error'); }
     }
 
-    /* ── Return form ── */
-    function openReturnModal(id) {
-        const tk = cachedTickets.find(t => t.ticketId === id);
-        if (!tk) return;
-        activeTicketId = id;
-        document.getElementById('rtTicketNo').textContent = tk.externalTicketNo;
-        document.getElementById('rtTechName').textContent = tk.techName;
-        const withdrawn = tk.lines.filter(l => l.lineType === 'Withdraw');
-        document.getElementById('rtHistory').innerHTML = withdrawn.length
-            ? withdrawn.map(l => `<div class="tk-history-line"><span>${l.partName}</span><span class="fw-600">×${l.quantity}</span></div>`).join('')
-            : `<span class="text-muted">—</span>`;
+    /* ── Return form ──
+       ids: array of ticketId. Normally just one ใบเบิก, but when several ใบเบิก under the same
+       Case No. are all sitting at "เบิก" (received) at once, renderTicketsTable groups them so
+       the tech fills one form and this opens with all of their ticketIds — collectReturnLinesGrouped()
+       splits the rows back apart by ticket at Submit time (see below). */
+    function openReturnModal(ids) {
+        const group = ids.map(id => cachedTickets.find(t => t.ticketId === id)).filter(Boolean);
+        if (!group.length) return;
+        activeReturnTicketIds = group.map(t => t.ticketId);
+        const combined = group.length > 1;
+        document.getElementById('rtTicketNo').textContent = combined
+            ? `${group[0].externalTicketNo} (รวม ${group.length} ใบเบิก)`
+            : group[0].externalTicketNo;
+        document.getElementById('rtTechName').textContent = group[0].techName;
+
+        const historyHtml = group.map(tk => {
+            const withdrawn = tk.lines.filter(l => l.lineType === 'Withdraw');
+            const lines = withdrawn.length
+                ? withdrawn.map(l => `<div class="tk-history-line"><span>${l.partName}</span><span class="fw-600">×${l.quantity}</span></div>`).join('')
+                : `<span class="text-muted">—</span>`;
+            return combined
+                ? `<div style="margin-bottom:8px;"><div class="text-muted" style="font-size:10.5px;font-weight:700;text-transform:uppercase;margin-bottom:2px;">${tk.withdrawSlipNo || tk.externalTicketNo}</div>${lines}</div>`
+                : lines;
+        }).join('');
+        document.getElementById('rtHistory').innerHTML = historyHtml || `<span class="text-muted">—</span>`;
+
         document.getElementById('rtAddress').value = '';
         document.getElementById('rtLines').innerHTML = '';
         rtLineCount = 0;
-        // pre-fill one row per withdrawn part, defaulting qty to what was withdrawn (partial return allowed)
-        withdrawn.forEach(l => {
-            rtLineCount++;
-            document.getElementById('rtLines').insertAdjacentHTML('beforeend', lineRowHtml('rt', rtLineCount, l.partNo, l.quantity));
+        // pre-fill one row per withdrawn part per ticket, defaulting qty to what was withdrawn
+        // (partial return allowed), tagged with its own ticketId so Submit knows where it belongs.
+        group.forEach(tk => {
+            tk.lines.filter(l => l.lineType === 'Withdraw').forEach(l => {
+                rtLineCount++;
+                document.getElementById('rtLines').insertAdjacentHTML('beforeend', lineRowHtml('rt', rtLineCount, l.partNo, l.quantity, null, tk.ticketId));
+            });
         });
-        if (!withdrawn.length) addLine('return');
+        if (!rtLineCount) addLine('return');
         photoFiles.rt = [];
         renderPhotoPreview('rt');
         document.getElementById('returnOverlay').classList.add('open');
     }
     function closeReturnModal() {
         document.getElementById('returnOverlay').classList.remove('open');
-        activeTicketId = null;
+        activeReturnTicketIds = [];
     }
     async function submitReturn() {
-        const lines = collectLines('rt', rtLineCount);
+        const grouped = collectReturnLinesGrouped();
+        const ticketIds = Object.keys(grouped).map(Number);
         const address = document.getElementById('rtAddress').value.trim();
-        if (!lines.length) { showToast?.('เลือกอะไหล่อย่างน้อย 1 รายการ', 'error'); return; }
+        if (!ticketIds.length) { showToast?.('เลือกอะไหล่อย่างน้อย 1 รายการ', 'error'); return; }
         if (!address) { showToast?.('กรุณากรอกที่อยู่', 'error'); return; }
         try {
             const attachments = await uploadPendingPhotos('rt');
-            await api.tickets.submitReturn(activeTicketId, { lines, address, attachments });
+            // Sequential on purpose: each call is its own Ticket's Return submission — if one
+            // fails partway, the ones already submitted stay submitted (fetchTickets below shows
+            // the real state either way, nothing is silently duplicated or lost).
+            for (const tid of ticketIds) {
+                await api.tickets.submitReturn(tid, { lines: grouped[tid], address, attachments });
+            }
             photoFiles.rt = [];
             closeReturnModal();
             await fetchTickets();
-            showToast?.('ส่งคำขอคืนแล้ว', 'success');
-        } catch (e) { showToast?.(e.message || t('toast.error'), 'error'); }
+            showToast?.(ticketIds.length > 1 ? `ส่งคำขอคืนแล้ว (${ticketIds.length} ใบเบิก)` : 'ส่งคำขอคืนแล้ว', 'success');
+        } catch (e) {
+            await fetchTickets();
+            showToast?.(e.message || t('toast.error'), 'error');
+        }
     }
 
     async function markShipped(id) {
