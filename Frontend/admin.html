@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Admin Dashboard — ATM Inventory</title>
-    <link rel="stylesheet" href="shared/styles.css?v=37">
+    <link rel="stylesheet" href="shared/styles.css?v=39">
     <style>
         /* Page-specific overrides */
         .section-head { display:flex; align-items:center; gap:10px; margin-bottom:20px; }
@@ -170,10 +170,10 @@
     </div><!-- /main-content -->
 </div><!-- /app-layout -->
 
-<script src="shared/translations.js?v=37"></script>
-<script src="shared/toast.js?v=37"></script>
-<script src="shared/api.js?v=37"></script>
-<script src="shared/layout.js?v=37"></script>
+<script src="shared/translations.js?v=39"></script>
+<script src="shared/toast.js?v=39"></script>
+<script src="shared/api.js?v=39"></script>
+<script src="shared/layout.js?v=39"></script>
 <script>
     /* ── Init ── */
     initLayout();
@@ -189,6 +189,10 @@
     const STATUS_COLOR = {
         'รอ': 'var(--yellow)', 'เดินทาง': 'var(--orange)', 'เบิก': '#0f8a7e',
         'คืน': 'var(--green)', 'Reject': 'var(--red)', 'Cancel': 'var(--text-muted)',
+    };
+    const STATUS_LABEL = {
+        'รอ': 'รอ', 'เดินทาง': 'เดินทาง', 'เบิก': 'เบิก',
+        'คืน': 'คืน', 'Reject': 'ปฏิเสธ', 'Cancel': 'ยกเลิก',
     };
     // Non-terminal statuses are the only ones that can go "stale" — a closed Ticket isn't stuck.
     const NON_TERMINAL = ['รอ', 'เดินทาง', 'เบิก'];
@@ -224,7 +228,7 @@
             const pct = Math.round((count / max) * 100);
             return `
                 <div class="status-bar-row">
-                    <span>${status}</span>
+                    <span>${STATUS_LABEL[status] || status}</span>
                     <div class="status-bar-track"><div class="status-bar-fill" style="width:${pct}%;background:${STATUS_COLOR[status]};"></div></div>
                     <span class="status-bar-count">${count}</span>
                 </div>`;

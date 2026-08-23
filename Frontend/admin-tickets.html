@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Tickets — ATM Inventory</title>
-    <link rel="stylesheet" href="shared/styles.css?v=37">
+    <link rel="stylesheet" href="shared/styles.css?v=39">
     <style>
         /* Page-specific overrides */
         .section-head { display:flex; align-items:center; gap:10px; margin-bottom:20px; }
@@ -118,7 +118,7 @@
         <!-- Top bar -->
         <div class="topbar">
             <div>
-                <div class="topbar-title">Tickets</div>
+                <div class="topbar-title">ตั๋วเบิก/คืน</div>
                 <div class="topbar-sub">เบิก / คืนอะไหล่ของช่าง — sync จาก Aservice</div>
             </div>
         </div>
@@ -148,16 +148,16 @@
                             <option value="เดินทาง">เดินทาง</option>
                             <option value="เบิก">เบิก</option>
                             <option value="คืน">คืน</option>
-                            <option value="Reject">Reject</option>
-                            <option value="Cancel">Cancel</option>
+                            <option value="Reject">ปฏิเสธ</option>
+                            <option value="Cancel">ยกเลิก</option>
                         </select>
                         <button class="btn-refresh" id="tkt-refresh-btn" onclick="fetchTickets()">
                             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
-                            Refresh
+                            รีเฟรช
                         </button>
                         <button class="btn-refresh" onclick="openSyncModal()" title="จำลอง Ticket ใหม่จาก Aservice — ยังไม่มี integration จริง">
                             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-                            Sync Ticket
+                            ซิงค์ตั๋ว
                         </button>
                     </div>
                 </div>
@@ -165,9 +165,9 @@
                     <table>
                         <thead>
                             <tr>
-                                <th style="width:8%">Ticket</th>
+                                <th style="width:8%">ตั๋ว</th>
                                 <th style="width:13%">ช่าง</th>
-                                <th style="width:9%">Phase</th>
+                                <th style="width:9%">ขั้นตอน</th>
                                 <th style="width:20%">อะไหล่</th>
                                 <th style="width:16%">สถานะ</th>
                                 <th style="width:22%">การดำเนินการ</th>
@@ -194,7 +194,7 @@
                     <table>
                         <thead>
                             <tr>
-                                <th>Ticket</th>
+                                <th>ตั๋ว</th>
                                 <th>ช่าง</th>
                                 <th>อะไหล่ (คืน)</th>
                                 <th>ที่อยู่จัดส่งคืน</th>
@@ -218,7 +218,7 @@
                     <table>
                         <thead>
                             <tr>
-                                <th>Ticket</th>
+                                <th>ตั๋ว</th>
                                 <th>ช่าง</th>
                                 <th>อะไหล่ (คืน)</th>
                                 <th>ที่อยู่จัดส่งคืน</th>
@@ -241,7 +241,7 @@
 <!-- Sync Ticket modal (stands in for the real Aservice integration) -->
 <div class="reason-overlay" id="syncOverlay">
     <div class="reason-modal">
-        <h3>Sync Ticket ใหม่</h3>
+        <h3>ซิงค์ตั๋วใหม่</h3>
         <p>จำลองการ sync Ticket จาก Aservice (ยังไม่มี integration จริง — ใช้สำหรับทดสอบ)</p>
         <div style="display:flex;flex-direction:column;gap:10px;">
             <input id="syncExternalNo" type="text" placeholder="External Ticket No. เช่น ASV-100999" class="select-part" style="margin-bottom:0;">
@@ -250,8 +250,8 @@
             <input id="syncTechDept" type="text" placeholder="Zone / แผนก" class="select-part" style="margin-bottom:0;">
         </div>
         <div class="reason-modal-actions">
-            <button class="btn-cancel" style="width:auto;padding:8px 16px;" onclick="closeSyncModal()">Cancel</button>
-            <button class="btn-approve" style="width:auto;padding:8px 16px;" onclick="submitSync()">Sync</button>
+            <button class="btn-cancel" style="width:auto;padding:8px 16px;" onclick="closeSyncModal()">ยกเลิก</button>
+            <button class="btn-approve" style="width:auto;padding:8px 16px;" onclick="submitSync()">ซิงค์</button>
         </div>
     </div>
 </div>
@@ -263,7 +263,7 @@
         <p>อะไหล่ที่ขอ: <strong id="subOriginalPart">—</strong> — เลือกอะไหล่เทียบเคียงที่จะใช้แทน</p>
         <div id="subOptionsList"></div>
         <div class="reason-modal-actions">
-            <button class="btn-cancel" style="width:auto;padding:8px 16px;" onclick="closeSubstituteModal()">Cancel</button>
+            <button class="btn-cancel" style="width:auto;padding:8px 16px;" onclick="closeSubstituteModal()">ยกเลิก</button>
         </div>
     </div>
 </div>
@@ -271,12 +271,12 @@
 <!-- Reject reason modal -->
 <div class="reason-overlay" id="reasonOverlay">
     <div class="reason-modal">
-        <h3>Reject Ticket</h3>
+        <h3>ปฏิเสธตั๋ว</h3>
         <p>ระบุเหตุผล — ระบบจะส่งกลับให้ช่างแก้ไขและส่งใหม่ (บังคับกรอก)</p>
         <textarea id="reasonInput" placeholder="เช่น อะไหล่ที่เลือกไม่ตรงกับ Ticket / ข้อมูลไม่ครบ..."></textarea>
         <div class="reason-modal-actions">
-            <button class="btn-cancel" style="width:auto;padding:8px 16px;" onclick="closeReasonModal()">Cancel</button>
-            <button class="btn-reject" style="width:auto;padding:8px 16px;margin-bottom:0;" onclick="confirmReject()">Reject Ticket</button>
+            <button class="btn-cancel" style="width:auto;padding:8px 16px;" onclick="closeReasonModal()">ยกเลิก</button>
+            <button class="btn-reject" style="width:auto;padding:8px 16px;margin-bottom:0;" onclick="confirmReject()">ปฏิเสธตั๋ว</button>
         </div>
     </div>
 </div>
@@ -285,7 +285,7 @@
 <div class="detail-overlay" id="detailOverlay" onclick="closeDetail(event)">
     <div class="detail-modal" id="detailModal">
         <div class="detail-header">
-            <span class="detail-title" id="detailTitle">Ticket Detail</span>
+            <span class="detail-title" id="detailTitle">รายละเอียดตั๋ว</span>
             <button class="detail-close" onclick="closeDetailModal()">
                 <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
             </button>
@@ -294,10 +294,10 @@
     </div>
 </div>
 
-<script src="shared/translations.js?v=37"></script>
-<script src="shared/toast.js?v=37"></script>
-<script src="shared/api.js?v=37"></script>
-<script src="shared/layout.js?v=37"></script>
+<script src="shared/translations.js?v=39"></script>
+<script src="shared/toast.js?v=39"></script>
+<script src="shared/api.js?v=39"></script>
+<script src="shared/layout.js?v=39"></script>
 <script>
     let cachedTickets = [];
     let rejectTargetId = null;
@@ -443,13 +443,13 @@
 
     /* ── Tickets ── */
     const STATUS_BADGE = {
-        "รอ":        { cls: "badge-pending"  },
-        "อนุมัติคืน": { cls: "badge-approved" },
-        "เดินทาง":   { cls: "badge-approved" },
-        "เบิก":      { cls: "badge-teal"     },
-        "คืน":       { cls: "badge-success"  },
-        "Reject":    { cls: "badge-danger"   },
-        "Cancel":    { cls: "badge-muted"    },
+        "รอ":        { cls: "badge-pending",  label: "รอ" },
+        "อนุมัติคืน": { cls: "badge-approved", label: "อนุมัติคืน" },
+        "เดินทาง":   { cls: "badge-approved", label: "เดินทาง" },
+        "เบิก":      { cls: "badge-teal",     label: "เบิก" },
+        "คืน":       { cls: "badge-success",  label: "คืน" },
+        "Reject":    { cls: "badge-danger",   label: "ปฏิเสธ" },
+        "Cancel":    { cls: "badge-muted",    label: "ยกเลิก" },
     };
 
     function renderTicketsTable() {
@@ -478,7 +478,7 @@
         }
         rows.forEach(tk => {
             const b = STATUS_BADGE[tk.status] || STATUS_BADGE["รอ"];
-            const badge = `<span class="badge ${b.cls}"><span class="badge-dot"></span>${tk.status}</span>`;
+            const badge = `<span class="badge ${b.cls}"><span class="badge-dot"></span>${b.label}</span>`;
 
             // Whether the central warehouse can actually fulfill every Withdraw line right now —
             // gates the Approve button below so Admin can't approve a request stock can't cover.
@@ -524,17 +524,17 @@
                     <div class="ticket-action-row">
                         <button class="btn-approve" onclick="approveTicket(${tk.ticketId})" ${hasShortage ? 'disabled title="สต็อกในคลังไม่พอสำหรับอะไหล่บางรายการ"' : ''} style="${hasShortage ? 'opacity:.45;cursor:not-allowed;' : ''}">
                             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
-                            Approve
+                            อนุมัติ
                         </button>
                         <button class="btn-reject" onclick="openRejectModal(${tk.ticketId})">
                             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
-                            Reject
+                            ปฏิเสธ
                         </button>
-                        <button class="btn-cancel" onclick="cancelTicket(${tk.ticketId})">Cancel</button>
+                        <button class="btn-cancel" onclick="cancelTicket(${tk.ticketId})">ยกเลิก</button>
                     </div>`;
             } else if (!["Reject", "Cancel", "คืน"].includes(tk.status)) {
                 // Still open (return leg in progress, or in transit) — Admin can only Cancel outright.
-                action = `<button class="btn-cancel" onclick="cancelTicket(${tk.ticketId})">Cancel Ticket</button>`;
+                action = `<button class="btn-cancel" onclick="cancelTicket(${tk.ticketId})">ยกเลิกตั๋ว</button>`;
             } else {
                 action = `<span style="color:var(--text-muted)">—</span>`;
             }
@@ -561,7 +561,7 @@
         try {
             await api.tickets.approve(id);
             await fetchTickets();
-            showToast?.('Ticket approved', 'success');
+            showToast?.('อนุมัติตั๋วแล้ว', 'success');
         } catch (e) { showToast?.(e.message || 'เกิดข้อผิดพลาด กรุณาลองใหม่', 'error'); }
     }
 
@@ -589,7 +589,7 @@
             await api.tickets.sync({ externalTicketNo, techName, techEmail, techDept });
             closeSyncModal();
             await fetchTickets();
-            showToast?.('Synced.', 'success');
+            showToast?.('ซิงค์สำเร็จ', 'success');
         } catch (e) { showToast?.(e.message || 'เกิดข้อผิดพลาด กรุณาลองใหม่', 'error'); }
     }
 
@@ -712,7 +712,7 @@
                         <label>แผนก / โซน</label><span>${tk.techDept || none}</span>
                     </div>
                     <div class="detail-field">
-                        <label>สถานะ</label><span>${tk.status} (${tk.phase === 'withdraw' ? 'ขาเบิก' : 'ขาคืน'})</span>
+                        <label>สถานะ</label><span>${(STATUS_BADGE[tk.status]?.label || tk.status)} (${tk.phase === 'withdraw' ? 'ขาเบิก' : 'ขาคืน'})</span>
                     </div>
                     <div class="detail-field">
                         <label>วันที่แจ้ง</label><span>${fmt(tk.createdAt)}</span>

@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Goods Receipt — ATM Inventory</title>
-  <link rel="stylesheet" href="shared/styles.css?v=37">
+  <link rel="stylesheet" href="shared/styles.css?v=39">
   <style>
     .line-row { display:grid; grid-template-columns:2fr 1fr 1fr 1.2fr 2fr auto; gap:10px; align-items:end; margin-bottom:10px; }
     .line-row .form-group { margin-bottom:0; }
@@ -82,7 +82,7 @@
           <div class="card-body" style="padding:24px;">
             <div class="section-head" style="display:flex;align-items:center;gap:10px;margin-bottom:16px;">
               <div class="section-accent" style="width:4px;height:22px;background:var(--orange);border-radius:2px;"></div>
-              <span class="section-title" style="font-size:16px;font-weight:700;">Bulk Import via Excel / CSV</span>
+              <span class="section-title" style="font-size:16px;font-weight:700;">นำเข้าจำนวนมากผ่าน Excel / CSV</span>
             </div>
             <p style="font-size:12px;color:var(--text-secondary);margin-bottom:14px;">
               รองรับไฟล์ <strong>.xlsx / .xls</strong> (columns: Part Number, D1 Part Description, Serial Number, Quantity, Status)
@@ -100,11 +100,11 @@
                   <thead>
                     <tr>
                       <th>#</th>
-                      <th>Part No.</th>
-                      <th>Part Name</th>
+                      <th>รหัสอะไหล่</th>
+                      <th>ชื่ออะไหล่</th>
                       <th>Serial No.</th>
-                      <th>Qty</th>
-                      <th>Condition</th>
+                      <th>จำนวน</th>
+                      <th>สภาพ</th>
                     </tr>
                   </thead>
                   <tbody id="xl-preview-tbody"></tbody>
@@ -114,18 +114,18 @@
 
             <div class="form-grid-2" style="margin-bottom:14px;">
               <div class="form-group">
-                <label class="form-label">Target Location</label>
+                <label class="form-label">คลังปลายทาง</label>
                 <select class="form-select" id="csv-location"></select>
               </div>
               <div class="form-group">
-                <label class="form-label">Source</label>
+                <label class="form-label">แหล่งที่มา</label>
                 <select class="form-select" id="csv-source">
                   <option value="GRG">GRG Procurement</option>
-                  <option value="LocalVendor">Local Vendor</option>
+                  <option value="LocalVendor">ผู้จำหน่ายในประเทศ</option>
                 </select>
               </div>
               <div class="form-group">
-                <label class="form-label">Received By</label>
+                <label class="form-label">ผู้รับเข้า</label>
                 <input class="form-input" id="csv-receivedby" placeholder="ชื่อผู้รับ">
               </div>
               <div class="form-group">
@@ -172,10 +172,10 @@
   </div>
 
   <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
-  <script src="shared/translations.js?v=37"></script>
-  <script src="shared/toast.js?v=37"></script>
-  <script src="shared/api.js?v=37"></script>
-  <script src="shared/layout.js?v=37"></script>
-  <script src="admin-goods-receipt.js?v=37"></script>
+  <script src="shared/translations.js?v=39"></script>
+  <script src="shared/toast.js?v=39"></script>
+  <script src="shared/api.js?v=39"></script>
+  <script src="shared/layout.js?v=39"></script>
+  <script src="admin-goods-receipt.js?v=39"></script>
 </body>
 </html>

@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Parts Configuration — ATM Inventory</title>
-  <link rel="stylesheet" href="shared/styles.css?v=37">
+  <link rel="stylesheet" href="shared/styles.css?v=39">
   <script src="https://code.iconify.design/iconify-icon/2.1.0/iconify-icon.min.js"></script>
   <style>
     /* ── Part chips ── */
@@ -61,7 +61,7 @@
         <div class="topbar-title" data-i18n="atm.title">ATM Group Compatibility</div>
         <div class="topbar-sub" data-i18n="atm.sub">Define which parts are compatible with each ATM group</div>
       </div>
-      <button id="topbarBtn" class="btn btn-primary" onclick="openCreateModel()">+ New Group</button>
+      <button id="topbarBtn" class="btn btn-primary" onclick="openCreateModel()">+ เพิ่มกลุ่ม</button>
     </div>
 
     <div class="page-body">
@@ -89,7 +89,7 @@
 <div class="modal-overlay" id="modelModal" onclick="if(event.target===this)closeModelModal()">
   <div class="modal">
     <div class="modal-header">
-      <span class="modal-title" id="modelModalTitle">New Group</span>
+      <span class="modal-title" id="modelModalTitle">สร้างกลุ่มใหม่</span>
       <button class="modal-close" onclick="closeModelModal()">✕</button>
     </div>
 
@@ -133,10 +133,10 @@
 </div>
 
 
-<script src="shared/translations.js?v=37"></script>
-<script src="shared/toast.js?v=37"></script>
-<script src="shared/api.js?v=37"></script>
-<script src="shared/layout.js?v=37"></script>
+<script src="shared/translations.js?v=39"></script>
+<script src="shared/toast.js?v=39"></script>
+<script src="shared/api.js?v=39"></script>
+<script src="shared/layout.js?v=39"></script>
 <script>
 /* ════════════════════════════════════════════════════════
    Searchable Combobox component
@@ -147,7 +147,7 @@ function buildCombo(wrapEl, parts, placeholder) {
   wrapEl.innerHTML = '';
   const input = document.createElement('input');
   input.className = 'combo-input';
-  input.placeholder = placeholder || 'Search or select part…';
+  input.placeholder = placeholder || 'ค้นหาหรือเลือกอะไหล่…';
   input.autocomplete = 'off';
 
   const drop = document.createElement('div');
@@ -257,7 +257,7 @@ function renderModels() {
       <td class="fw-600">${m.modelName}</td>
       <td>${m.manufacturer || '—'}</td>
       <td><div class="parts-chips">${chips}</div></td>
-      <td><button class="btn btn-ghost" style="padding:5px 10px;font-size:12px" onclick="openEditModel(${m.id})">✏️ Edit</button></td>
+      <td><button class="btn btn-ghost" style="padding:5px 10px;font-size:12px" onclick="openEditModel(${m.id})">✏️ แก้ไข</button></td>
     </tr>`;
   }).join('');
 }
@@ -297,7 +297,7 @@ function renderCompatChips() {
   }
   el.innerHTML = editModel.compatibleParts.map(p =>
     `<span class="part-chip">${p.partName || p.partNo}
-      <button class="rm" onclick="removeCompatPart(${p.id})" title="Remove">✕</button>
+      <button class="rm" onclick="removeCompatPart(${p.id})" title="ลบ">✕</button>
     </span>`
   ).join('');
 }
@@ -340,7 +340,7 @@ async function saveModel() {
   const name  = document.getElementById('fName').value.trim();
   const maker = document.getElementById('fMaker').value.trim();
   const desc  = document.getElementById('fDesc').value.trim();
-  if (!code || !name) { showToast('Group Code และ Name จำเป็น', 'error'); return; }
+  if (!code || !name) { showToast('ต้องกรอกรหัสกลุ่มและชื่อกลุ่ม', 'error'); return; }
   const btn = document.getElementById('modelSaveBtn');
   btn.disabled = true;
   try {

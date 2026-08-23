@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Daily Report — ATM Inventory</title>
-  <link rel="stylesheet" href="shared/styles.css?v=37">
+  <link rel="stylesheet" href="shared/styles.css?v=39">
   <style>
     .dr-stats { display:grid; grid-template-columns:repeat(4,1fr); gap:10px; margin:14px 0 18px; }
     .dr-stat { background:var(--bg-subtle); border-radius:10px; padding:14px; text-align:center; border:1px solid var(--border); }
@@ -41,7 +41,7 @@
     <div class="main-content">
       <div class="topbar">
         <div>
-          <div class="topbar-title">Daily Report</div>
+          <div class="topbar-title">รายงานประจำวัน</div>
           <div class="topbar-sub">นำเข้าไฟล์ Daily Report จาก DHL — ยืนยันคืนอะไหล่และปิดรอบซ่อมอัตโนมัติ</div>
         </div>
       </div>
@@ -76,11 +76,11 @@
                 <table>
                   <thead>
                     <tr>
-                      <th>Part No.</th>
+                      <th>รหัสอะไหล่</th>
                       <th>Serial No.</th>
-                      <th>Case No.</th>
-                      <th>Qty</th>
-                      <th>DHL Status</th>
+                      <th>เลขเคส</th>
+                      <th>จำนวน</th>
+                      <th>สถานะ DHL</th>
                       <th>ผลการจับคู่</th>
                       <th>รายละเอียด</th>
                     </tr>
@@ -115,7 +115,7 @@
                   </tr>
                 </thead>
                 <tbody id="history-tbody">
-                  <tr><td colspan="8" class="empty-state">Connecting…</td></tr>
+                  <tr><td colspan="8" class="empty-state">กำลังเชื่อมต่อ…</td></tr>
                 </tbody>
               </table>
             </div>
@@ -127,7 +127,7 @@
               <table>
                 <thead>
                   <tr>
-                    <th>Part No.</th>
+                    <th>รหัสอะไหล่</th>
                     <th>Serial No.</th>
                     <th>ผลการจับคู่</th>
                     <th>รายละเอียด</th>
@@ -144,10 +144,10 @@
   </div>
 
   <script src="https://code.iconify.design/iconify-icon/2.1.0/iconify-icon.min.js"></script>
-  <script src="shared/translations.js?v=37"></script>
-  <script src="shared/toast.js?v=37"></script>
-  <script src="shared/api.js?v=37"></script>
-  <script src="shared/layout.js?v=37"></script>
+  <script src="shared/translations.js?v=39"></script>
+  <script src="shared/toast.js?v=39"></script>
+  <script src="shared/api.js?v=39"></script>
+  <script src="shared/layout.js?v=39"></script>
   <script>
     let pendingFile = null;
     let lastPreviewRows = [];

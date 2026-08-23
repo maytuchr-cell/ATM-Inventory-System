@@ -29,7 +29,7 @@ async function apiFetch(path, options = {}) {
     // Token missing/expired — bounce to login
     localStorage.removeItem('authToken');
     if (!location.pathname.endsWith('login.html')) location.href = 'login.html';
-    const err = new Error('Session expired. Please sign in again.');
+    const err = new Error('เซสชันหมดอายุ กรุณาเข้าสู่ระบบใหม่');
     err.status = 401;
     throw err;
   }
@@ -56,7 +56,7 @@ async function apiUpload(path, formData) {
   if (res.status === 401) {
     localStorage.removeItem('authToken');
     if (!location.pathname.endsWith('login.html')) location.href = 'login.html';
-    const err = new Error('Session expired. Please sign in again.');
+    const err = new Error('เซสชันหมดอายุ กรุณาเข้าสู่ระบบใหม่');
     err.status = 401;
     throw err;
   }

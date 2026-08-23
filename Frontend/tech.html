@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Tech Workspace — ATM Inventory</title>
-    <link rel="stylesheet" href="shared/styles.css?v=37">
+    <link rel="stylesheet" href="shared/styles.css?v=39">
     <style>
         .section-head { display:flex; align-items:center; gap:10px; margin-bottom:20px; }
         .section-accent { width:4px; height:22px; background:var(--orange); border-radius:2px; }
@@ -202,8 +202,8 @@
             <textarea id="wdDescription" class="form-textarea" placeholder="เช่น Card reader เสีย, ปลั๊ก Sensor ขาด..." style="min-height:60px;"></textarea>
 
             <div class="tk-modal-actions">
-                <button type="button" class="btn btn-ghost" onclick="closeWithdrawModal()">Cancel</button>
-                <button type="button" class="btn btn-primary" style="width:auto;margin-top:0;" onclick="submitWithdraw()">Submit</button>
+                <button type="button" class="btn btn-ghost" onclick="closeWithdrawModal()">ยกเลิก</button>
+                <button type="button" class="btn btn-primary" style="width:auto;margin-top:0;" onclick="submitWithdraw()">ส่ง</button>
             </div>
         </div>
     </div>
@@ -243,8 +243,8 @@
             <div id="rtPhotoPreview" class="tk-photo-preview"></div>
 
             <div class="tk-modal-actions">
-                <button type="button" class="btn btn-ghost" onclick="closeReturnModal()">Cancel</button>
-                <button type="button" class="btn btn-primary" style="width:auto;margin-top:0;" onclick="submitReturn()">Submit</button>
+                <button type="button" class="btn btn-ghost" onclick="closeReturnModal()">ยกเลิก</button>
+                <button type="button" class="btn btn-primary" style="width:auto;margin-top:0;" onclick="submitReturn()">ส่ง</button>
             </div>
         </div>
     </div>
@@ -305,17 +305,17 @@
             <textarea id="nrDescription" class="form-textarea" placeholder="เช่น Card reader เสีย, ปลั๊ก Sensor ขาด..." style="min-height:60px;"></textarea>
 
             <div class="tk-modal-actions">
-                <button type="button" class="btn btn-ghost" onclick="closeNewRequestModal()">Cancel</button>
-                <button type="button" class="btn btn-primary" style="width:auto;margin-top:0;" onclick="submitNewRequest()">Submit</button>
+                <button type="button" class="btn btn-ghost" onclick="closeNewRequestModal()">ยกเลิก</button>
+                <button type="button" class="btn btn-primary" style="width:auto;margin-top:0;" onclick="submitNewRequest()">ส่ง</button>
             </div>
         </div>
     </div>
 </div>
 
-<script src="shared/translations.js?v=37"></script>
-<script src="shared/toast.js?v=37"></script>
-<script src="shared/api.js?v=37"></script>
-<script src="shared/layout.js?v=37"></script>
+<script src="shared/translations.js?v=39"></script>
+<script src="shared/toast.js?v=39"></script>
+<script src="shared/api.js?v=39"></script>
+<script src="shared/layout.js?v=39"></script>
 <script>
     /* Status: รอ / เดินทาง / เบิก / คืน / Reject / Cancel   (null = ยังไม่เริ่มเบิก) */
     const currentEmail = localStorage.getItem('userEmail') || 'tech@atm.com';
@@ -358,8 +358,8 @@
         'เดินทาง':   { cls: 'badge-transit', label: 'เดินทาง' },
         'เบิก':      { cls: 'badge-success', label: 'เบิก' },
         'คืน':       { cls: 'badge-success', label: 'คืน' },
-        'Reject':    { cls: 'badge-danger',  label: 'Reject' },
-        'Cancel':    { cls: 'badge-muted',   label: 'Cancel' },
+        'Reject':    { cls: 'badge-danger',  label: 'ปฏิเสธ' },
+        'Cancel':    { cls: 'badge-muted',   label: 'ยกเลิก' },
     };
     // Active leg: still needs the tech (or Admin) to do something. History: the Ticket is done —
     // either fully returned, or terminated (Reject/Cancel).
@@ -386,7 +386,7 @@
 
     function renderTicketsTable() {
         const rows = cachedTickets.filter(tk => TERMINAL_STATUSES.includes(tk.status) === (activeTab === 'history'));
-        document.getElementById('tickets-count').textContent = rows.length + ' tickets';
+        document.getElementById('tickets-count').textContent = rows.length + ' ตั๋ว';
         const wrap = document.getElementById('ticketsTableWrap');
 
         if (activeTab === 'active') {
@@ -452,11 +452,11 @@
                 <table>
                     <thead>
                         <tr>
-                            <th style="width:14%">Ticket</th>
-                            <th style="width:30%">Parts</th>
-                            <th style="width:14%">Phase</th>
-                            <th style="width:18%">Status</th>
-                            <th style="width:24%">Action</th>
+                            <th style="width:14%">ตั๋ว</th>
+                            <th style="width:30%">อะไหล่</th>
+                            <th style="width:14%">ขั้นตอน</th>
+                            <th style="width:18%">สถานะ</th>
+                            <th style="width:24%">การดำเนินการ</th>
                         </tr>
                     </thead>
                     <tbody>${body}</tbody>
@@ -484,9 +484,9 @@
                 <table>
                     <thead>
                         <tr>
-                            <th style="width:16%">Ticket</th>
-                            <th style="width:36%">Parts</th>
-                            <th style="width:20%">Status</th>
+                            <th style="width:16%">ตั๋ว</th>
+                            <th style="width:36%">อะไหล่</th>
+                            <th style="width:20%">สถานะ</th>
                             <th style="width:28%">วันที่/เวลา</th>
                         </tr>
                     </thead>

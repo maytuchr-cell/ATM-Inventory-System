@@ -231,7 +231,7 @@
           <div class="sidebar-logo-wrap">
             <img src="assets/logo.png" alt="Logo" style="width:100%;max-width:148px;height:auto;object-fit:contain;">
           </div>
-          <button class="hamburger-btn" id="hamburger-btn" onclick="toggleSidebar()" title="Toggle sidebar">
+          <button class="hamburger-btn" id="hamburger-btn" onclick="toggleSidebar()" title="สลับแถบเมนู">
             ${isMobile() || isCollapsed ? '☰' : '✕'}
           </button>
         </div>
@@ -250,12 +250,12 @@
           </div>
           <div class="sidebar-footer-controls">
             <button class="ctrl-btn" style="flex:1;justify-content:center;" id="lang-btn" onclick="toggleLang()"></button>
-            <button class="ctrl-btn" style="padding:0 10px;" onclick="toggleTheme()" title="Toggle theme">
+            <button class="ctrl-btn" style="padding:0 10px;" onclick="toggleTheme()" title="สลับธีม">
               <svg id="theme-icon" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                 <circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"/>
               </svg>
             </button>
-            <button class="ctrl-btn btn-danger btn-sm" style="padding:0 10px;" onclick="signOut()" title="Sign Out">⏏</button>
+            <button class="ctrl-btn btn-danger btn-sm" style="padding:0 10px;" onclick="signOut()" title="ออกจากระบบ">⏏</button>
           </div>
         </div>
 

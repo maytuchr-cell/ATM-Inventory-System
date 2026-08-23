@@ -199,11 +199,11 @@
         <div class="demo-box">
             <div class="demo-box-title" data-i18n="login.demo">Demo Accounts</div>
             <div class="demo-row">
-                <span class="demo-pill admin">Admin</span>
+                <span class="demo-pill admin">แอดมิน</span>
                 <span class="demo-email">admin@atm.com / admin123</span>
             </div>
             <div class="demo-row">
-                <span class="demo-pill tech">Tech</span>
+                <span class="demo-pill tech">ช่าง</span>
                 <span class="demo-email">tech@atm.com / tech123</span>
             </div>
         </div>
@@ -254,7 +254,7 @@
                 const isAdminSide = adminRoles.includes((data.role || "").toLowerCase());
                 window.location.href = isAdminSide ? "admin.html" : "tech.html";
             } catch (err) {
-                alert("Cannot reach server. Please try again.");
+                alert("เชื่อมต่อเซิร์ฟเวอร์ไม่ได้ กรุณาลองใหม่");
             } finally {
                 btn.disabled = false;
             }
