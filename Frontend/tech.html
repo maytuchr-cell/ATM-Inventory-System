@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Tech Workspace — ATM Inventory</title>
-    <link rel="stylesheet" href="shared/styles.css?v=34">
+    <link rel="stylesheet" href="shared/styles.css?v=36">
     <style>
         .section-head { display:flex; align-items:center; gap:10px; margin-bottom:20px; }
         .section-accent { width:4px; height:22px; background:var(--orange); border-radius:2px; }
@@ -89,7 +89,21 @@
         .tk-history-line:last-child { border-bottom:none; }
 
         .tk-modal-actions { display:flex; gap:10px; justify-content:flex-end; margin-top:20px; }
-        @media(max-width:640px) { .tk-readonly-grid { grid-template-columns:1fr; } }
+        .tk-2col { display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-bottom:10px; }
+
+        /* ── Phone screens ── */
+        @media(max-width:640px) {
+            .tk-readonly-grid, .tk-2col { grid-template-columns:1fr; }
+            .section-head { flex-wrap:wrap; }
+            .section-head .btn-withdraw { margin-left:0 !important; width:100%; text-align:center; }
+            .tk-modal-body { padding:16px; }
+            .tk-line-row { flex-wrap:wrap; }
+            .tk-part-picker { flex:1 1 100%; }
+            .tk-line-row input[type=number] { flex:1 1 auto; }
+            .tk-line-row select.tk-condition { flex:1 1 auto; }
+            .tk-modal-actions { flex-direction:column-reverse; }
+            .tk-modal-actions .btn { width:100%; }
+        }
     </style>
 </head>
 <body>
@@ -150,7 +164,7 @@
             </div>
 
             <span class="tk-section-label">ข้อมูลใบเบิก</span>
-            <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px;">
+            <div class="tk-2col">
                 <div>
                     <label style="font-size:11px;color:var(--text-muted);display:block;margin-bottom:4px;">วันที่เบิกอะไหล่</label>
                     <input id="wdWithdrawDate" type="date" class="select-part" style="margin-bottom:0;">
@@ -247,11 +261,11 @@
         </div>
         <div class="tk-modal-body">
             <span class="tk-section-label">ข้อมูลช่าง</span>
-            <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px;">
+            <div class="tk-2col">
                 <input id="nrTechName" type="text" placeholder="ชื่อช่าง" class="select-part" style="margin-bottom:0;">
                 <input id="nrTechDept" type="text" placeholder="Zone / แผนก" class="select-part" style="margin-bottom:0;">
             </div>
-            <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px;">
+            <div class="tk-2col">
                 <div>
                     <label style="font-size:11px;color:var(--text-muted);display:block;margin-bottom:4px;">วันที่เบิกอะไหล่</label>
                     <input id="nrWithdrawDate" type="date" class="select-part" style="margin-bottom:0;">
@@ -298,10 +312,10 @@
     </div>
 </div>
 
-<script src="shared/translations.js?v=34"></script>
-<script src="shared/toast.js?v=34"></script>
-<script src="shared/api.js?v=34"></script>
-<script src="shared/layout.js?v=34"></script>
+<script src="shared/translations.js?v=36"></script>
+<script src="shared/toast.js?v=36"></script>
+<script src="shared/api.js?v=36"></script>
+<script src="shared/layout.js?v=36"></script>
 <script>
     /* Status: รอ / เดินทาง / เบิก / คืน / Reject / Cancel   (null = ยังไม่เริ่มเบิก) */
     const currentEmail = localStorage.getItem('userEmail') || 'tech@atm.com';

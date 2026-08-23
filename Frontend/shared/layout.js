@@ -273,14 +273,18 @@
     const main    = document.querySelector('.main-content');
     if (!sidebar || !main) return;
     const updateMargin = () => {
-      main.style.marginLeft = sidebar.classList.contains('collapsed')
-        ? 'var(--sidebar-collapsed-w)'
+      // Mobile: sidebar is off-canvas (overlay), so main-content stays full width — an inline
+      // margin-left here would permanently beat the @media(max-width:768px) rule in styles.css
+      // since inline styles win over stylesheet rules regardless of viewport.
+      main.style.marginLeft = isMobile() ? '0'
+        : sidebar.classList.contains('collapsed') ? 'var(--sidebar-collapsed-w)'
         : 'var(--sidebar-w)';
     };
     updateMargin();
-    // watch for class changes caused by toggleSidebar
+    // watch for class changes caused by toggleSidebar, and viewport crossing the mobile breakpoint
     const obs = new MutationObserver(updateMargin);
     obs.observe(sidebar, { attributes: true, attributeFilter: ['class'] });
+    window.addEventListener('resize', updateMargin);
   }
 
   window.signOut = signOut;
