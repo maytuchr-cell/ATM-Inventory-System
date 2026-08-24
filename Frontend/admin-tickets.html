@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Tickets — ATM Inventory</title>
-    <link rel="stylesheet" href="shared/styles.css?v=41">
+    <link rel="stylesheet" href="shared/styles.css?v=42">
     <style>
         /* Page-specific overrides */
         .section-head { display:flex; align-items:center; gap:10px; margin-bottom:20px; }
@@ -294,10 +294,10 @@
     </div>
 </div>
 
-<script src="shared/translations.js?v=41"></script>
-<script src="shared/toast.js?v=41"></script>
-<script src="shared/api.js?v=41"></script>
-<script src="shared/layout.js?v=41"></script>
+<script src="shared/translations.js?v=42"></script>
+<script src="shared/toast.js?v=42"></script>
+<script src="shared/api.js?v=42"></script>
+<script src="shared/layout.js?v=42"></script>
 <script>
     let cachedTickets = [];
     let rejectTargetId = null;
@@ -313,6 +313,13 @@
         fetchTickets();
         const params = new URLSearchParams(location.search);
         if (params.get('tab') === 'returns') switchTab('returns');
+        // Admin and tech act on the same Tickets from separate screens with no real-time
+        // push between them — poll so an Admin sees a tech's new request (or vice versa
+        // reflected elsewhere) without having to hit refresh manually. Skipped while any
+        // modal is open so it can't wipe out an in-progress edit (reject reason, sync form...).
+        setInterval(() => {
+            if (!document.querySelector('.reason-overlay.open, .detail-overlay.open')) fetchTickets(true);
+        }, 15000);
     };
 
     function switchTab(tab) {
@@ -322,15 +329,18 @@
         document.getElementById('tabPanelReturns').classList.toggle('active', tab === 'returns');
     }
 
-    async function fetchTickets() {
+    async function fetchTickets(silent) {
         const btn = document.getElementById('tkt-refresh-btn');
-        btn?.classList.add('spinning');
+        if (!silent) btn?.classList.add('spinning');
         try {
             cachedTickets = await api.tickets.getAll();
             renderTicketsTable();
             renderReturnsInProgress();
             renderReturnsHistory();
         } catch (e) {
+            // A silent poll's failure (transient network blip) shouldn't blank out a table
+            // the admin is actively looking at — only the explicit/first load shows the error.
+            if (silent) return;
             document.getElementById('ticketsTableBody').innerHTML =
                 `<tr><td colspan="7" class="empty-state" style="color:var(--red)">${'⚠ ไม่สามารถเชื่อมต่อเซิร์ฟเวอร์ได้'}</td></tr>`;
             document.getElementById('returns-onhand-tbody').innerHTML =
@@ -338,7 +348,7 @@
             document.getElementById('returns-history-tbody').innerHTML =
                 `<tr><td colspan="6" class="empty-state" style="color:var(--red)">${'⚠ ไม่สามารถเชื่อมต่อเซิร์ฟเวอร์ได้'}</td></tr>`;
         } finally {
-            btn?.classList.remove('spinning');
+            if (!silent) btn?.classList.remove('spinning');
         }
     }
 
