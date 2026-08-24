@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Tech Workspace — ATM Inventory</title>
-    <link rel="stylesheet" href="shared/styles.css?v=39">
+    <link rel="stylesheet" href="shared/styles.css?v=41">
     <style>
         .section-head { display:flex; align-items:center; gap:10px; margin-bottom:20px; }
         .section-accent { width:4px; height:22px; background:var(--orange); border-radius:2px; }
@@ -37,7 +37,7 @@
         .btn-return:hover { background:var(--green); color:#fff; }
         .btn-ship     { background:var(--bg-subtle); color:var(--text-secondary); border:1.5px solid var(--border); padding:7px 14px; font-size:12.5px; font-weight:600; border-radius:8px; font-family:inherit; cursor:pointer; }
         .btn-ship:hover { background:var(--text-secondary); color:#fff; }
-        .btn-cancel-withdraw { display:block; margin-top:6px; background:none; color:var(--red-light,#dc2626); border:none; padding:0; font-size:11.5px; font-weight:600; font-family:inherit; cursor:pointer; text-decoration:underline; text-underline-offset:2px; }
+        .btn-cancel-withdraw { display:block; margin-top:6px; background:none; color:var(--red, #dc2626); border:none; padding:0; font-size:11.5px; font-weight:600; font-family:inherit; cursor:pointer; text-decoration:underline; text-underline-offset:2px; }
         .btn-cancel-withdraw:hover { color:#dc2626; }
 
         /* ── Ticket form modal (withdraw / return) ── */
@@ -103,6 +103,27 @@
             .tk-line-row select.tk-condition { flex:1 1 auto; }
             .tk-modal-actions { flex-direction:column-reverse; }
             .tk-modal-actions .btn { width:100%; }
+
+            /* Ticket list: a 5-column table has no room on a phone — the Action column
+               (buttons) ends up past the fold, only reachable by scrolling the table
+               sideways. Below this width, render each row as a stacked card instead —
+               every field readable top-to-bottom, no horizontal scroll needed. */
+            .tk-tickets-table thead { display:none; }
+            .tk-tickets-table, .tk-tickets-table tbody { display:block; width:100%; }
+            .tk-tickets-table tr {
+                display:block; border:1px solid var(--border); border-radius:12px;
+                padding:12px 14px; margin-bottom:10px; background:var(--bg-card);
+            }
+            .tk-tickets-table td {
+                display:block; padding:6px 0; border:none;
+            }
+            .tk-tickets-table td[data-label]::before {
+                content:attr(data-label); display:block; font-size:10.5px; font-weight:700;
+                letter-spacing:.4px; text-transform:uppercase; color:var(--text-muted);
+                margin-bottom:3px;
+            }
+            .tk-tickets-table td.empty-state { text-align:left; }
+            .tk-tickets-table td.empty-state::before { content:none; }
         }
     </style>
 </head>
@@ -312,10 +333,10 @@
     </div>
 </div>
 
-<script src="shared/translations.js?v=39"></script>
-<script src="shared/toast.js?v=39"></script>
-<script src="shared/api.js?v=39"></script>
-<script src="shared/layout.js?v=39"></script>
+<script src="shared/translations.js?v=41"></script>
+<script src="shared/toast.js?v=41"></script>
+<script src="shared/api.js?v=41"></script>
+<script src="shared/layout.js?v=41"></script>
 <script>
     /* Status: รอ / เดินทาง / เบิก / คืน / Reject / Cancel   (null = ยังไม่เริ่มเบิก) */
     const currentEmail = localStorage.getItem('userEmail') || 'tech@atm.com';
@@ -440,16 +461,16 @@
 
                     body += `
                         <tr>
-                            <td>${ticketLabel}</td>
-                            <td>${partsSummaryHtml(tk)}</td>
-                            <td>${phaseLabel}</td>
-                            <td>${badge}</td>
-                            <td>${action}${addlBtn}</td>
+                            <td data-label="ตั๋ว">${ticketLabel}</td>
+                            <td data-label="อะไหล่">${partsSummaryHtml(tk)}</td>
+                            <td data-label="ขั้นตอน">${phaseLabel}</td>
+                            <td data-label="สถานะ">${badge}</td>
+                            <td data-label="การดำเนินการ" class="tk-action-cell">${action}${addlBtn}</td>
                         </tr>`;
                 });
             }
             wrap.innerHTML = `
-                <table>
+                <table class="tk-tickets-table">
                     <thead>
                         <tr>
                             <th style="width:14%">ตั๋ว</th>
@@ -473,15 +494,15 @@
                     const dt = new Date(tk.updatedAt).toLocaleString('th-TH', { dateStyle: 'medium', timeStyle: 'short' });
                     body += `
                         <tr>
-                            <td><span class="id-chip ticket-id">${tk.externalTicketNo}</span></td>
-                            <td>${partsSummaryHtml(tk)}</td>
-                            <td>${badge}</td>
-                            <td style="font-size:12.5px;color:var(--text-secondary);">${dt}</td>
+                            <td data-label="ตั๋ว"><span class="id-chip ticket-id">${tk.externalTicketNo}</span></td>
+                            <td data-label="อะไหล่">${partsSummaryHtml(tk)}</td>
+                            <td data-label="สถานะ">${badge}</td>
+                            <td data-label="วันที่/เวลา" style="font-size:12.5px;color:var(--text-secondary);">${dt}</td>
                         </tr>`;
                 });
             }
             wrap.innerHTML = `
-                <table>
+                <table class="tk-tickets-table">
                     <thead>
                         <tr>
                             <th style="width:16%">ตั๋ว</th>
