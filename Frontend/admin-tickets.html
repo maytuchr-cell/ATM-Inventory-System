@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Tickets — ATM Inventory</title>
-    <link rel="stylesheet" href="shared/styles.css?v=42">
+    <link rel="stylesheet" href="shared/styles.css?v=43">
     <style>
         /* Page-specific overrides */
         .section-head { display:flex; align-items:center; gap:10px; margin-bottom:20px; }
@@ -294,10 +294,10 @@
     </div>
 </div>
 
-<script src="shared/translations.js?v=42"></script>
-<script src="shared/toast.js?v=42"></script>
-<script src="shared/api.js?v=42"></script>
-<script src="shared/layout.js?v=42"></script>
+<script src="shared/translations.js?v=43"></script>
+<script src="shared/toast.js?v=43"></script>
+<script src="shared/api.js?v=43"></script>
+<script src="shared/layout.js?v=43"></script>
 <script>
     let cachedTickets = [];
     let rejectTargetId = null;
@@ -746,6 +746,9 @@
                     </div>
                     <div class="detail-field">
                         <label>Status การใช้งาน</label><span>${tk.usageStatus === 'Keep' ? 'เก็บ (สต็อกสำรอง)' : tk.usageStatus === 'Repair' ? 'เบิกไปซ่อม' : none}</span>
+                    </div>
+                    <div class="detail-field">
+                        <label>Tech Support ที่ปรึกษา</label><span>${tk.techSupportName || 'ไม่มี'}</span>
                     </div>
                 </div>
             </div>` : ''}

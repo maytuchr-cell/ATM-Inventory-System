@@ -70,7 +70,7 @@ public class TicketController : ControllerBase
                 t.TicketId, t.ExternalTicketNo, t.TechEmail, t.TechName, t.TechDept,
                 t.Status, t.RejectReason, t.ApproverName, t.ApprovedAt,
                 t.WithdrawAddress, t.ReturnAddress, t.WithdrawDescription, t.CreatedAt, t.UpdatedAt,
-                t.WithdrawSlipNo, t.WithdrawDate, t.EmployeeCode, t.UsageStatus,
+                t.WithdrawSlipNo, t.WithdrawDate, t.EmployeeCode, t.UsageStatus, t.TechSupportName,
                 phase = Phase(t.ReturnAddress, tLines),
                 siblingIndex = siblings.IndexOf(t.TicketId) + 1,
                 siblingCount = siblings.Count,
@@ -208,6 +208,7 @@ public class TicketController : ControllerBase
         ticket.WithdrawDate = dto.WithdrawDate ?? DateTime.Now;
         ticket.EmployeeCode = dto.EmployeeCode;
         ticket.UsageStatus = dto.UsageStatus;
+        ticket.TechSupportName = string.IsNullOrWhiteSpace(dto.TechSupportName) ? null : dto.TechSupportName;
         ticket.UpdatedAt = DateTime.Now;
         _context.SaveChanges();
         return Ok(new { message = "Withdraw request submitted.", ticket });
@@ -552,6 +553,8 @@ public class SubmitLinesDto
     public DateTime? WithdrawDate { get; set; }
     public string? EmployeeCode { get; set; }
     public string? UsageStatus { get; set; } // "Repair" | "Keep"
+    // Withdraw only — see Ticket.TechSupportName. Null/blank = "ไม่มี" (didn't consult anyone).
+    public string? TechSupportName { get; set; }
 }
 
 public class AttachmentDto

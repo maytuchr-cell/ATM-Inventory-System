@@ -176,6 +176,9 @@ const api = {
   tracking: {
     bySerial: (sn) => apiFetch(`/Tracking/serial/${encodeURIComponent(sn)}`),
   },
+  techSupport: {
+    getAll: () => apiFetch('/TechSupport'),
+  },
   dailyReport: {
     preview: (file) => { const fd = new FormData(); fd.append('file', file); return apiUpload('/DailyReport/preview', fd); },
     confirm: (file) => { const fd = new FormData(); fd.append('file', file); return apiUpload('/DailyReport/confirm', fd); },

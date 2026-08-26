@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Tech Workspace — ATM Inventory</title>
-    <link rel="stylesheet" href="shared/styles.css?v=42">
+    <link rel="stylesheet" href="shared/styles.css?v=43">
     <style>
         .section-head { display:flex; align-items:center; gap:10px; margin-bottom:20px; }
         .section-accent { width:4px; height:22px; background:var(--orange); border-radius:2px; }
@@ -206,6 +206,12 @@
                     <option value="Keep">เก็บ (สต็อกสำรองติดตัวช่าง)</option>
                 </select>
             </div>
+            <div style="margin-bottom:18px;">
+                <label style="font-size:11px;color:var(--text-muted);display:block;margin-bottom:4px;">Tech Support ที่ปรึกษา</label>
+                <select id="wdTechSupport" class="select-part" style="margin-bottom:0;">
+                    <option value="">ไม่มี</option>
+                </select>
+            </div>
 
             <span class="tk-section-label">เลือกอะไหล่ที่ต้องการเบิก</span>
             <div id="wdLines"></div>
@@ -309,6 +315,12 @@
                     <option value="Keep">เก็บ (สต็อกสำรองติดตัวช่าง)</option>
                 </select>
             </div>
+            <div style="margin-bottom:18px;">
+                <label style="font-size:11px;color:var(--text-muted);display:block;margin-bottom:4px;">Tech Support ที่ปรึกษา</label>
+                <select id="nrTechSupport" class="select-part" style="margin-bottom:0;">
+                    <option value="">ไม่มี</option>
+                </select>
+            </div>
 
             <span class="tk-section-label">เลือกอะไหล่ที่ต้องการเบิก</span>
             <div id="nrLines"></div>
@@ -333,10 +345,10 @@
     </div>
 </div>
 
-<script src="shared/translations.js?v=42"></script>
-<script src="shared/toast.js?v=42"></script>
-<script src="shared/api.js?v=42"></script>
-<script src="shared/layout.js?v=42"></script>
+<script src="shared/translations.js?v=43"></script>
+<script src="shared/toast.js?v=43"></script>
+<script src="shared/api.js?v=43"></script>
+<script src="shared/layout.js?v=43"></script>
 <script>
     /* Status: รอ / เดินทาง / เบิก / คืน / Reject / Cancel   (null = ยังไม่เริ่มเบิก) */
     const currentEmail = localStorage.getItem('userEmail') || 'tech@atm.com';
@@ -352,6 +364,7 @@
     window.addEventListener('DOMContentLoaded', async () => {
         initLayout();
         await fetchParts();
+        await fetchTechSupportList();
         await fetchTickets();
         // Admin approves/rejects/etc. from a completely separate screen with no real-time push
         // to this one — poll so the tech sees it without having to hit refresh manually. Skipped
@@ -364,6 +377,17 @@
 
     async function fetchParts() {
         try { cachedParts = await api.parts.getAll({ isActive: true }); } catch { cachedParts = []; }
+    }
+
+    // Mock data for now (see TechSupportController) — swapped for a real KMM-mobile-backed
+    // roster later without any change needed here, since the dropdowns just render whatever
+    // this endpoint returns.
+    async function fetchTechSupportList() {
+        let names = [];
+        try { names = await api.techSupport.getAll(); } catch { names = []; }
+        const optionsHtml = '<option value="">ไม่มี</option>' + names.map(n => `<option value="${n}">${n}</option>`).join('');
+        document.getElementById('wdTechSupport').innerHTML = optionsHtml;
+        document.getElementById('nrTechSupport').innerHTML = optionsHtml;
     }
 
     async function fetchTickets(silent) {
@@ -717,6 +741,7 @@
         document.getElementById('wdEmployeeCode').value = '';
         document.getElementById('wdCaseNo').value = src.externalTicketNo;
         document.getElementById('wdUsageStatus').value = 'Repair';
+        document.getElementById('wdTechSupport').value = '';
         document.getElementById('wdAddress').value = '';
         document.getElementById('wdDescription').value = '';
         document.getElementById('wdLines').innerHTML = '';
@@ -754,6 +779,7 @@
         document.getElementById('wdEmployeeCode').value = tk.employeeCode || '';
         document.getElementById('wdCaseNo').value = tk.externalTicketNo;
         document.getElementById('wdUsageStatus').value = tk.usageStatus || 'Repair';
+        document.getElementById('wdTechSupport').value = tk.techSupportName || '';
 
         const rejectBox = document.getElementById('wdRejectBox');
         if (tk.status === 'Reject' && tk.rejectReason) {
@@ -792,6 +818,7 @@
         const withdrawDate = document.getElementById('wdWithdrawDate').value || null;
         const employeeCode = document.getElementById('wdEmployeeCode').value.trim();
         const usageStatus = document.getElementById('wdUsageStatus').value;
+        const techSupportName = document.getElementById('wdTechSupport').value || null;
         if (!lines.length) { showToast?.('เลือกอะไหล่อย่างน้อย 1 รายการ', 'error'); return; }
         if (!address) { showToast?.('กรุณากรอกที่อยู่จัดส่ง', 'error'); return; }
 
@@ -814,7 +841,7 @@
 
         try {
             const attachments = await uploadPendingPhotos('wd');
-            const res = await api.tickets.submitWithdraw(ticketId, { lines, address, description, attachments, withdrawDate, employeeCode, usageStatus });
+            const res = await api.tickets.submitWithdraw(ticketId, { lines, address, description, attachments, withdrawDate, employeeCode, usageStatus, techSupportName });
             photoFiles.wd = [];
             closeWithdrawModal();
             await fetchTickets();
@@ -944,6 +971,7 @@
         document.getElementById('nrEmployeeCode').value = '';
         document.getElementById('nrCaseNo').value = '';
         document.getElementById('nrUsageStatus').value = 'Repair';
+        document.getElementById('nrTechSupport').value = '';
         onUsageStatusChange('nr');
         document.getElementById('nrAddress').value = '';
         document.getElementById('nrDescription').value = '';
@@ -967,6 +995,7 @@
         const employeeCode = document.getElementById('nrEmployeeCode').value.trim();
         const caseNo = document.getElementById('nrCaseNo').value.trim();
         const usageStatus = document.getElementById('nrUsageStatus').value;
+        const techSupportName = document.getElementById('nrTechSupport').value || null;
         if (!techName) { showToast?.('กรอกชื่อช่าง', 'error'); return; }
         if (!lines.length) { showToast?.('เลือกอะไหล่อย่างน้อย 1 รายการ', 'error'); return; }
         if (!address) { showToast?.('กรุณากรอกที่อยู่จัดส่ง', 'error'); return; }
@@ -980,7 +1009,7 @@
             const synced = await api.tickets.sync({ externalTicketNo, techName, techEmail: currentEmail, techDept });
             syncedTicketId = synced.ticket.ticketId;
             const attachments = await uploadPendingPhotos('nr');
-            const res = await api.tickets.submitWithdraw(syncedTicketId, { lines, address, description, attachments, withdrawDate, employeeCode, usageStatus });
+            const res = await api.tickets.submitWithdraw(syncedTicketId, { lines, address, description, attachments, withdrawDate, employeeCode, usageStatus, techSupportName });
             photoFiles.nr = [];
             closeNewRequestModal();
             await fetchTickets();

@@ -42,6 +42,11 @@ public class Ticket
     // or "Keep" (เก็บ — the tech holds it as personal buffer stock, not tied to any job).
     public string? UsageStatus { get; set; }
 
+    // Technical advisor the tech consulted before requesting this withdraw — null/omitted means
+    // "ไม่มี" (didn't consult anyone). Source list is currently mock data (see TechSupportController);
+    // planned to be swapped for a real KMM-mobile-backed roster later without changing this field.
+    public string? TechSupportName { get; set; }
+
     public DateTime CreatedAt { get; set; } = DateTime.Now;
     public DateTime UpdatedAt { get; set; } = DateTime.Now;
 
