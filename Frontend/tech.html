@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Tech Workspace — ATM Inventory</title>
-    <link rel="stylesheet" href="shared/styles.css?v=44">
+    <link rel="stylesheet" href="shared/styles.css?v=45">
     <style>
         .section-head { display:flex; align-items:center; gap:10px; margin-bottom:20px; }
         .section-accent { width:4px; height:22px; background:var(--orange); border-radius:2px; }
@@ -345,10 +345,10 @@
     </div>
 </div>
 
-<script src="shared/translations.js?v=44"></script>
-<script src="shared/toast.js?v=44"></script>
-<script src="shared/api.js?v=44"></script>
-<script src="shared/layout.js?v=44"></script>
+<script src="shared/translations.js?v=45"></script>
+<script src="shared/toast.js?v=45"></script>
+<script src="shared/api.js?v=45"></script>
+<script src="shared/layout.js?v=45"></script>
 <script>
     /* Status: รอ / เดินทาง / เบิก / คืน / Reject / Cancel   (null = ยังไม่เริ่มเบิก) */
     const currentEmail = localStorage.getItem('userEmail') || 'tech@atm.com';
@@ -409,6 +409,7 @@
         null:        { cls: 'badge-new',     label: 'ยังไม่เบิก' },
         'รอ':        { cls: 'badge-pending', label: 'รอ' },
         'รออะไหล่':  { cls: 'badge-danger',  label: 'รออะไหล่' },
+        'รอส่งเมล DHL': { cls: 'badge-pending', label: 'รอส่งเมล DHL' },
         'อนุมัติคืน': { cls: 'badge-transit', label: 'Admin อนุมัติแล้ว' },
         'เดินทาง':   { cls: 'badge-transit', label: 'เดินทาง' },
         'เบิก':      { cls: 'badge-success', label: 'เบิก' },
@@ -451,14 +452,18 @@
             } else {
                 rows.forEach(tk => {
                     const b = STATUS_BADGE[tk.status] || STATUS_BADGE[null];
-                    const badge = `<span class="badge ${b.cls}"><span class="badge-dot"></span>${b.label}</span>`;
+                    const badgeLabel = (tk.status === 'เดินทาง' && tk.phase === 'withdraw') ? 'กำลังเดินทาง' : b.label;
+                    const badge = `<span class="badge ${b.cls}"><span class="badge-dot"></span>${badgeLabel}</span>`;
                     const phaseLabel = tk.phase ? (tk.phase === 'withdraw' ? 'ขาเบิก' : 'ขาคืน') : '<span class="text-muted">—</span>';
 
                     let action = `<span class="text-muted">—</span>`;
                     if (tk.status === null) {
                         action = `<button class="btn-withdraw" onclick="openWithdrawModal(${tk.ticketId})">📤 เบิก</button>`;
+                    } else if (tk.status === 'รอส่งเมล DHL' && tk.phase === 'withdraw') {
+                        action = `<span class="text-muted" style="font-size:12px;">อนุมัติแล้ว — รอ Admin ส่งเมล DHL</span>
+                            <button class="btn-cancel-withdraw" onclick="cancelWithdraw(${tk.ticketId})">ยกเลิกคำขอ</button>`;
                     } else if (tk.status === 'เดินทาง' && tk.phase === 'withdraw') {
-                        const eta = deliveryEtaHtml(tk.approvedAt);
+                        const eta = deliveryEtaHtml(tk.emailSentAt);
                         action = `<button class="btn-return" onclick="confirmReceive(${tk.ticketId})">✅ ยืนยันรับของ</button>${eta}`;
                     } else if (tk.status === 'เบิก' && tk.phase === 'withdraw') {
                         // Same Case No. can have more than one ใบเบิก sitting at "เบิก" (received)
@@ -869,10 +874,11 @@
         } catch (e) { showToast?.(e.message || t('toast.error'), 'error'); }
     }
 
-    // Once Admin approves, the tech is told the part will reach them the next day.
-    function deliveryEtaHtml(approvedAt) {
-        if (!approvedAt) return '';
-        const eta = new Date(approvedAt);
+    // Once Admin confirms the DHL email went out, the tech is told the part will reach them the
+    // next day — counted from EmailSentAt, not the (usually much earlier) auto-approve moment.
+    function deliveryEtaHtml(emailSentAt) {
+        if (!emailSentAt) return '';
+        const eta = new Date(emailSentAt);
         eta.setDate(eta.getDate() + 1);
         return `<div class="text-muted" style="font-size:11px;margin-top:4px;">📦 คาดว่าจะได้รับของภายในวันที่ ${eta.toLocaleDateString('th-TH')}</div>`;
     }

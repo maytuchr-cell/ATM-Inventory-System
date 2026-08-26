@@ -69,7 +69,9 @@ public static class TicketControllerFixture
 
     /// <summary>Syncs a ticket, submits+receives a withdraw so it's ready for a return test.
     /// SubmitWithdraw auto-approves on its own now (see TicketController.TryAutoApprove) as long
-    /// as the fixture's default 100-unit stock covers qty — no separate ApproveTicket call needed.</summary>
+    /// as the fixture's default 100-unit stock covers qty, landing on "รอส่งเมล DHL" — SendEmailConfirmed
+    /// is what actually moves it to "เดินทาง" (Admin confirming the DHL email went out) so
+    /// ReceiveTicket has something to receive.</summary>
     public static Ticket CreateReceivedTicket(TicketController controller, AppDbContext context, string externalNo, int qty = 1)
     {
         controller.SyncFromAservice(new SyncTicketDto { ExternalTicketNo = externalNo, TechName = "Tech" });
@@ -80,6 +82,7 @@ public static class TicketControllerFixture
             Lines = new() { new LineDto { PartNo = PartNo, Quantity = qty } },
             Address = "Withdraw Addr"
         });
+        controller.SendEmailConfirmed(ticket.TicketId);
         controller.ReceiveTicket(ticket.TicketId);
 
         return context.Tickets.First(t => t.TicketId == ticket.TicketId);

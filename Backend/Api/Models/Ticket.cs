@@ -21,6 +21,11 @@ public class Ticket
     public string? ApproverName { get; set; }
     public DateTime? ApprovedAt { get; set; }
 
+    // Set when Admin confirms the DHL email actually went out (รอส่งเมล DHL → เดินทาง) — the
+    // tech's "expected delivery" estimate is +1 day from THIS, not ApprovedAt (auto-approve can
+    // happen well before Admin gets around to emailing DHL).
+    public DateTime? EmailSentAt { get; set; }
+
     public string? WithdrawAddress { get; set; }
     public string? ReturnAddress  { get; set; }
 

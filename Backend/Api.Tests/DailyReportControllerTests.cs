@@ -53,7 +53,9 @@ public class DailyReportControllerTests
         tickets.SyncFromAservice(new SyncTicketDto { ExternalTicketNo = externalNo, TechName = "Tech" });
         var ticket = context.Tickets.First(t => t.ExternalTicketNo == externalNo);
         tickets.SubmitWithdraw(ticket.TicketId, new SubmitLinesDto { Lines = new() { new LineDto { PartNo = PartNo, Quantity = qty } }, Address = "Addr" });
-        tickets.ApproveTicket(ticket.TicketId);
+        // Sufficient stock (fixture seeds 100) auto-approves this straight to "รอส่งเมล DHL" — the
+        // real "เดินทาง" transition now only happens once Admin confirms the DHL email went out.
+        tickets.SendEmailConfirmed(ticket.TicketId);
         tickets.ReceiveTicket(ticket.TicketId);
         tickets.SubmitReturn(ticket.TicketId, new SubmitLinesDto { Lines = new() { new LineDto { PartNo = PartNo, Quantity = qty, Condition = "Good" } }, Address = "Return Addr" });
         tickets.ApproveReturn(ticket.TicketId);

@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Tickets — ATM Inventory</title>
-    <link rel="stylesheet" href="shared/styles.css?v=44">
+    <link rel="stylesheet" href="shared/styles.css?v=45">
     <style>
         /* Page-specific overrides */
         .section-head { display:flex; align-items:center; gap:10px; margin-bottom:20px; }
@@ -146,6 +146,7 @@
                             <option value="">ทุกสถานะ</option>
                             <option value="รอ">รอ</option>
                             <option value="รออะไหล่">รออะไหล่</option>
+                            <option value="รอส่งเมล DHL">รอส่งเมล DHL</option>
                             <option value="เดินทาง">เดินทาง</option>
                             <option value="เบิก">เบิก</option>
                             <option value="คืน">คืน</option>
@@ -295,10 +296,10 @@
     </div>
 </div>
 
-<script src="shared/translations.js?v=44"></script>
-<script src="shared/toast.js?v=44"></script>
-<script src="shared/api.js?v=44"></script>
-<script src="shared/layout.js?v=44"></script>
+<script src="shared/translations.js?v=45"></script>
+<script src="shared/toast.js?v=45"></script>
+<script src="shared/api.js?v=45"></script>
+<script src="shared/layout.js?v=45"></script>
 <script>
     let cachedTickets = [];
     let rejectTargetId = null;
@@ -456,6 +457,7 @@
     const STATUS_BADGE = {
         "รอ":        { cls: "badge-pending",  label: "รอ" },
         "รออะไหล่":  { cls: "badge-danger",   label: "รออะไหล่" },
+        "รอส่งเมล DHL": { cls: "badge-pending", label: "รอส่งเมล DHL" },
         "อนุมัติคืน": { cls: "badge-approved", label: "อนุมัติคืน" },
         "เดินทาง":   { cls: "badge-approved", label: "เดินทาง" },
         "เบิก":      { cls: "badge-teal",     label: "เบิก" },
@@ -490,7 +492,11 @@
         }
         rows.forEach(tk => {
             const b = STATUS_BADGE[tk.status] || STATUS_BADGE["รอ"];
-            const badge = `<span class="badge ${b.cls}"><span class="badge-dot"></span>${b.label}</span>`;
+            // "เดินทาง" is shared with the return leg (ทั้งขาเบิก/ขาคืนใช้ค่าเดียวกันในฐานข้อมูล)
+            // — only the withdraw leg's label reads "กำลังเดินทาง" here; the value itself stays
+            // "เดินทาง" so the return leg's own logic elsewhere is untouched.
+            const badgeLabel = (tk.status === "เดินทาง" && tk.phase === "withdraw") ? "กำลังเดินทาง" : b.label;
+            const badge = `<span class="badge ${b.cls}"><span class="badge-dot"></span>${badgeLabel}</span>`;
 
             // Whether the central warehouse can actually fulfill every Withdraw line right now —
             // gates the Approve button below so Admin can't approve a request stock can't cover.
@@ -547,8 +553,27 @@
                         </button>
                         <button class="btn-cancel" onclick="cancelTicket(${tk.ticketId})">ยกเลิก</button>
                     </div>`;
+            } else if (tk.status === "รอส่งเมล DHL" && tk.phase === "withdraw") {
+                // Auto-approved, stock already cut — Admin's only jobs left before it's locked in
+                // are: confirm the DHL email actually went out, or back out (Reject/Cancel), which
+                // still hands the stock back since it was committed at auto-approve time.
+                action = `
+                    <div class="ticket-action-row">
+                        <button class="btn-approve" onclick="sendEmailConfirmed(${tk.ticketId})">
+                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+                            ส่งเมลสำเร็จ
+                        </button>
+                        <button class="btn-reject" onclick="openRejectModal(${tk.ticketId})">
+                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                            ปฏิเสธ
+                        </button>
+                        <button class="btn-cancel" onclick="cancelTicket(${tk.ticketId})">ยกเลิก</button>
+                    </div>`;
+            } else if (tk.status === "เดินทาง" && tk.phase === "withdraw") {
+                // Locked — Admin already told DHL about this one, no self-service undo any more.
+                action = `<span style="color:var(--text-muted);font-size:12px;" title="Admin ส่งเมลแจ้ง DHL ไปแล้ว">🔒 ส่งเมลแล้ว</span>`;
             } else if (!["Reject", "Cancel", "คืน"].includes(tk.status)) {
-                // Still open (return leg in progress, or in transit) — Admin can only Cancel outright.
+                // Still open (return leg in progress) — Admin can only Cancel outright.
                 action = `<button class="btn-cancel" onclick="cancelTicket(${tk.ticketId})">ยกเลิกตั๋ว</button>`;
             } else {
                 action = `<span style="color:var(--text-muted)">—</span>`;
@@ -577,6 +602,17 @@
             await api.tickets.approve(id);
             await fetchTickets();
             showToast?.('อนุมัติตั๋วแล้ว', 'success');
+        } catch (e) { showToast?.(e.message || 'เกิดข้อผิดพลาด กรุณาลองใหม่', 'error'); }
+    }
+
+    // Admin confirms the DHL email actually went out — "รอส่งเมล DHL" → "เดินทาง". From here the
+    // ticket is locked against Cancel (see CancelTicket on the backend).
+    async function sendEmailConfirmed(id) {
+        if (!confirm('ยืนยันว่าส่งเมลแจ้ง DHL สำเร็จแล้ว? หลังจากนี้จะยกเลิกตั๋วนี้ไม่ได้อีก')) return;
+        try {
+            await api.tickets.sendEmailConfirmed(id);
+            await fetchTickets();
+            showToast?.('บันทึกว่าส่งเมลแล้ว', 'success');
         } catch (e) { showToast?.(e.message || 'เกิดข้อผิดพลาด กรุณาลองใหม่', 'error'); }
     }
 
@@ -727,7 +763,7 @@
                         <label>แผนก / โซน</label><span>${tk.techDept || none}</span>
                     </div>
                     <div class="detail-field">
-                        <label>สถานะ</label><span>${(STATUS_BADGE[tk.status]?.label || tk.status)} (${tk.phase === 'withdraw' ? 'ขาเบิก' : 'ขาคืน'})</span>
+                        <label>สถานะ</label><span>${(tk.status === 'เดินทาง' && tk.phase === 'withdraw') ? 'กำลังเดินทาง' : (STATUS_BADGE[tk.status]?.label || tk.status)} (${tk.phase === 'withdraw' ? 'ขาเบิก' : 'ขาคืน'})</span>
                     </div>
                     <div class="detail-field">
                         <label>วันที่แจ้ง</label><span>${fmt(tk.createdAt)}</span>

@@ -70,7 +70,7 @@ public class TicketController : ControllerBase
                 t.TicketId, t.ExternalTicketNo, t.TechEmail, t.TechName, t.TechDept,
                 t.Status, t.RejectReason, t.ApproverName, t.ApprovedAt,
                 t.WithdrawAddress, t.ReturnAddress, t.WithdrawDescription, t.CreatedAt, t.UpdatedAt,
-                t.WithdrawSlipNo, t.WithdrawDate, t.EmployeeCode, t.UsageStatus, t.TechSupportName,
+                t.WithdrawSlipNo, t.WithdrawDate, t.EmployeeCode, t.UsageStatus, t.TechSupportName, t.EmailSentAt,
                 phase = Phase(t.ReturnAddress, tLines),
                 siblingIndex = siblings.IndexOf(t.TicketId) + 1,
                 siblingCount = siblings.Count,
@@ -274,7 +274,9 @@ public class TicketController : ControllerBase
     // have enough of everything on this ticket's Withdraw lines" — Tech Support being set or not
     // plays no part in this decision.
     //
-    // Sets ticket.Status to "เดินทาง" (stock cut, same as a manual approve) when everything's in
+    // Sets ticket.Status to "รอส่งเมล DHL" (stock cut immediately, same as a manual approve used
+    // to do — but this is NOT the "เดินทาง" transit status yet, that only starts once Admin
+    // actually confirms the DHL email went out, see SendEmailConfirmed) when everything's in
     // stock, or "รออะไหล่" (nothing touched) when it isn't — never leaves it at "รอ".
     private void TryAutoApprove(Ticket ticket)
     {
@@ -305,11 +307,31 @@ public class TicketController : ControllerBase
                 userName: "Auto", remarks: $"Auto-approved for ticket {ticket.ExternalTicketNo}");
         }
 
-        ticket.Status = "เดินทาง";
+        ticket.Status = "รอส่งเมล DHL";
         ticket.ApproverName = "Auto";
         ticket.ApprovedAt = DateTime.Now;
         ticket.UpdatedAt = DateTime.Now;
         _audit.Log(User, "Ticket", ticket.TicketId.ToString(), "AUTO_APPROVE", null, new { ticket.TicketId, ticket.Status });
+    }
+
+    // PUT /api/Ticket/{id}/send-email — Admin confirms the DHL email actually went out. This is
+    // the real "เดินทาง" (in transit) transition — stock was already cut back at auto-approve,
+    // this only moves the status forward. From here the ticket is locked against Cancel: DHL has
+    // been contacted, so pulling back isn't a self-service undo any more (see CancelTicket).
+    [HttpPut("{id}/send-email")]
+    public IActionResult SendEmailConfirmed(int id)
+    {
+        var ticket = _context.Tickets.FirstOrDefault(t => t.TicketId == id);
+        if (ticket == null) return NotFound(new { message = "Ticket not found." });
+        if (ticket.Status != "รอส่งเมล DHL")
+            return BadRequest(new { message = "Only a ticket waiting to email DHL can be marked sent." });
+
+        ticket.Status = "เดินทาง";
+        ticket.EmailSentAt = DateTime.Now;
+        ticket.UpdatedAt = DateTime.Now;
+        _context.SaveChanges();
+        _audit.Log(User, "Ticket", id.ToString(), "SEND_EMAIL", null, new { ticket.TicketId, ticket.Status });
+        return Ok(new { message = "Marked as emailed to DHL.", ticket });
     }
 
     // PUT /api/Ticket/{id}/approve — Admin approves the withdraw request → เดินทาง
@@ -372,9 +394,24 @@ public class TicketController : ControllerBase
     {
         var ticket = _context.Tickets.FirstOrDefault(t => t.TicketId == id);
         if (ticket == null) return NotFound(new { message = "Ticket not found." });
-        if (ticket.Status != "รอ" && ticket.Status != "รออะไหล่")
+        if (ticket.Status != "รอ" && ticket.Status != "รออะไหล่" && ticket.Status != "รอส่งเมล DHL")
             return BadRequest(new { message = "Only a waiting ticket can be rejected." });
         if (string.IsNullOrWhiteSpace(dto.Reason)) return BadRequest(new { message = "Reject reason is required." });
+
+        // Auto-approve already deducted WH-RAT stock for a "รอส่งเมล DHL" ticket — rejecting it
+        // now needs to hand that back, same as CancelTicket does for the same status.
+        if (ticket.Status == "รอส่งเมล DHL")
+        {
+            var mainWh = _context.Locations.FirstOrDefault(l => l.Code == "WH-RAT");
+            var withdrawLines = _context.TicketPartLines.Where(l => l.TicketId == id && l.LineType == "Withdraw").ToList();
+            foreach (var line in withdrawLines)
+            {
+                _stock.AdjustStock(
+                    partNo: line.PartNo, locationId: mainWh?.Id ?? 0, qtyDelta: line.Quantity, condition: "Good",
+                    movementType: "Reject", refType: "Ticket", refId: id.ToString(),
+                    userName: User?.Identity?.Name ?? "admin", remarks: $"Rejected ticket {ticket.ExternalTicketNo} — returned to warehouse");
+            }
+        }
 
         ticket.Status = "Reject";
         ticket.RejectReason = dto.Reason;
@@ -394,13 +431,24 @@ public class TicketController : ControllerBase
         if (ticket.Status is "Reject" or "Cancel" or "คืน")
             return BadRequest(new { message = "Ticket is already closed." });
 
-        // ApproveTicket deducts from WH-RAT the moment it approves (see there), so a ticket
-        // cancelled while เดินทาง (approved but not yet physically received) has stock sitting
-        // in limbo — put it back. Tickets cancelled at รอ never had stock touched, nothing to undo.
-        if (ticket.Status == "เดินทาง")
+        var lines = _context.TicketPartLines.Where(l => l.TicketId == id).ToList();
+        var phase = Phase(ticket.ReturnAddress, lines);
+
+        // Once Admin has actually told DHL about this withdraw (เดินทาง on the withdraw leg),
+        // it's no longer a self-service undo — DHL is already acting on it. Cancel earlier
+        // (รอส่งเมล DHL, still just an internal commitment) is still fine. The return leg's own
+        // เดินทาง (tech shipped back to DHL) is a different thing and isn't locked by this.
+        if (ticket.Status == "เดินทาง" && phase == "withdraw")
+            return BadRequest(new { message = "ยกเลิกไม่ได้แล้ว — Admin ส่งเมลแจ้ง DHL ไปแล้ว" });
+
+        // Stock left WH-RAT the moment auto-approve ran (รอส่งเมล DHL) or a manual approve did
+        // (เดินทาง — return leg only reaches here, withdraw leg is blocked above), so cancelling
+        // from either has stock sitting in limbo — put it back. Cancelling at รอ/รออะไหล่ never
+        // touched stock, nothing to undo.
+        if (ticket.Status == "รอส่งเมล DHL" || ticket.Status == "เดินทาง")
         {
             var mainWh = _context.Locations.FirstOrDefault(l => l.Code == "WH-RAT");
-            var withdrawLines = _context.TicketPartLines.Where(l => l.TicketId == id && l.LineType == "Withdraw").ToList();
+            var withdrawLines = lines.Where(l => l.LineType == "Withdraw").ToList();
             foreach (var line in withdrawLines)
             {
                 _stock.AdjustStock(

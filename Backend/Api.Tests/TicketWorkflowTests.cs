@@ -34,14 +34,78 @@ public class TicketWorkflowTests
 
         Assert.IsType<OkObjectResult>(result);
         var updated = context.Tickets.First(t => t.TicketId == ticket.TicketId);
-        Assert.Equal("เดินทาง", updated.Status);
+        Assert.Equal("รอส่งเมล DHL", updated.Status);
         Assert.Equal("Auto", updated.ApproverName);
         Assert.NotNull(updated.ApprovedAt);
+        Assert.Null(updated.EmailSentAt); // not "เดินทาง" yet — that's SendEmailConfirmed's job
         Assert.Equal("123 Main St", updated.WithdrawAddress);
         Assert.Single(context.TicketPartLines.Where(l => l.TicketId == ticket.TicketId));
 
         var mainWh = context.Locations.First(l => l.Code == "WH-RAT");
         Assert.Equal(98, context.PartStocks.First(s => s.LocationId == mainWh.Id).GoodQty); // seeded 100 - 2
+    }
+
+    [Fact]
+    public void SendEmailConfirmed_OnTicketWaitingToEmailDhl_MovesToTransit()
+    {
+        var (controller, context) = TicketControllerFixture.Create();
+        controller.SyncFromAservice(new SyncTicketDto { ExternalTicketNo = "T1C", TechName = "Tech" });
+        var ticket = context.Tickets.First(t => t.ExternalTicketNo == "T1C");
+        controller.SubmitWithdraw(ticket.TicketId, new SubmitLinesDto
+        {
+            Lines = new() { new LineDto { PartNo = TicketControllerFixture.PartNo, Quantity = 1 } },
+            Address = "Addr"
+        });
+        Assert.Equal("รอส่งเมล DHL", context.Tickets.First(t => t.TicketId == ticket.TicketId).Status);
+
+        var result = controller.SendEmailConfirmed(ticket.TicketId);
+
+        Assert.IsType<OkObjectResult>(result);
+        var updated = context.Tickets.First(t => t.TicketId == ticket.TicketId);
+        Assert.Equal("เดินทาง", updated.Status);
+        Assert.NotNull(updated.EmailSentAt);
+    }
+
+    [Fact]
+    public void CancelTicket_OnceEmailedToDhl_IsLocked()
+    {
+        var (controller, context) = TicketControllerFixture.Create();
+        controller.SyncFromAservice(new SyncTicketDto { ExternalTicketNo = "T1D", TechName = "Tech" });
+        var ticket = context.Tickets.First(t => t.ExternalTicketNo == "T1D");
+        controller.SubmitWithdraw(ticket.TicketId, new SubmitLinesDto
+        {
+            Lines = new() { new LineDto { PartNo = TicketControllerFixture.PartNo, Quantity = 1 } },
+            Address = "Addr"
+        });
+        controller.SendEmailConfirmed(ticket.TicketId);
+
+        var result = controller.CancelTicket(ticket.TicketId);
+
+        Assert.IsType<BadRequestObjectResult>(result);
+        Assert.Equal("เดินทาง", context.Tickets.First(t => t.TicketId == ticket.TicketId).Status);
+    }
+
+    [Fact]
+    public void CancelTicket_WhileWaitingToEmailDhl_RestocksWarehouse()
+    {
+        // Not locked yet — Admin hasn't actually told DHL anything, just an internal
+        // auto-approve commitment. Cancelling here should still hand the stock back.
+        var (controller, context) = TicketControllerFixture.Create();
+        controller.SyncFromAservice(new SyncTicketDto { ExternalTicketNo = "T1E", TechName = "Tech" });
+        var ticket = context.Tickets.First(t => t.ExternalTicketNo == "T1E");
+        controller.SubmitWithdraw(ticket.TicketId, new SubmitLinesDto
+        {
+            Lines = new() { new LineDto { PartNo = TicketControllerFixture.PartNo, Quantity = 4 } },
+            Address = "Addr"
+        });
+        var mainWh = context.Locations.First(l => l.Code == "WH-RAT");
+        Assert.Equal(96, context.PartStocks.First(s => s.LocationId == mainWh.Id).GoodQty);
+
+        var result = controller.CancelTicket(ticket.TicketId);
+
+        Assert.IsType<OkObjectResult>(result);
+        Assert.Equal("Cancel", context.Tickets.First(t => t.TicketId == ticket.TicketId).Status);
+        Assert.Equal(100, context.PartStocks.First(s => s.LocationId == mainWh.Id).GoodQty); // back to seeded 100
     }
 
     [Fact]
@@ -236,10 +300,11 @@ public class TicketWorkflowTests
     }
 
     [Fact]
-    public void ApproveTicket_DeductsFromWarehouseImmediately_BeforeReceive()
+    public void SubmitWithdraw_DeductsFromWarehouseImmediately_ViaAutoApprove_BeforeReceive()
     {
-        // Stock now leaves WH-RAT the moment Admin approves — not at Receive — so a second
-        // ticket can't be approved into stock this one already claimed while still in transit.
+        // Stock now leaves WH-RAT the moment auto-approve runs (SubmitWithdraw) — not at Receive
+        // and not at a later manual approve click — so a second ticket can't be approved into
+        // stock this one already claimed while still waiting to email DHL / in transit.
         var (controller, context) = TicketControllerFixture.Create();
         controller.SyncFromAservice(new SyncTicketDto { ExternalTicketNo = "T14", TechName = "Tech" });
         var ticket = context.Tickets.First(t => t.ExternalTicketNo == "T14");
@@ -249,13 +314,11 @@ public class TicketWorkflowTests
             Address = "Addr"
         });
 
-        controller.ApproveTicket(ticket.TicketId);
-
         var mainWh  = context.Locations.First(l => l.Code == "WH-RAT");
         var techLoc = context.Locations.First(l => l.LocationType == "OL_TECHNICIAN");
         Assert.Equal(96, context.PartStocks.First(s => s.LocationId == mainWh.Id).GoodQty); // seeded 100 - 4
         Assert.Null(context.PartStocks.FirstOrDefault(s => s.LocationId == techLoc.Id)); // not yet at the tech
-        Assert.Equal("เดินทาง", context.Tickets.First(t => t.TicketId == ticket.TicketId).Status);
+        Assert.Equal("รอส่งเมล DHL", context.Tickets.First(t => t.TicketId == ticket.TicketId).Status);
     }
 
     [Fact]
@@ -504,7 +567,7 @@ public class TicketWorkflowTests
         var firstAfter = context.Tickets.First(t => t.TicketId == first.TicketId);
         Assert.Equal("เบิก", firstAfter.Status);
         var secondAfter = context.Tickets.First(t => t.TicketId == second.TicketId);
-        Assert.Equal("เดินทาง", secondAfter.Status);
+        Assert.Equal("รอส่งเมล DHL", secondAfter.Status);
     }
 
     // ── Substitute — show the tech's original request after Admin swaps it ────

@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>History — ATM Inventory</title>
-  <link rel="stylesheet" href="shared/styles.css?v=44">
+  <link rel="stylesheet" href="shared/styles.css?v=45">
   <style>
     /* Filter bar */
     .filter-grid { display:grid; grid-template-columns:1fr 1fr auto; gap:16px; align-items:end; margin-bottom:20px; padding:20px; background:var(--bg-subtle); border-radius:10px; border:1px solid var(--border); }
@@ -91,6 +91,7 @@
                 <option value="">— ทุกสถานะ —</option>
                 <option value="รอ">รอ</option>
                 <option value="รออะไหล่">รออะไหล่</option>
+                <option value="รอส่งเมล DHL">รอส่งเมล DHL</option>
                 <option value="อนุมัติคืน">อนุมัติคืน</option>
                 <option value="เดินทาง">เดินทาง</option>
                 <option value="เบิก">เบิก</option>
@@ -143,10 +144,10 @@
   </div>
 </div>
 
-<script src="shared/translations.js?v=44"></script>
-<script src="shared/toast.js?v=44"></script>
-<script src="shared/api.js?v=44"></script>
-<script src="shared/layout.js?v=44"></script>
+<script src="shared/translations.js?v=45"></script>
+<script src="shared/toast.js?v=45"></script>
+<script src="shared/api.js?v=45"></script>
+<script src="shared/layout.js?v=45"></script>
 <script>
   const CONDITION_LABEL = { Good: 'ของดี', Bad: 'ของเสีย', Lost: 'สูญหาย' };
   let allTickets = [];
@@ -167,6 +168,7 @@
   const STATUS_BADGE = {
     "รอ":        { cls: "badge-pending",  label: "รอ" },
     "รออะไหล่":  { cls: "badge-danger",   label: "รออะไหล่" },
+    "รอส่งเมล DHL": { cls: "badge-pending", label: "รอส่งเมล DHL" },
     "อนุมัติคืน": { cls: "badge-approved", label: "อนุมัติคืน" },
     "เดินทาง":   { cls: "badge-approved", label: "เดินทาง" },
     "เบิก":      { cls: "badge-teal",     label: "เบิก" },
@@ -189,7 +191,8 @@
     data.slice().sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt)).forEach(tk => {
       const reqDate = tk.createdAt ? new Date(tk.createdAt).toLocaleDateString(locale) : '—';
       const b = STATUS_BADGE[tk.status] || STATUS_BADGE["รอ"];
-      const badge = `<span class="badge ${b.cls}"><span class="badge-dot"></span>${b.label}</span>`;
+      const badgeLabel = (tk.status === "เดินทาง" && tk.phase === "withdraw") ? "กำลังเดินทาง" : b.label;
+      const badge = `<span class="badge ${b.cls}"><span class="badge-dot"></span>${badgeLabel}</span>`;
       const phaseLabel = tk.phase === 'withdraw' ? 'ขาเบิก' : 'ขาคืน';
       const partsSummary = tk.lines.length
         ? tk.lines.map(l => `<div style="font-size:12px;">${l.partName} <span class="sub-text" style="display:inline">×${l.quantity}</span> <span style="font-size:10px;color:var(--text-muted)">(${l.lineType === 'Withdraw' ? 'เบิก' : 'คืน'}${l.condition ? ' — ' + CONDITION_LABEL[l.condition] : ''})</span></div>`).join('')
@@ -238,7 +241,7 @@
         <div class="detail-grid">
           <div class="detail-field"><label>ชื่อ</label><span>${tk.techName || none}</span></div>
           <div class="detail-field"><label>แผนก / โซน</label><span>${tk.techDept || none}</span></div>
-          <div class="detail-field"><label>สถานะ</label><span>${(STATUS_BADGE[tk.status]?.label || tk.status)} (${tk.phase === 'withdraw' ? 'ขาเบิก' : 'ขาคืน'})</span></div>
+          <div class="detail-field"><label>สถานะ</label><span>${(tk.status === 'เดินทาง' && tk.phase === 'withdraw') ? 'กำลังเดินทาง' : (STATUS_BADGE[tk.status]?.label || tk.status)} (${tk.phase === 'withdraw' ? 'ขาเบิก' : 'ขาคืน'})</span></div>
           <div class="detail-field"><label>ผู้อนุมัติ</label><span>${tk.approverName || none}</span></div>
         </div>
       </div>

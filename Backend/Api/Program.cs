@@ -337,6 +337,11 @@ using (var scope = app.Services.CreateScope())
                 context.Database.ExecuteSqlRaw("ALTER TABLE Tickets ADD COLUMN TechSupportName TEXT NULL;");
                 Console.WriteLine("✅ Migration: added Tickets.TechSupportName");
             }
+            if (!ticketCols.Contains("EmailSentAt"))
+            {
+                context.Database.ExecuteSqlRaw("ALTER TABLE Tickets ADD COLUMN EmailSentAt TEXT NULL;");
+                Console.WriteLine("✅ Migration: added Tickets.EmailSentAt");
+            }
             // One Aservice Ticket can now carry multiple independent ใบเบิก (withdraw slips) —
             // drop the old unique index on ExternalTicketNo on DBs created before this, so a
             // second/third withdraw under the same ticket number is no longer blocked.
