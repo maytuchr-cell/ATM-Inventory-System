@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Admin Dashboard — ATM Inventory</title>
-    <link rel="stylesheet" href="shared/styles.css?v=43">
+    <link rel="stylesheet" href="shared/styles.css?v=44">
     <style>
         /* Page-specific overrides */
         .section-head { display:flex; align-items:center; gap:10px; margin-bottom:20px; }
@@ -170,10 +170,10 @@
     </div><!-- /main-content -->
 </div><!-- /app-layout -->
 
-<script src="shared/translations.js?v=43"></script>
-<script src="shared/toast.js?v=43"></script>
-<script src="shared/api.js?v=43"></script>
-<script src="shared/layout.js?v=43"></script>
+<script src="shared/translations.js?v=44"></script>
+<script src="shared/toast.js?v=44"></script>
+<script src="shared/api.js?v=44"></script>
+<script src="shared/layout.js?v=44"></script>
 <script>
     /* ── Init ── */
     initLayout();
@@ -185,17 +185,17 @@
     /* ── Ticket-derived widgets: action cards, status breakdown, stale tickets ──
        All three read off one shared fetch of every Ticket — no reason to hit the endpoint
        three times for what's the same list sliced three ways. ── */
-    const STATUS_ORDER = ['รอ', 'เดินทาง', 'เบิก', 'คืน', 'Reject', 'Cancel'];
+    const STATUS_ORDER = ['รอ', 'รออะไหล่', 'เดินทาง', 'เบิก', 'คืน', 'Reject', 'Cancel'];
     const STATUS_COLOR = {
-        'รอ': 'var(--yellow)', 'เดินทาง': 'var(--orange)', 'เบิก': '#0f8a7e',
+        'รอ': 'var(--yellow)', 'รออะไหล่': 'var(--red)', 'เดินทาง': 'var(--orange)', 'เบิก': '#0f8a7e',
         'คืน': 'var(--green)', 'Reject': 'var(--red)', 'Cancel': 'var(--text-muted)',
     };
     const STATUS_LABEL = {
-        'รอ': 'รอ', 'เดินทาง': 'เดินทาง', 'เบิก': 'เบิก',
+        'รอ': 'รอ', 'รออะไหล่': 'รออะไหล่', 'เดินทาง': 'เดินทาง', 'เบิก': 'เบิก',
         'คืน': 'คืน', 'Reject': 'ปฏิเสธ', 'Cancel': 'ยกเลิก',
     };
     // Non-terminal statuses are the only ones that can go "stale" — a closed Ticket isn't stuck.
-    const NON_TERMINAL = ['รอ', 'เดินทาง', 'เบิก'];
+    const NON_TERMINAL = ['รอ', 'รออะไหล่', 'เดินทาง', 'เบิก'];
     const STALE_DAYS_THRESHOLD = 3;
 
     async function fetchTicketWidgets() {
@@ -210,7 +210,7 @@
     }
 
     function renderActionCards(tickets) {
-        const pendingApproval = tickets.filter(t => t.status === 'รอ' && t.phase === 'withdraw').length;
+        const pendingApproval = tickets.filter(t => (t.status === 'รอ' || t.status === 'รออะไหล่') && t.phase === 'withdraw').length;
         const pendingReturn   = tickets.filter(t => t.status === 'เดินทาง' && t.phase === 'return').length;
         setActionCard('pendingApprovalCard', 'pendingApprovalCount', pendingApproval);
         setActionCard('pendingReturnCard', 'pendingReturnCount', pendingReturn);

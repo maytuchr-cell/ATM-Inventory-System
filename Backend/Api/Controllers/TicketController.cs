@@ -201,7 +201,6 @@ public class TicketController : ControllerBase
             });
         }
 
-        ticket.Status = "รอ";
         ticket.WithdrawAddress = dto.Address;
         ticket.WithdrawDescription = dto.Description;
         ticket.WithdrawSlipNo ??= GenerateWithdrawSlipNo(); // never renumber a resubmit-after-reject
@@ -210,6 +209,11 @@ public class TicketController : ControllerBase
         ticket.UsageStatus = dto.UsageStatus;
         ticket.TechSupportName = string.IsNullOrWhiteSpace(dto.TechSupportName) ? null : dto.TechSupportName;
         ticket.UpdatedAt = DateTime.Now;
+        // Persist the lines/attachments first — TryAutoApprove re-reads them from the DB, so it
+        // needs to see this submission's own rows, not just whatever existed before it.
+        _context.SaveChanges();
+
+        TryAutoApprove(ticket);
         _context.SaveChanges();
         return Ok(new { message = "Withdraw request submitted.", ticket });
     }
@@ -232,7 +236,8 @@ public class TicketController : ControllerBase
     {
         var ticket = _context.Tickets.FirstOrDefault(t => t.TicketId == id);
         if (ticket == null) return NotFound(new { message = "Ticket not found." });
-        if (ticket.Status != "รอ") return BadRequest(new { message = "Only a waiting ticket's parts can be substituted." });
+        if (ticket.Status != "รอ" && ticket.Status != "รออะไหล่")
+            return BadRequest(new { message = "Only a waiting ticket's parts can be substituted." });
 
         var line = _context.TicketPartLines.FirstOrDefault(l => l.TicketPartLineId == lineId && l.TicketId == id);
         if (line == null) return NotFound(new { message = "Line not found." });
@@ -253,7 +258,58 @@ public class TicketController : ControllerBase
         ticket.UpdatedAt = DateTime.Now;
         _context.SaveChanges();
         _audit.Log(User, "Ticket", id.ToString(), "SUBSTITUTE_PART", null, new { ticket.TicketId, lineId, from = originalPartNo, to = dto.PartNo });
-        return Ok(new { message = "Substituted.", line });
+
+        // Re-run the stock check immediately — a substitution is exactly the kind of thing that
+        // can turn a "รออะไหล่" ticket into one the warehouse can now fulfill, and Admin shouldn't
+        // have to separately click Approve to find that out.
+        TryAutoApprove(ticket);
+        _context.SaveChanges();
+        return Ok(new { message = "Substituted.", ticket, line });
+    }
+
+    // Auto-approve engine — runs right after a withdraw request is submitted, and again after
+    // Admin substitutes an equivalent part while a ticket sits at "รออะไหล่". Mirrors what the
+    // manual ApproveTicket endpoint used to do (stock deducted right here, not at ReceiveTicket),
+    // just without a human clicking a button: the only condition is "does the central warehouse
+    // have enough of everything on this ticket's Withdraw lines" — Tech Support being set or not
+    // plays no part in this decision.
+    //
+    // Sets ticket.Status to "เดินทาง" (stock cut, same as a manual approve) when everything's in
+    // stock, or "รออะไหล่" (nothing touched) when it isn't — never leaves it at "รอ".
+    private void TryAutoApprove(Ticket ticket)
+    {
+        var mainWh = _context.Locations.FirstOrDefault(l => l.Code == "WH-RAT");
+        var withdrawLines = _context.TicketPartLines.Where(l => l.TicketId == ticket.TicketId && l.LineType == "Withdraw").ToList();
+
+        var required = withdrawLines
+            .GroupBy(l => l.PartId)
+            .ToDictionary(g => g.Key, g => g.Sum(l => l.Quantity));
+        var available = mainWh == null
+            ? new Dictionary<int, int>()
+            : _context.PartStocks.Where(s => s.LocationId == mainWh.Id && required.Keys.Contains(s.PartId))
+                .ToDictionary(s => s.PartId, s => s.GoodQty);
+        var hasEnough = mainWh != null && required.All(r => available.GetValueOrDefault(r.Key, 0) >= r.Value);
+
+        if (!hasEnough)
+        {
+            ticket.Status = "รออะไหล่";
+            ticket.UpdatedAt = DateTime.Now;
+            return;
+        }
+
+        foreach (var line in withdrawLines)
+        {
+            _stock.AdjustStock(
+                partNo: line.PartNo, locationId: mainWh!.Id, qtyDelta: -line.Quantity, condition: "Good",
+                movementType: "Approve", refType: "Ticket", refId: ticket.TicketId.ToString(),
+                userName: "Auto", remarks: $"Auto-approved for ticket {ticket.ExternalTicketNo}");
+        }
+
+        ticket.Status = "เดินทาง";
+        ticket.ApproverName = "Auto";
+        ticket.ApprovedAt = DateTime.Now;
+        ticket.UpdatedAt = DateTime.Now;
+        _audit.Log(User, "Ticket", ticket.TicketId.ToString(), "AUTO_APPROVE", null, new { ticket.TicketId, ticket.Status });
     }
 
     // PUT /api/Ticket/{id}/approve — Admin approves the withdraw request → เดินทาง
@@ -262,7 +318,21 @@ public class TicketController : ControllerBase
     {
         var ticket = _context.Tickets.FirstOrDefault(t => t.TicketId == id);
         if (ticket == null) return NotFound(new { message = "Ticket not found." });
-        if (ticket.Status != "รอ") return BadRequest(new { message = "Only a waiting ticket can be approved." });
+        if (ticket.Status != "รอ" && ticket.Status != "รออะไหล่")
+            return BadRequest(new { message = "Only a waiting ticket can be approved." });
+
+        // Manual fallback for a "รออะไหล่" ticket whose stock recovered without a substitution
+        // (e.g. a Goods Receipt came in) — Admin can force a recheck instead of waiting for
+        // another SubstitutePart call to trigger it. Everything else (a plain "รอ" ticket that
+        // somehow wasn't already auto-approved at submit time) goes through the same engine.
+        if (ticket.Status == "รออะไหล่")
+        {
+            TryAutoApprove(ticket);
+            _context.SaveChanges();
+            return ticket.Status == "เดินทาง"
+                ? Ok(new { message = "Approved.", ticket })
+                : Ok(new { message = "Still not enough stock.", ticket });
+        }
 
         // Stock is deducted from the central warehouse right here, not at ReceiveTicket — once
         // Admin approves, that quantity is committed to this ticket and can't be double-approved
@@ -302,7 +372,8 @@ public class TicketController : ControllerBase
     {
         var ticket = _context.Tickets.FirstOrDefault(t => t.TicketId == id);
         if (ticket == null) return NotFound(new { message = "Ticket not found." });
-        if (ticket.Status != "รอ") return BadRequest(new { message = "Only a waiting ticket can be rejected." });
+        if (ticket.Status != "รอ" && ticket.Status != "รออะไหล่")
+            return BadRequest(new { message = "Only a waiting ticket can be rejected." });
         if (string.IsNullOrWhiteSpace(dto.Reason)) return BadRequest(new { message = "Reject reason is required." });
 
         ticket.Status = "Reject";

@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Tech Workspace — ATM Inventory</title>
-    <link rel="stylesheet" href="shared/styles.css?v=43">
+    <link rel="stylesheet" href="shared/styles.css?v=44">
     <style>
         .section-head { display:flex; align-items:center; gap:10px; margin-bottom:20px; }
         .section-accent { width:4px; height:22px; background:var(--orange); border-radius:2px; }
@@ -345,10 +345,10 @@
     </div>
 </div>
 
-<script src="shared/translations.js?v=43"></script>
-<script src="shared/toast.js?v=43"></script>
-<script src="shared/api.js?v=43"></script>
-<script src="shared/layout.js?v=43"></script>
+<script src="shared/translations.js?v=44"></script>
+<script src="shared/toast.js?v=44"></script>
+<script src="shared/api.js?v=44"></script>
+<script src="shared/layout.js?v=44"></script>
 <script>
     /* Status: รอ / เดินทาง / เบิก / คืน / Reject / Cancel   (null = ยังไม่เริ่มเบิก) */
     const currentEmail = localStorage.getItem('userEmail') || 'tech@atm.com';
@@ -408,6 +408,7 @@
     const STATUS_BADGE = {
         null:        { cls: 'badge-new',     label: 'ยังไม่เบิก' },
         'รอ':        { cls: 'badge-pending', label: 'รอ' },
+        'รออะไหล่':  { cls: 'badge-danger',  label: 'รออะไหล่' },
         'อนุมัติคืน': { cls: 'badge-transit', label: 'Admin อนุมัติแล้ว' },
         'เดินทาง':   { cls: 'badge-transit', label: 'เดินทาง' },
         'เบิก':      { cls: 'badge-success', label: 'เบิก' },
@@ -476,6 +477,9 @@
                         action = `<span class="text-muted" style="font-size:12px;">รอ Admin ยืนยัน</span>`;
                     } else if (tk.status === 'รอ' && tk.phase === 'withdraw') {
                         action = `<span class="text-muted" style="font-size:12px;">รอ Admin อนุมัติ</span>
+                            <button class="btn-cancel-withdraw" onclick="cancelWithdraw(${tk.ticketId})">ยกเลิกคำขอ</button>`;
+                    } else if (tk.status === 'รออะไหล่' && tk.phase === 'withdraw') {
+                        action = `<span class="text-muted" style="font-size:12px;">อะไหล่ในคลังไม่พอ — รอ Admin จัดหา</span>
                             <button class="btn-cancel-withdraw" onclick="cancelWithdraw(${tk.ticketId})">ยกเลิกคำขอ</button>`;
                     } else if (tk.status === 'เดินทาง' && tk.phase === 'return') {
                         action = `<span class="text-muted" style="font-size:12px;">รอถึง DHL</span>`;

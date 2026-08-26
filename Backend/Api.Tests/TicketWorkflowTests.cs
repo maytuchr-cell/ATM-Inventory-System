@@ -16,8 +16,12 @@ public class TicketWorkflowTests
     // ── Happy path ───────────────────────────────────────────────────────────
 
     [Fact]
-    public void SubmitWithdraw_OnNewTicket_SetsStatusToWaiting()
+    public void SubmitWithdraw_WithSufficientStock_AutoApprovesAndDeductsStockImmediately()
     {
+        // Auto-approve replaces the old manual-Approve-required flow: as long as the central
+        // warehouse (seeded with 100 by the fixture) covers what's requested, submitting a
+        // withdraw goes straight to เดินทาง — stock cut right here, same as a manual approve
+        // used to do — with no Admin click in between. See TicketController.TryAutoApprove.
         var (controller, context) = TicketControllerFixture.Create();
         controller.SyncFromAservice(new SyncTicketDto { ExternalTicketNo = "T1", TechName = "Tech" });
         var ticket = context.Tickets.First(t => t.ExternalTicketNo == "T1");
@@ -30,9 +34,39 @@ public class TicketWorkflowTests
 
         Assert.IsType<OkObjectResult>(result);
         var updated = context.Tickets.First(t => t.TicketId == ticket.TicketId);
-        Assert.Equal("รอ", updated.Status);
+        Assert.Equal("เดินทาง", updated.Status);
+        Assert.Equal("Auto", updated.ApproverName);
+        Assert.NotNull(updated.ApprovedAt);
         Assert.Equal("123 Main St", updated.WithdrawAddress);
         Assert.Single(context.TicketPartLines.Where(l => l.TicketId == ticket.TicketId));
+
+        var mainWh = context.Locations.First(l => l.Code == "WH-RAT");
+        Assert.Equal(98, context.PartStocks.First(s => s.LocationId == mainWh.Id).GoodQty); // seeded 100 - 2
+    }
+
+    [Fact]
+    public void SubmitWithdraw_WithInsufficientStock_SetsStatusToWaitingForParts_AndLeavesStockUntouched()
+    {
+        var (controller, context) = TicketControllerFixture.Create();
+        var mainWh = context.Locations.First(l => l.Code == "WH-RAT");
+        var stock = context.PartStocks.First(s => s.LocationId == mainWh.Id);
+        stock.GoodQty = 1;
+        context.SaveChanges();
+
+        controller.SyncFromAservice(new SyncTicketDto { ExternalTicketNo = "T1B", TechName = "Tech" });
+        var ticket = context.Tickets.First(t => t.ExternalTicketNo == "T1B");
+
+        var result = controller.SubmitWithdraw(ticket.TicketId, new SubmitLinesDto
+        {
+            Lines = new() { new LineDto { PartNo = TicketControllerFixture.PartNo, Quantity = 2 } },
+            Address = "123 Main St"
+        });
+
+        Assert.IsType<OkObjectResult>(result);
+        var updated = context.Tickets.First(t => t.TicketId == ticket.TicketId);
+        Assert.Equal("รออะไหล่", updated.Status);
+        Assert.Null(updated.ApprovedAt);
+        Assert.Equal(1, context.PartStocks.First(s => s.LocationId == mainWh.Id).GoodQty); // untouched
     }
 
     [Fact]
@@ -172,8 +206,12 @@ public class TicketWorkflowTests
     }
 
     [Fact]
-    public void ApproveTicket_WithInsufficientWarehouseStock_ReturnsBadRequest_AndLeavesStockUntouched()
+    public void ApproveTicket_ManualRecheckOnStillShortTicket_ReturnsOk_StaysWaitingForParts_StockUntouched()
     {
+        // Insufficient stock is now caught automatically at SubmitWithdraw (see TryAutoApprove),
+        // not at a later manual Approve click — a "รออะไหล่" ticket's Approve button is now a
+        // manual recheck (for when stock might have recovered without a substitution), and it
+        // no longer errors when stock is still short; it just reports nothing changed.
         var (controller, context) = TicketControllerFixture.Create();
         // Fixture seeds 100 GoodQty at WH-RAT by default — drop it below what's requested.
         var mainWh = context.Locations.First(l => l.Code == "WH-RAT");
@@ -188,17 +226,12 @@ public class TicketWorkflowTests
             Lines = new() { new LineDto { PartNo = TicketControllerFixture.PartNo, Quantity = 5 } },
             Address = "Addr"
         });
+        Assert.Equal("รออะไหล่", context.Tickets.First(t => t.TicketId == ticket.TicketId).Status);
 
         var result = controller.ApproveTicket(ticket.TicketId);
 
-        Assert.IsType<BadRequestObjectResult>(result);
-        Assert.Equal("รอ", context.Tickets.First(t => t.TicketId == ticket.TicketId).Status);
-
-        // ApproveTicket never called SaveChanges (it returned before reaching it), so nothing was
-        // actually persisted — only the in-memory change tracker still holds the failed attempt.
-        // A real request gets a fresh DbContext next time, so clear it here to check what the
-        // database would actually show.
-        context.ChangeTracker.Clear();
+        Assert.IsType<OkObjectResult>(result);
+        Assert.Equal("รออะไหล่", context.Tickets.First(t => t.TicketId == ticket.TicketId).Status);
         Assert.Equal(2, context.PartStocks.First(s => s.LocationId == mainWh.Id).GoodQty); // untouched
     }
 
@@ -345,7 +378,14 @@ public class TicketWorkflowTests
     [Fact]
     public void RejectTicket_ThenResubmitWithdraw_ClearsOldLinesAndRejectReason()
     {
+        // Reject only makes sense on a ticket auto-approve couldn't already whisk away — seed
+        // zero stock so both submits land (and stay) at รออะไหล่, keeping this test's focus on
+        // reject/resubmit's line/reason cleanup rather than the auto-approve outcome.
         var (controller, context) = TicketControllerFixture.Create();
+        var mainWh = context.Locations.First(l => l.Code == "WH-RAT");
+        context.PartStocks.First(s => s.LocationId == mainWh.Id).GoodQty = 0;
+        context.SaveChanges();
+
         controller.SyncFromAservice(new SyncTicketDto { ExternalTicketNo = "T10", TechName = "Tech" });
         var ticket = context.Tickets.First(t => t.ExternalTicketNo == "T10");
         controller.SubmitWithdraw(ticket.TicketId, new SubmitLinesDto
@@ -353,6 +393,7 @@ public class TicketWorkflowTests
             Lines = new() { new LineDto { PartNo = TicketControllerFixture.PartNo, Quantity = 1 } },
             Address = "Addr"
         });
+        Assert.Equal("รออะไหล่", context.Tickets.First(t => t.TicketId == ticket.TicketId).Status);
         controller.RejectTicket(ticket.TicketId, new RejectDto { Reason = "Wrong part" });
         Assert.Equal("Reject", context.Tickets.First(t => t.TicketId == ticket.TicketId).Status);
         var oldLineId = context.TicketPartLines.First(l => l.TicketId == ticket.TicketId).TicketPartLineId;
@@ -364,7 +405,7 @@ public class TicketWorkflowTests
         });
 
         var updated = context.Tickets.First(t => t.TicketId == ticket.TicketId);
-        Assert.Equal("รอ", updated.Status);
+        Assert.Equal("รออะไหล่", updated.Status);
         Assert.Null(updated.RejectReason);
         var remainingLines = context.TicketPartLines.Where(l => l.TicketId == ticket.TicketId).ToList();
         Assert.Single(remainingLines);
@@ -444,7 +485,7 @@ public class TicketWorkflowTests
     }
 
     [Fact]
-    public void SecondWithdrawSlip_ApprovedAndReceived_DoesNotAffectFirstSlipsStatus()
+    public void SecondWithdrawSlip_SubmittedAndAutoApproved_DoesNotAffectFirstSlipsStatus()
     {
         var (controller, context) = TicketControllerFixture.Create();
         var first = TicketControllerFixture.CreateReceivedTicket(controller, context, "ASV-200", qty: 1);
@@ -458,12 +499,12 @@ public class TicketWorkflowTests
             Address = "Addr 2"
         });
 
-        // First slip is already at เบิก (fully received) — submitting/approving the second slip
-        // must not touch it.
+        // First slip is already at เบิก (fully received) — submitting the second slip (which
+        // auto-approves on its own, stock permitting) must not touch it.
         var firstAfter = context.Tickets.First(t => t.TicketId == first.TicketId);
         Assert.Equal("เบิก", firstAfter.Status);
         var secondAfter = context.Tickets.First(t => t.TicketId == second.TicketId);
-        Assert.Equal("รอ", secondAfter.Status);
+        Assert.Equal("เดินทาง", secondAfter.Status);
     }
 
     // ── Substitute — show the tech's original request after Admin swaps it ────
@@ -472,6 +513,11 @@ public class TicketWorkflowTests
     public void SubstitutePart_OnRegisteredEquivalent_SetsPartNoAndRecordsOriginalPartNo()
     {
         var (controller, context) = TicketControllerFixture.Create();
+        // Substitution only has a window while the ticket is waiting — with the fixture's
+        // default 100-unit stock the submit below would auto-approve straight past "waiting"
+        // before this test gets a chance to substitute anything, so zero it out first.
+        context.PartStocks.First(s => s.LocationId == context.Locations.First(l => l.Code == "WH-RAT").Id).GoodQty = 0;
+        context.SaveChanges();
         TicketControllerFixture.SeedEquivalentPart(context);
         controller.SyncFromAservice(new SyncTicketDto { ExternalTicketNo = "SUB-1", TechName = "Tech" });
         var ticket = context.Tickets.First(t => t.ExternalTicketNo == "SUB-1");
@@ -495,6 +541,7 @@ public class TicketWorkflowTests
     public void SubstitutePart_OnUnregisteredPart_ReturnsBadRequestAndLeavesLineUnchanged()
     {
         var (controller, context) = TicketControllerFixture.Create();
+        context.PartStocks.First(s => s.LocationId == context.Locations.First(l => l.Code == "WH-RAT").Id).GoodQty = 0;
         // A second part exists but is never registered as an equivalent of PartNo.
         context.Parts.Add(new Part { PartNo = "TEST-PART-UNRELATED", PartName = "Unrelated", IsActive = true });
         context.SaveChanges();
@@ -522,6 +569,7 @@ public class TicketWorkflowTests
         // Admin changes their mind and substitutes a second time — OriginalPartNo must still
         // point at what the tech actually requested, not the first substitute.
         var (controller, context) = TicketControllerFixture.Create();
+        context.PartStocks.First(s => s.LocationId == context.Locations.First(l => l.Code == "WH-RAT").Id).GoodQty = 0;
         TicketControllerFixture.SeedEquivalentPart(context);
         var thirdPart = new Part { PartNo = "TEST-PART-003", PartName = "Third", IsActive = true };
         context.Parts.Add(thirdPart);
@@ -568,6 +616,7 @@ public class TicketWorkflowTests
     public void GetAllTickets_OnSubstitutedLine_IncludesOriginalPartNoAndName()
     {
         var (controller, context) = TicketControllerFixture.Create();
+        context.PartStocks.First(s => s.LocationId == context.Locations.First(l => l.Code == "WH-RAT").Id).GoodQty = 0;
         TicketControllerFixture.SeedEquivalentPart(context);
         controller.SyncFromAservice(new SyncTicketDto { ExternalTicketNo = "SUB-5", TechName = "Tech" });
         var ticket = context.Tickets.First(t => t.ExternalTicketNo == "SUB-5");

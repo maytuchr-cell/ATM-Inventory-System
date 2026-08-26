@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Tickets — ATM Inventory</title>
-    <link rel="stylesheet" href="shared/styles.css?v=43">
+    <link rel="stylesheet" href="shared/styles.css?v=44">
     <style>
         /* Page-specific overrides */
         .section-head { display:flex; align-items:center; gap:10px; margin-bottom:20px; }
@@ -145,6 +145,7 @@
                         <select id="tkt-status-filter" class="tkt-status-filter" onchange="renderTicketsTable()">
                             <option value="">ทุกสถานะ</option>
                             <option value="รอ">รอ</option>
+                            <option value="รออะไหล่">รออะไหล่</option>
                             <option value="เดินทาง">เดินทาง</option>
                             <option value="เบิก">เบิก</option>
                             <option value="คืน">คืน</option>
@@ -294,10 +295,10 @@
     </div>
 </div>
 
-<script src="shared/translations.js?v=43"></script>
-<script src="shared/toast.js?v=43"></script>
-<script src="shared/api.js?v=43"></script>
-<script src="shared/layout.js?v=43"></script>
+<script src="shared/translations.js?v=44"></script>
+<script src="shared/toast.js?v=44"></script>
+<script src="shared/api.js?v=44"></script>
+<script src="shared/layout.js?v=44"></script>
 <script>
     let cachedTickets = [];
     let rejectTargetId = null;
@@ -454,6 +455,7 @@
     /* ── Tickets ── */
     const STATUS_BADGE = {
         "รอ":        { cls: "badge-pending",  label: "รอ" },
+        "รออะไหล่":  { cls: "badge-danger",   label: "รออะไหล่" },
         "อนุมัติคืน": { cls: "badge-approved", label: "อนุมัติคืน" },
         "เดินทาง":   { cls: "badge-approved", label: "เดินทาง" },
         "เบิก":      { cls: "badge-teal",     label: "เบิก" },
@@ -527,14 +529,17 @@
                 ? `<span style="font-size:11px;color:var(--text-secondary);">ขาเบิก</span>`
                 : `<span style="font-size:11px;color:var(--text-secondary);">ขาคืน</span>`;
 
-            // Admin approve/reject/cancel only applies on the withdraw leg while waiting (รอ).
+            // Admin approve/reject/cancel only applies on the withdraw leg while waiting — "รอ"
+            // in practice barely happens any more since submit auto-approves right away, but
+            // "รออะไหล่" (auto-approve couldn't find enough stock) needs the same actions: a
+            // manual recheck (Approve doubles as "ลองอีกครั้ง"), Reject, or Cancel.
             let action;
-            if (tk.status === "รอ" && tk.phase === "withdraw") {
+            if ((tk.status === "รอ" || tk.status === "รออะไหล่") && tk.phase === "withdraw") {
                 action = `
                     <div class="ticket-action-row">
                         <button class="btn-approve" onclick="approveTicket(${tk.ticketId})" ${hasShortage ? 'disabled title="สต็อกในคลังไม่พอสำหรับอะไหล่บางรายการ"' : ''} style="${hasShortage ? 'opacity:.45;cursor:not-allowed;' : ''}">
                             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
-                            อนุมัติ
+                            ${tk.status === "รออะไหล่" ? "เช็คสต็อกอีกครั้ง" : "อนุมัติ"}
                         </button>
                         <button class="btn-reject" onclick="openRejectModal(${tk.ticketId})">
                             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
@@ -687,7 +692,7 @@
 
         const withdrawLines = tk.lines.filter(l => l.lineType === 'Withdraw');
         const returnLines   = tk.lines.filter(l => l.lineType === 'Return');
-        const canSubstitute = tk.status === "รอ" && tk.phase === "withdraw";
+        const canSubstitute = (tk.status === "รอ" || tk.status === "รออะไหล่") && tk.phase === "withdraw";
         const lineListHtml = list => list.length
             ? list.map(l => `<div style="display:flex;justify-content:space-between;padding:4px 0;border-bottom:1px solid var(--border);"><span>${l.partName}${l.condition ? ` <span style="color:var(--text-muted);font-size:11px;">(${CONDITION_LABEL[l.condition]})</span>` : ''}</span><span class="fw-600">×${l.quantity}</span></div>`).join('')
             : `<span class="detail-empty">—</span>`;
