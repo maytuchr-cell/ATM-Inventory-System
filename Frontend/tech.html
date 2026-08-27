@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Tech Workspace — ATM Inventory</title>
-    <link rel="stylesheet" href="shared/styles.css?v=46">
+    <link rel="stylesheet" href="shared/styles.css?v=47">
     <style>
         .section-head { display:flex; align-items:center; gap:10px; margin-bottom:20px; }
         .section-accent { width:4px; height:22px; background:var(--orange); border-radius:2px; }
@@ -39,6 +39,14 @@
         .btn-ship:hover { background:var(--text-secondary); color:#fff; }
         .btn-cancel-withdraw { display:block; margin-top:6px; background:none; color:var(--red, #dc2626); border:none; padding:0; font-size:11.5px; font-weight:600; font-family:inherit; cursor:pointer; text-decoration:underline; text-underline-offset:2px; }
         .btn-cancel-withdraw:hover { color:#dc2626; }
+
+        /* ── Overdue-receive alert (in-app only, per confirmed design — no LINE/push) ── */
+        .overdue-banner { background:var(--red-light); border:1.5px solid var(--red); border-radius:12px; padding:14px 18px; margin-bottom:20px; }
+        .overdue-banner-title { display:flex; align-items:center; gap:8px; font-weight:700; color:#991b1b; font-size:14px; margin-bottom:8px; }
+        .overdue-item { display:flex; align-items:center; justify-content:space-between; gap:10px; padding:6px 0; border-top:1px solid rgba(153,27,27,.15); font-size:13px; color:#7a1616; }
+        .overdue-item:first-of-type { border-top:none; }
+        .overdue-item .btn-receive-now { background:var(--red); color:#fff; border:none; padding:5px 12px; border-radius:7px; font-family:inherit; font-size:12px; font-weight:600; cursor:pointer; white-space:nowrap; }
+        .overdue-item .btn-receive-now:hover { background:#991b1b; }
 
         /* ── Ticket form modal (withdraw / return) ── */
         .tk-overlay { display:none; position:fixed; inset:0; background:rgba(0,0,0,.45); z-index:900; align-items:center; justify-content:center; padding:16px; }
@@ -140,6 +148,7 @@
         </div>
 
         <div class="page-body">
+            <div id="overdue-receive-banner" style="display:none;"></div>
             <div class="card">
                 <div class="card-body">
                     <div class="section-head">
@@ -345,10 +354,10 @@
     </div>
 </div>
 
-<script src="shared/translations.js?v=46"></script>
-<script src="shared/toast.js?v=46"></script>
-<script src="shared/api.js?v=46"></script>
-<script src="shared/layout.js?v=46"></script>
+<script src="shared/translations.js?v=47"></script>
+<script src="shared/toast.js?v=47"></script>
+<script src="shared/api.js?v=47"></script>
+<script src="shared/layout.js?v=47"></script>
 <script>
     /* Status: รอ / เดินทาง / เบิก / คืน / Reject / Cancel   (null = ยังไม่เริ่มเบิก) */
     const currentEmail = localStorage.getItem('userEmail') || 'tech@atm.com';
@@ -395,6 +404,7 @@
             const all = await api.tickets.getAll();
             cachedTickets = all.filter(t => t.techEmail === currentEmail);
             renderTicketsTable();
+            renderOverdueReceiveBanner();
         } catch (e) {
             // A silent poll's failure (transient network blip) shouldn't blank out a list the
             // tech is actively looking at — only the explicit/first load shows the error.
@@ -881,6 +891,31 @@
         const eta = new Date(emailSentAt);
         eta.setDate(eta.getDate() + 1);
         return `<div class="text-muted" style="font-size:11px;margin-top:4px;">📦 คาดว่าจะได้รับของภายในวันที่ ${eta.toLocaleDateString('th-TH')}</div>`;
+    }
+
+    // In-app alert only, per confirmed design (no LINE/push) — flags any withdraw ticket that's
+    // been "เดินทาง" (Admin emailed DHL) for more than 1 day without the tech confirming receipt.
+    // Recomputed on every fetch, so it clears itself the moment the tech confirms or the ticket
+    // moves on — no separate dismiss/snooze state to track.
+    function renderOverdueReceiveBanner() {
+        const banner = document.getElementById('overdue-receive-banner');
+        const oneDayMs = 24 * 60 * 60 * 1000;
+        const overdue = cachedTickets.filter(tk => {
+            if (tk.status !== 'เดินทาง' || tk.phase !== 'withdraw' || !tk.emailSentAt) return false;
+            return (Date.now() - new Date(tk.emailSentAt).getTime()) > oneDayMs;
+        });
+        if (!overdue.length) { banner.style.display = 'none'; banner.innerHTML = ''; return; }
+
+        banner.innerHTML = `
+            <div class="overdue-banner">
+                <div class="overdue-banner-title">🔔 มีอะไหล่ที่คาดว่าถึงแล้ว — กรุณายืนยันรับของ (${overdue.length} รายการ)</div>
+                ${overdue.map(tk => `
+                    <div class="overdue-item">
+                        <span><span class="id-chip ticket-id">${tk.externalTicketNo}</span> — ${partsSummaryHtml(tk).replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim()}</span>
+                        <button class="btn-receive-now" onclick="confirmReceive(${tk.ticketId})">✅ ยืนยันรับของ</button>
+                    </div>`).join('')}
+            </div>`;
+        banner.style.display = 'block';
     }
 
     async function confirmReceive(id) {
