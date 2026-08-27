@@ -1,4 +1,5 @@
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
 using Api.Models;
 using Api.Services;
 
@@ -23,25 +24,55 @@ public class TicketController : ControllerBase
         _env = env;
     }
 
-    // Derived, not stored — see dbFinal3.xlsx Ticket sheet remarks: Status carries dual meaning
-    // depending on which leg is active, so the leg itself is inferred from Address/lines instead
-    // of a stored column.
-    private static string Phase(string? returnAddress, IEnumerable<TicketPartLine> lines) =>
-        returnAddress != null || lines.Any(l => l.LineType == "Return") ? "return" : "withdraw";
+    // "How far along" ranking used to pick a single displayStatus for a Ticket row that may have
+    // several WithdrawBatches (and/or a return leg) at different stages — the list view shows
+    // whichever is furthest along. Reject/Cancel intentionally rank lowest so any batch/leg still
+    // actually in progress outranks a closed-out one; a Ticket where EVERY batch is Reject/Cancel
+    // and no return is in flight naturally falls back to showing one of those.
+    private static readonly Dictionary<string, int> WithdrawRank = new()
+    {
+        ["Reject"] = 0, ["Cancel"] = 0,
+        ["รอ"] = 1, ["รออะไหล่"] = 2, ["รอส่งเมล DHL"] = 3, ["เดินทาง"] = 4, ["เบิก"] = 5,
+    };
+    private static readonly Dictionary<string, int> ReturnRank = new()
+    {
+        ["Reject"] = 0, ["Cancel"] = 0,
+        ["รอ"] = 6, ["อนุมัติคืน"] = 7, ["กำลังเดินทางรับคืน"] = 8, ["เดินทาง"] = 9, ["คืน"] = 10,
+    };
+
+    private static string? ComputeDisplayStatus(IEnumerable<WithdrawBatch> batches, string? returnStatus)
+    {
+        string? best = null;
+        var bestRank = -1;
+        foreach (var b in batches)
+        {
+            if (b.Status == null) continue;
+            var rank = WithdrawRank.GetValueOrDefault(b.Status, 0);
+            if (rank > bestRank) { bestRank = rank; best = b.Status; }
+        }
+        if (returnStatus != null)
+        {
+            var rank = ReturnRank.GetValueOrDefault(returnStatus, 0);
+            if (rank > bestRank) { bestRank = rank; best = returnStatus; }
+        }
+        return best;
+    }
 
     // GET /api/Ticket
     [HttpGet]
     public IActionResult GetAllTickets()
     {
         var tickets = _context.Tickets
+            .Include(t => t.WithdrawBatches)
             .OrderByDescending(t => t.CreatedAt)
             .ToList();
+        var ticketIds = tickets.Select(t => t.TicketId).ToList();
 
         var lines = _context.TicketPartLines
-            .Where(l => tickets.Select(t => t.TicketId).Contains(l.TicketId))
+            .Where(l => ticketIds.Contains(l.TicketId))
             .ToList();
         var attachments = _context.TicketAttachments
-            .Where(a => tickets.Select(t => t.TicketId).Contains(a.TicketId))
+            .Where(a => ticketIds.Contains(a.TicketId))
             .OrderBy(a => a.UploadedAt)
             .ToList();
         var partMap = _context.Parts.ToDictionary(p => p.Id, p => p.PartName);
@@ -54,72 +85,78 @@ public class TicketController : ControllerBase
             ? new Dictionary<int, int>()
             : _context.PartStocks.Where(s => s.LocationId == mainWh.Id).ToDictionary(s => s.PartId, s => s.GoodQty);
 
-        // One Aservice Ticket can carry multiple independent ใบเบิก (see CreateAdditionalWithdraw)
-        // — number them ใบที่ 1..N in submission order so Admin/tech can tell them apart when the
-        // same ExternalTicketNo shows up on more than one row.
-        var siblingGroups = tickets
-            .GroupBy(t => t.ExternalTicketNo)
-            .ToDictionary(g => g.Key, g => g.OrderBy(t => t.CreatedAt).Select(t => t.TicketId).ToList());
+        object LineOut(TicketPartLine l, HashSet<string> withdrawnPartNos) => new
+        {
+            l.TicketPartLineId, l.PartId, l.PartNo, l.Quantity, l.LineType, l.Condition,
+            partName = partMap.GetValueOrDefault(l.PartId, l.PartNo),
+            availableStock = l.LineType == "Withdraw" ? stockByPartId.GetValueOrDefault(l.PartId, 0) : (int?)null,
+            l.OriginalPartNo,
+            originalPartName = l.OriginalPartNo == null ? null : partNameByNo.GetValueOrDefault(l.OriginalPartNo, l.OriginalPartNo),
+            isOffTicket = l.LineType == "Return" && !withdrawnPartNos.Contains(l.PartNo)
+        };
 
         var result = tickets.Select(t =>
         {
-            var tLines = lines.Where(l => l.TicketId == t.TicketId).ToList();
-            var siblings = siblingGroups[t.ExternalTicketNo];
+            var batches = t.WithdrawBatches.OrderBy(b => b.CreatedAt).ToList();
+            var returnLines = lines.Where(l => l.TicketId == t.TicketId && l.LineType == "Return").ToList();
+
             // A Return line is "off-ticket" (คืนเพิ่มเติมนอกเหนือใบเบิก) when its PartNo was never
-            // actually withdrawn on this same Ticket — accounting for substitution (OriginalPartNo)
-            // so a swapped-then-returned part still counts as "matches the withdraw". Derived here
-            // rather than stored, since it's fully determined by the ticket's own Withdraw lines.
-            var withdrawnPartNos = tLines.Where(l => l.LineType == "Withdraw")
-                .SelectMany(l => new[] { l.PartNo, l.OriginalPartNo }).Where(p => p != null).ToHashSet();
+            // actually withdrawn on ANY of this Ticket's WithdrawBatches — accounting for
+            // substitution (OriginalPartNo) so a swapped-then-returned part still counts as
+            // "matches the withdraw".
+            var withdrawnPartNos = lines
+                .Where(l => l.LineType == "Withdraw" && l.WithdrawBatchId != null && batches.Select(b => b.WithdrawBatchId).Contains(l.WithdrawBatchId.Value))
+                .SelectMany(l => new[] { l.PartNo, l.OriginalPartNo })
+                .Where(p => p != null)
+                .Select(p => p!)
+                .ToHashSet();
+
             return new
             {
                 t.TicketId, t.ExternalTicketNo, t.TechEmail, t.TechName, t.TechDept,
                 t.Status, t.RejectReason, t.ApproverName, t.ApprovedAt,
-                t.WithdrawAddress, t.ReturnAddress, t.WithdrawDescription, t.CreatedAt, t.UpdatedAt,
-                t.WithdrawSlipNo, t.WithdrawDate, t.EmployeeCode, t.UsageStatus, t.TechSupportName, t.EmailSentAt, t.ReturnEmailSentAt,
-                phase = Phase(t.ReturnAddress, tLines),
-                siblingIndex = siblings.IndexOf(t.TicketId) + 1,
-                siblingCount = siblings.Count,
-                lines = tLines.Select(l => new
+                t.ReturnAddress, t.CreatedAt, t.UpdatedAt, t.ReturnEmailSentAt,
+                displayStatus = ComputeDisplayStatus(batches, t.Status),
+                withdrawBatches = batches.Select(b => new
                 {
-                    l.TicketPartLineId, l.PartId, l.PartNo, l.Quantity, l.LineType, l.Condition,
-                    partName = partMap.GetValueOrDefault(l.PartId, l.PartNo),
-                    availableStock = l.LineType == "Withdraw" ? stockByPartId.GetValueOrDefault(l.PartId, 0) : (int?)null,
-                    l.OriginalPartNo,
-                    originalPartName = l.OriginalPartNo == null ? null : partNameByNo.GetValueOrDefault(l.OriginalPartNo, l.OriginalPartNo),
-                    isOffTicket = l.LineType == "Return" && !withdrawnPartNos.Contains(l.PartNo)
+                    b.WithdrawBatchId, b.Status, b.RejectReason, b.ApproverName, b.ApprovedAt, b.EmailSentAt,
+                    b.WithdrawAddress, b.WithdrawDescription, b.WithdrawSlipNo, b.WithdrawDate,
+                    b.EmployeeCode, b.UsageStatus, b.TechSupportName, b.CreatedAt, b.UpdatedAt,
+                    lines = lines.Where(l => l.WithdrawBatchId == b.WithdrawBatchId).Select(l => LineOut(l, withdrawnPartNos)),
+                    attachments = attachments.Where(a => a.WithdrawBatchId == b.WithdrawBatchId)
+                        .Select(a => new { a.TicketAttachmentId, a.Phase, a.FilePath, a.FileName, a.UploadedAt })
                 }),
-                attachments = attachments.Where(a => a.TicketId == t.TicketId).Select(a => new
-                {
-                    a.TicketAttachmentId, a.Phase, a.FilePath, a.FileName, a.UploadedAt
-                })
+                lines = returnLines.Select(l => LineOut(l, withdrawnPartNos)),
+                attachments = attachments.Where(a => a.TicketId == t.TicketId && a.Phase == "Return")
+                    .Select(a => new { a.TicketAttachmentId, a.Phase, a.FilePath, a.FileName, a.UploadedAt })
             };
         });
 
         return Ok(result);
     }
 
-    // DELETE /api/Ticket/{id} — cleanup for the self-service "New Request" flow, where a Ticket
-    // is sync'd first and the withdraw is submitted right after in the same client action. If the
-    // withdraw step fails (network error, validation, stale cache, etc.) the sync'd Ticket is
-    // otherwise orphaned forever with Status=null and no lines. Scoped tight — only deletes a
-    // Ticket that was never actually submitted — so it's safe to call from anywhere.
+    // DELETE /api/Ticket/{id} — cleanup for the self-service "New Request" flow, where a Ticket is
+    // sync'd first and the withdraw batch is submitted right after in the same client action. If
+    // that submission fails (network error, validation, stale cache, etc.) the sync'd Ticket is
+    // otherwise orphaned forever. Scoped tight — only a Ticket with no return in progress and no
+    // withdraw batches at all — so it's safe to call from anywhere.
     [HttpDelete("{id}")]
     public IActionResult DeleteOrphanTicket(int id)
     {
         var ticket = _context.Tickets.FirstOrDefault(t => t.TicketId == id);
         if (ticket == null) return NotFound(new { message = "Ticket not found." });
-        if (ticket.Status != null) return BadRequest(new { message = "Only a never-submitted ticket can be deleted." });
-        if (_context.TicketPartLines.Any(l => l.TicketId == id)) return BadRequest(new { message = "Only a never-submitted ticket can be deleted." });
+        if (ticket.Status != null) return BadRequest(new { message = "Only a ticket with no return in progress can be deleted." });
+        if (_context.WithdrawBatches.Any(b => b.TicketId == id)) return BadRequest(new { message = "Only a ticket with no withdraw batches can be deleted." });
 
-        _context.TicketAttachments.RemoveRange(_context.TicketAttachments.Where(a => a.TicketId == id));
         _context.Tickets.Remove(ticket);
         _context.SaveChanges();
         return Ok(new { message = "Deleted." });
     }
 
-    // POST /api/Ticket/sync — upsert a ticket header from Aservice (dedupe by ExternalTicketNo).
-    // Stands in for the real Aservice webhook/poll integration.
+    // POST /api/Ticket/sync — upsert a ticket header from Aservice (dedupe by ExternalTicketNo,
+    // now the DB's own unique constraint too). Stands in for the real Aservice webhook/poll
+    // integration. A Ticket created here has no withdraw batches yet — the first (or Nth) ใบเบิก
+    // is added via POST /{ticketId}/withdraw-batches.
     [HttpPost("sync")]
     public IActionResult SyncFromAservice([FromBody] SyncTicketDto dto)
     {
@@ -141,88 +178,112 @@ public class TicketController : ControllerBase
         return Ok(new { message = "Synced.", ticket });
     }
 
-    // POST /api/Ticket/additional-withdraw — tech requests another ใบเบิก (withdraw slip) under
-    // an Aservice Ticket number that's already been synced (e.g. the first ใบเบิก is still open,
-    // but the job needs more parts). Unlike /sync this deliberately does NOT dedupe — it always
-    // creates a new Ticket row with its own independent withdraw/return cycle, sharing only the
-    // ExternalTicketNo. See AppDbContext: ExternalTicketNo is intentionally non-unique for this.
-    [HttpPost("additional-withdraw")]
-    public IActionResult CreateAdditionalWithdraw([FromBody] SyncTicketDto dto)
+    // POST /api/Ticket/{ticketId}/withdraw-batches — technician submits a withdraw request
+    // ("ใบเบิก") under an already-synced Ticket. Works identically whether this is the Ticket's
+    // first batch or its Nth — "เบิกเพิ่ม" is just calling this again on the same ticketId, no
+    // special-cased sibling-Ticket creation any more (see the old, now-removed
+    // POST /additional-withdraw). Resubmitting a REJECTED batch is a separate endpoint below.
+    [HttpPost("{ticketId}/withdraw-batches")]
+    public IActionResult SubmitWithdraw(int ticketId, [FromBody] SubmitLinesDto dto)
     {
-        if (string.IsNullOrWhiteSpace(dto.ExternalTicketNo))
-            return BadRequest(new { message = "External Ticket No. is required." });
-        if (!_context.Tickets.Any(t => t.ExternalTicketNo == dto.ExternalTicketNo))
-            return BadRequest(new { message = "ไม่พบ Ticket นี้ในระบบ — sync ใบแรกก่อนถึงจะขอเบิกเพิ่มได้" });
-
-        var ticket = new Ticket
-        {
-            ExternalTicketNo = dto.ExternalTicketNo,
-            TechEmail = dto.TechEmail ?? string.Empty,
-            TechName  = dto.TechName  ?? string.Empty,
-            TechDept  = dto.TechDept  ?? string.Empty,
-            Status    = null,
-            CreatedAt = DateTime.Now,
-            UpdatedAt = DateTime.Now
-        };
-        _context.Tickets.Add(ticket);
-        _context.SaveChanges();
-        _audit.Log(User, "Ticket", ticket.TicketId.ToString(), "ADDITIONAL_WITHDRAW", null, new { ticket.TicketId, ticket.ExternalTicketNo });
-        return Ok(new { message = "สร้างใบเบิกใหม่แล้ว", ticket });
-    }
-
-    // PUT /api/Ticket/{id}/withdraw — technician submits the withdraw request (Form 1).
-    // Also handles resubmission after Admin Reject: a rejected ticket's old Withdraw lines and
-    // RejectReason are cleared and replaced with what the tech submits this time.
-    [HttpPut("{id}/withdraw")]
-    public IActionResult SubmitWithdraw(int id, [FromBody] SubmitLinesDto dto)
-    {
-        var ticket = _context.Tickets.FirstOrDefault(t => t.TicketId == id);
+        var ticket = _context.Tickets.FirstOrDefault(t => t.TicketId == ticketId);
         if (ticket == null) return NotFound(new { message = "Ticket not found." });
-        if (ticket.Status != null && ticket.Status != "Reject")
-            return BadRequest(new { message = "Only a new ticket, or one Admin rejected, can submit a withdraw request." });
         if (dto.Lines == null || dto.Lines.Count == 0) return BadRequest(new { message = "Select at least one part." });
         if (string.IsNullOrWhiteSpace(dto.Address)) return BadRequest(new { message = "Address is required." });
 
-        if (ticket.Status == "Reject")
-        {
-            var oldLines = _context.TicketPartLines.Where(l => l.TicketId == id && l.LineType == "Withdraw");
-            _context.TicketPartLines.RemoveRange(oldLines);
-            ticket.RejectReason = null;
-        }
-
+        // Validate everything before touching the context, so an invalid line never leaves a
+        // half-created batch behind.
+        var lineParts = new List<(LineDto line, Part part)>();
         foreach (var l in dto.Lines)
         {
             var part = _context.Parts.FirstOrDefault(p => p.PartNo == l.PartNo && p.IsActive);
             if (part == null) return BadRequest(new { message = $"Part {l.PartNo} not found." });
+            lineParts.Add((l, part));
+        }
+
+        var batch = new WithdrawBatch
+        {
+            TicketId = ticketId,
+            WithdrawAddress = dto.Address,
+            WithdrawDescription = dto.Description,
+            WithdrawSlipNo = GenerateWithdrawSlipNo(),
+            WithdrawDate = dto.WithdrawDate ?? DateTime.Now,
+            EmployeeCode = dto.EmployeeCode,
+            UsageStatus = dto.UsageStatus,
+            TechSupportName = string.IsNullOrWhiteSpace(dto.TechSupportName) ? null : dto.TechSupportName,
+        };
+        _context.WithdrawBatches.Add(batch);
+
+        foreach (var (l, part) in lineParts)
             _context.TicketPartLines.Add(new TicketPartLine
             {
-                TicketId = id, PartId = part.Id, PartNo = l.PartNo, Quantity = l.Quantity, LineType = "Withdraw"
+                TicketId = ticketId, WithdrawBatch = batch, PartId = part.Id, PartNo = l.PartNo, Quantity = l.Quantity, LineType = "Withdraw"
             });
-        }
 
         foreach (var a in dto.Attachments ?? new())
-        {
             _context.TicketAttachments.Add(new TicketAttachment
             {
-                TicketId = id, Phase = "Withdraw", FilePath = a.FilePath, FileName = a.FileName
+                TicketId = ticketId, WithdrawBatch = batch, Phase = "Withdraw", FilePath = a.FilePath, FileName = a.FileName
             });
+
+        // One shot — batch, lines and attachments together; EF fixes up WithdrawBatchId on the
+        // lines/attachments from the WithdrawBatch nav-property assignment above.
+        _context.SaveChanges();
+
+        TryAutoApprove(batch);
+        _context.SaveChanges();
+        _audit.Log(User, "WithdrawBatch", batch.WithdrawBatchId.ToString(), "SUBMIT_WITHDRAW", null, new { batch.WithdrawBatchId, ticket.ExternalTicketNo, batch.Status });
+        return Ok(new { message = "Withdraw request submitted.", ticket, batch });
+    }
+
+    // PUT /api/Ticket/{ticketId}/withdraw-batches/{batchId}/resubmit — batch-scoped counterpart of
+    // the old "SubmitWithdraw on a Reject ticket clears old lines and resubmits". Old Withdraw
+    // lines/attachments and the RejectReason are cleared and replaced with what the tech submits
+    // this time; the batch keeps its WithdrawSlipNo (never renumbered on a resubmit).
+    [HttpPut("{ticketId}/withdraw-batches/{batchId}/resubmit")]
+    public IActionResult ResubmitWithdrawBatch(int ticketId, int batchId, [FromBody] SubmitLinesDto dto)
+    {
+        var batch = _context.WithdrawBatches.FirstOrDefault(b => b.WithdrawBatchId == batchId && b.TicketId == ticketId);
+        if (batch == null) return NotFound(new { message = "Batch not found." });
+        if (batch.Status != "Reject") return BadRequest(new { message = "Only a rejected withdraw batch can be resubmitted." });
+        if (dto.Lines == null || dto.Lines.Count == 0) return BadRequest(new { message = "Select at least one part." });
+        if (string.IsNullOrWhiteSpace(dto.Address)) return BadRequest(new { message = "Address is required." });
+
+        var lineParts = new List<(LineDto line, Part part)>();
+        foreach (var l in dto.Lines)
+        {
+            var part = _context.Parts.FirstOrDefault(p => p.PartNo == l.PartNo && p.IsActive);
+            if (part == null) return BadRequest(new { message = $"Part {l.PartNo} not found." });
+            lineParts.Add((l, part));
         }
 
-        ticket.WithdrawAddress = dto.Address;
-        ticket.WithdrawDescription = dto.Description;
-        ticket.WithdrawSlipNo ??= GenerateWithdrawSlipNo(); // never renumber a resubmit-after-reject
-        ticket.WithdrawDate = dto.WithdrawDate ?? DateTime.Now;
-        ticket.EmployeeCode = dto.EmployeeCode;
-        ticket.UsageStatus = dto.UsageStatus;
-        ticket.TechSupportName = string.IsNullOrWhiteSpace(dto.TechSupportName) ? null : dto.TechSupportName;
-        ticket.UpdatedAt = DateTime.Now;
-        // Persist the lines/attachments first — TryAutoApprove re-reads them from the DB, so it
-        // needs to see this submission's own rows, not just whatever existed before it.
+        var oldLines = _context.TicketPartLines.Where(l => l.WithdrawBatchId == batchId);
+        _context.TicketPartLines.RemoveRange(oldLines);
+        batch.RejectReason = null;
+
+        foreach (var (l, part) in lineParts)
+            _context.TicketPartLines.Add(new TicketPartLine
+            {
+                TicketId = ticketId, WithdrawBatchId = batchId, PartId = part.Id, PartNo = l.PartNo, Quantity = l.Quantity, LineType = "Withdraw"
+            });
+        foreach (var a in dto.Attachments ?? new())
+            _context.TicketAttachments.Add(new TicketAttachment
+            {
+                TicketId = ticketId, WithdrawBatchId = batchId, Phase = "Withdraw", FilePath = a.FilePath, FileName = a.FileName
+            });
+
+        batch.WithdrawAddress = dto.Address;
+        batch.WithdrawDescription = dto.Description;
+        batch.WithdrawDate = dto.WithdrawDate ?? DateTime.Now;
+        batch.EmployeeCode = dto.EmployeeCode;
+        batch.UsageStatus = dto.UsageStatus;
+        batch.TechSupportName = string.IsNullOrWhiteSpace(dto.TechSupportName) ? null : dto.TechSupportName;
+        batch.UpdatedAt = DateTime.Now;
         _context.SaveChanges();
 
-        TryAutoApprove(ticket);
+        TryAutoApprove(batch);
         _context.SaveChanges();
-        return Ok(new { message = "Withdraw request submitted.", ticket });
+        return Ok(new { message = "Withdraw request resubmitted.", batch });
     }
 
     // "WD-{year}-{5-digit running no.}" — resets every calendar year. Counts existing slip
@@ -232,23 +293,23 @@ public class TicketController : ControllerBase
     {
         var year = DateTime.Now.Year;
         var prefix = $"WD-{year}-";
-        var count = _context.Tickets.Count(t => t.WithdrawSlipNo != null && t.WithdrawSlipNo.StartsWith(prefix));
+        var count = _context.WithdrawBatches.Count(b => b.WithdrawSlipNo != null && b.WithdrawSlipNo.StartsWith(prefix));
         return $"{prefix}{(count + 1):D5}";
     }
 
-    // PUT /api/Ticket/{id}/lines/{lineId}/substitute — Admin swaps a requested part for a
-    // registered equivalent (e.g. requested part is out of stock) before approving.
-    [HttpPut("{id}/lines/{lineId}/substitute")]
-    public IActionResult SubstitutePart(int id, int lineId, [FromBody] SubstituteDto dto)
+    // PUT /api/Ticket/{ticketId}/withdraw-batches/{batchId}/lines/{lineId}/substitute — Admin
+    // swaps a requested part for a registered equivalent (e.g. requested part is out of stock)
+    // before approving.
+    [HttpPut("{ticketId}/withdraw-batches/{batchId}/lines/{lineId}/substitute")]
+    public IActionResult SubstitutePart(int ticketId, int batchId, int lineId, [FromBody] SubstituteDto dto)
     {
-        var ticket = _context.Tickets.FirstOrDefault(t => t.TicketId == id);
-        if (ticket == null) return NotFound(new { message = "Ticket not found." });
-        if (ticket.Status != "รอ" && ticket.Status != "รออะไหล่")
-            return BadRequest(new { message = "Only a waiting ticket's parts can be substituted." });
+        var batch = _context.WithdrawBatches.FirstOrDefault(b => b.WithdrawBatchId == batchId && b.TicketId == ticketId);
+        if (batch == null) return NotFound(new { message = "Batch not found." });
+        if (batch.Status != "รอ" && batch.Status != "รออะไหล่")
+            return BadRequest(new { message = "Only a waiting withdraw batch's parts can be substituted." });
 
-        var line = _context.TicketPartLines.FirstOrDefault(l => l.TicketPartLineId == lineId && l.TicketId == id);
+        var line = _context.TicketPartLines.FirstOrDefault(l => l.TicketPartLineId == lineId && l.WithdrawBatchId == batchId);
         if (line == null) return NotFound(new { message = "Line not found." });
-        if (line.LineType != "Withdraw") return BadRequest(new { message = "Only withdraw lines can be substituted." });
 
         var newPart = _context.Parts.FirstOrDefault(p => p.PartNo == dto.PartNo && p.IsActive);
         if (newPart == null) return BadRequest(new { message = "Part not found." });
@@ -262,33 +323,29 @@ public class TicketController : ControllerBase
         line.OriginalPartNo ??= originalPartNo; // keep the true original if substituted more than once
         line.PartId = newPart.Id;
         line.PartNo = dto.PartNo;
-        ticket.UpdatedAt = DateTime.Now;
+        batch.UpdatedAt = DateTime.Now;
         _context.SaveChanges();
-        _audit.Log(User, "Ticket", id.ToString(), "SUBSTITUTE_PART", null, new { ticket.TicketId, lineId, from = originalPartNo, to = dto.PartNo });
+        _audit.Log(User, "WithdrawBatch", batchId.ToString(), "SUBSTITUTE_PART", null, new { batch.WithdrawBatchId, lineId, from = originalPartNo, to = dto.PartNo });
 
         // Re-run the stock check immediately — a substitution is exactly the kind of thing that
-        // can turn a "รออะไหล่" ticket into one the warehouse can now fulfill, and Admin shouldn't
+        // can turn a "รออะไหล่" batch into one the warehouse can now fulfill, and Admin shouldn't
         // have to separately click Approve to find that out.
-        TryAutoApprove(ticket);
+        TryAutoApprove(batch);
         _context.SaveChanges();
-        return Ok(new { message = "Substituted.", ticket, line });
+        return Ok(new { message = "Substituted.", batch, line });
     }
 
-    // Auto-approve engine — runs right after a withdraw request is submitted, and again after
-    // Admin substitutes an equivalent part while a ticket sits at "รออะไหล่". Mirrors what the
-    // manual ApproveTicket endpoint used to do (stock deducted right here, not at ReceiveTicket),
-    // just without a human clicking a button: the only condition is "does the central warehouse
-    // have enough of everything on this ticket's Withdraw lines" — Tech Support being set or not
-    // plays no part in this decision.
+    // Auto-approve engine — runs right after a withdraw batch is submitted, and again after Admin
+    // substitutes an equivalent part while a batch sits at "รออะไหล่". The only condition is "does
+    // the central warehouse have enough of everything on this batch's Withdraw lines" — Tech
+    // Support being set or not plays no part in this decision.
     //
-    // Sets ticket.Status to "รอส่งเมล DHL" (stock cut immediately, same as a manual approve used
-    // to do — but this is NOT the "เดินทาง" transit status yet, that only starts once Admin
-    // actually confirms the DHL email went out, see SendEmailConfirmed) when everything's in
-    // stock, or "รออะไหล่" (nothing touched) when it isn't — never leaves it at "รอ".
-    private void TryAutoApprove(Ticket ticket)
+    // Sets batch.Status to "รอส่งเมล DHL" (stock cut immediately) when everything's in stock, or
+    // "รออะไหล่" (nothing touched) when it isn't — never leaves it at "รอ".
+    private void TryAutoApprove(WithdrawBatch batch)
     {
         var mainWh = _context.Locations.FirstOrDefault(l => l.Code == "WH-RAT");
-        var withdrawLines = _context.TicketPartLines.Where(l => l.TicketId == ticket.TicketId && l.LineType == "Withdraw").ToList();
+        var withdrawLines = _context.TicketPartLines.Where(l => l.WithdrawBatchId == batch.WithdrawBatchId).ToList();
 
         var required = withdrawLines
             .GroupBy(l => l.PartId)
@@ -301,83 +358,84 @@ public class TicketController : ControllerBase
 
         if (!hasEnough)
         {
-            ticket.Status = "รออะไหล่";
-            ticket.UpdatedAt = DateTime.Now;
+            batch.Status = "รออะไหล่";
+            batch.UpdatedAt = DateTime.Now;
             return;
         }
 
+        var externalTicketNo = _context.Tickets.Where(t => t.TicketId == batch.TicketId).Select(t => t.ExternalTicketNo).FirstOrDefault();
         foreach (var line in withdrawLines)
         {
             _stock.AdjustStock(
                 partNo: line.PartNo, locationId: mainWh!.Id, qtyDelta: -line.Quantity, condition: "Good",
-                movementType: "Approve", refType: "Ticket", refId: ticket.TicketId.ToString(),
-                userName: "Auto", remarks: $"Auto-approved for ticket {ticket.ExternalTicketNo}");
+                movementType: "Approve", refType: "WithdrawBatch", refId: batch.WithdrawBatchId.ToString(),
+                userName: "Auto", remarks: $"Auto-approved for ticket {externalTicketNo}");
         }
 
-        ticket.Status = "รอส่งเมล DHL";
-        ticket.ApproverName = "Auto";
-        ticket.ApprovedAt = DateTime.Now;
-        ticket.UpdatedAt = DateTime.Now;
-        _audit.Log(User, "Ticket", ticket.TicketId.ToString(), "AUTO_APPROVE", null, new { ticket.TicketId, ticket.Status });
+        batch.Status = "รอส่งเมล DHL";
+        batch.ApproverName = "Auto";
+        batch.ApprovedAt = DateTime.Now;
+        batch.UpdatedAt = DateTime.Now;
+        _audit.Log(User, "WithdrawBatch", batch.WithdrawBatchId.ToString(), "AUTO_APPROVE", null, new { batch.WithdrawBatchId, batch.Status });
     }
 
-    // PUT /api/Ticket/{id}/send-email — Admin confirms the DHL email actually went out. This is
-    // the real "เดินทาง" (in transit) transition — stock was already cut back at auto-approve,
-    // this only moves the status forward. From here the ticket is locked against Cancel: DHL has
-    // been contacted, so pulling back isn't a self-service undo any more (see CancelTicket).
-    [HttpPut("{id}/send-email")]
-    public IActionResult SendEmailConfirmed(int id)
+    // PUT /api/Ticket/{ticketId}/withdraw-batches/{batchId}/send-email — Admin confirms the DHL
+    // email actually went out. This is the real "เดินทาง" (in transit) transition — stock was
+    // already cut back at auto-approve, this only moves the status forward. From here the batch is
+    // locked against Cancel: DHL has been contacted, so pulling back isn't a self-service undo.
+    [HttpPut("{ticketId}/withdraw-batches/{batchId}/send-email")]
+    public IActionResult SendEmailConfirmedBatch(int ticketId, int batchId)
     {
-        var ticket = _context.Tickets.FirstOrDefault(t => t.TicketId == id);
-        if (ticket == null) return NotFound(new { message = "Ticket not found." });
-        if (ticket.Status != "รอส่งเมล DHL")
-            return BadRequest(new { message = "Only a ticket waiting to email DHL can be marked sent." });
+        var batch = _context.WithdrawBatches.FirstOrDefault(b => b.WithdrawBatchId == batchId && b.TicketId == ticketId);
+        if (batch == null) return NotFound(new { message = "Batch not found." });
+        if (batch.Status != "รอส่งเมล DHL")
+            return BadRequest(new { message = "Only a batch waiting to email DHL can be marked sent." });
 
-        ticket.Status = "เดินทาง";
-        ticket.EmailSentAt = DateTime.Now;
-        ticket.UpdatedAt = DateTime.Now;
+        batch.Status = "เดินทาง";
+        batch.EmailSentAt = DateTime.Now;
+        batch.UpdatedAt = DateTime.Now;
         _context.SaveChanges();
-        _audit.Log(User, "Ticket", id.ToString(), "SEND_EMAIL", null, new { ticket.TicketId, ticket.Status });
-        return Ok(new { message = "Marked as emailed to DHL.", ticket });
+        _audit.Log(User, "WithdrawBatch", batchId.ToString(), "SEND_EMAIL", null, new { batch.WithdrawBatchId, batch.Status });
+        return Ok(new { message = "Marked as emailed to DHL.", batch });
     }
 
-    // PUT /api/Ticket/{id}/approve — Admin approves the withdraw request → เดินทาง
-    [HttpPut("{id}/approve")]
-    public IActionResult ApproveTicket(int id)
+    // PUT /api/Ticket/{ticketId}/withdraw-batches/{batchId}/approve — Admin approves the withdraw
+    // batch → เดินทาง
+    [HttpPut("{ticketId}/withdraw-batches/{batchId}/approve")]
+    public IActionResult ApproveBatch(int ticketId, int batchId)
     {
-        var ticket = _context.Tickets.FirstOrDefault(t => t.TicketId == id);
-        if (ticket == null) return NotFound(new { message = "Ticket not found." });
-        if (ticket.Status != "รอ" && ticket.Status != "รออะไหล่")
-            return BadRequest(new { message = "Only a waiting ticket can be approved." });
+        var batch = _context.WithdrawBatches.FirstOrDefault(b => b.WithdrawBatchId == batchId && b.TicketId == ticketId);
+        if (batch == null) return NotFound(new { message = "Batch not found." });
+        if (batch.Status != "รอ" && batch.Status != "รออะไหล่")
+            return BadRequest(new { message = "Only a waiting batch can be approved." });
 
-        // Manual fallback for a "รออะไหล่" ticket whose stock recovered without a substitution
+        // Manual fallback for a "รออะไหล่" batch whose stock recovered without a substitution
         // (e.g. a Goods Receipt came in) — Admin can force a recheck instead of waiting for
-        // another SubstitutePart call to trigger it. Everything else (a plain "รอ" ticket that
-        // somehow wasn't already auto-approved at submit time) goes through the same engine.
-        if (ticket.Status == "รออะไหล่")
+        // another SubstitutePart call to trigger it.
+        if (batch.Status == "รออะไหล่")
         {
-            TryAutoApprove(ticket);
+            TryAutoApprove(batch);
             _context.SaveChanges();
-            return ticket.Status == "เดินทาง"
-                ? Ok(new { message = "Approved.", ticket })
-                : Ok(new { message = "Still not enough stock.", ticket });
+            return batch.Status == "รอส่งเมล DHL"
+                ? Ok(new { message = "Approved.", batch })
+                : Ok(new { message = "Still not enough stock.", batch });
         }
 
-        // Stock is deducted from the central warehouse right here, not at ReceiveTicket — once
-        // Admin approves, that quantity is committed to this ticket and can't be double-approved
+        // Stock is deducted from the central warehouse right here, not at ReceiveBatch — once
+        // Admin approves, that quantity is committed to this batch and can't be double-approved
         // into another request. It does NOT land in OL-TECH yet (the part is still in transit);
-        // ReceiveTicket only adds it there once the tech actually has it in hand. If the ticket is
-        // Cancelled while เดินทาง (approved but not yet received), CancelTicket puts it back.
+        // ReceiveBatch only adds it there once the tech actually has it in hand. If the batch is
+        // cancelled while เดินทาง... wait, cancel is locked at เดินทาง — see CancelBatch.
         var mainWh = _context.Locations.FirstOrDefault(l => l.Code == "WH-RAT");
-        var withdrawLines = _context.TicketPartLines.Where(l => l.TicketId == id && l.LineType == "Withdraw").ToList();
+        var withdrawLines = _context.TicketPartLines.Where(l => l.WithdrawBatchId == batchId).ToList();
         foreach (var line in withdrawLines)
         {
             try
             {
                 _stock.AdjustStock(
                     partNo: line.PartNo, locationId: mainWh?.Id ?? 0, qtyDelta: -line.Quantity, condition: "Good",
-                    movementType: "Approve", refType: "Ticket", refId: id.ToString(),
-                    userName: User?.Identity?.Name ?? "admin", remarks: $"Approved for ticket {ticket.ExternalTicketNo}");
+                    movementType: "Approve", refType: "WithdrawBatch", refId: batchId.ToString(),
+                    userName: User?.Identity?.Name ?? "admin", remarks: $"Approved batch {batchId}");
             }
             catch (InvalidOperationException ex)
             {
@@ -385,127 +443,129 @@ public class TicketController : ControllerBase
             }
         }
 
-        ticket.Status = "เดินทาง";
-        ticket.ApproverName = User?.Identity?.Name ?? "admin";
-        ticket.ApprovedAt = DateTime.Now;
-        ticket.UpdatedAt = DateTime.Now;
+        batch.Status = "เดินทาง";
+        batch.ApproverName = User?.Identity?.Name ?? "admin";
+        batch.ApprovedAt = DateTime.Now;
+        batch.UpdatedAt = DateTime.Now;
 
         _context.SaveChanges();
-        _audit.Log(User, "Ticket", id.ToString(), "APPROVE", null, new { ticket.TicketId, ticket.Status });
-        return Ok(new { message = "Approved.", ticket });
+        _audit.Log(User, "WithdrawBatch", batchId.ToString(), "APPROVE", null, new { batch.WithdrawBatchId, batch.Status });
+        return Ok(new { message = "Approved.", batch });
     }
 
-    // PUT /api/Ticket/{id}/reject — Admin rejects, tech must edit and resubmit. Reason required.
-    [HttpPut("{id}/reject")]
-    public IActionResult RejectTicket(int id, [FromBody] RejectDto dto)
+    // PUT /api/Ticket/{ticketId}/withdraw-batches/{batchId}/reject — Admin rejects, tech must edit
+    // and resubmit (see ResubmitWithdrawBatch). Reason required.
+    [HttpPut("{ticketId}/withdraw-batches/{batchId}/reject")]
+    public IActionResult RejectBatch(int ticketId, int batchId, [FromBody] RejectDto dto)
     {
-        var ticket = _context.Tickets.FirstOrDefault(t => t.TicketId == id);
-        if (ticket == null) return NotFound(new { message = "Ticket not found." });
-        if (ticket.Status != "รอ" && ticket.Status != "รออะไหล่" && ticket.Status != "รอส่งเมล DHL")
-            return BadRequest(new { message = "Only a waiting ticket can be rejected." });
+        var batch = _context.WithdrawBatches.FirstOrDefault(b => b.WithdrawBatchId == batchId && b.TicketId == ticketId);
+        if (batch == null) return NotFound(new { message = "Batch not found." });
+        if (batch.Status != "รอ" && batch.Status != "รออะไหล่" && batch.Status != "รอส่งเมล DHL")
+            return BadRequest(new { message = "Only a waiting batch can be rejected." });
         if (string.IsNullOrWhiteSpace(dto.Reason)) return BadRequest(new { message = "Reject reason is required." });
 
-        // Auto-approve already deducted WH-RAT stock for a "รอส่งเมล DHL" ticket — rejecting it
-        // now needs to hand that back, same as CancelTicket does for the same status.
-        if (ticket.Status == "รอส่งเมล DHL")
+        // Auto-approve already deducted WH-RAT stock for a "รอส่งเมล DHL" batch — rejecting it now
+        // needs to hand that back, same as CancelBatch does for the same status.
+        if (batch.Status == "รอส่งเมล DHL")
         {
             var mainWh = _context.Locations.FirstOrDefault(l => l.Code == "WH-RAT");
-            var withdrawLines = _context.TicketPartLines.Where(l => l.TicketId == id && l.LineType == "Withdraw").ToList();
+            var withdrawLines = _context.TicketPartLines.Where(l => l.WithdrawBatchId == batchId).ToList();
             foreach (var line in withdrawLines)
             {
                 _stock.AdjustStock(
                     partNo: line.PartNo, locationId: mainWh?.Id ?? 0, qtyDelta: line.Quantity, condition: "Good",
-                    movementType: "Reject", refType: "Ticket", refId: id.ToString(),
-                    userName: User?.Identity?.Name ?? "admin", remarks: $"Rejected ticket {ticket.ExternalTicketNo} — returned to warehouse");
+                    movementType: "Reject", refType: "WithdrawBatch", refId: batchId.ToString(),
+                    userName: User?.Identity?.Name ?? "admin", remarks: $"Rejected batch {batchId} — returned to warehouse");
             }
         }
 
-        ticket.Status = "Reject";
-        ticket.RejectReason = dto.Reason;
-        ticket.UpdatedAt = DateTime.Now;
+        batch.Status = "Reject";
+        batch.RejectReason = dto.Reason;
+        batch.UpdatedAt = DateTime.Now;
 
         _context.SaveChanges();
-        _audit.Log(User, "Ticket", id.ToString(), "REJECT", null, new { ticket.TicketId, ticket.Status, dto.Reason });
-        return Ok(new { message = "Rejected.", ticket });
+        _audit.Log(User, "WithdrawBatch", batchId.ToString(), "REJECT", null, new { batch.WithdrawBatchId, batch.Status, dto.Reason });
+        return Ok(new { message = "Rejected.", batch });
     }
 
-    // PUT /api/Ticket/{id}/cancel — Admin cancels the ticket outright. No reason needed.
-    [HttpPut("{id}/cancel")]
-    public IActionResult CancelTicket(int id)
+    // PUT /api/Ticket/{ticketId}/withdraw-batches/{batchId}/cancel — Admin cancels this withdraw
+    // batch outright. No reason needed. (Cancelling the RETURN leg is a separate, Ticket-scoped
+    // endpoint — see CancelTicket below.)
+    [HttpPut("{ticketId}/withdraw-batches/{batchId}/cancel")]
+    public IActionResult CancelBatch(int ticketId, int batchId)
     {
-        var ticket = _context.Tickets.FirstOrDefault(t => t.TicketId == id);
-        if (ticket == null) return NotFound(new { message = "Ticket not found." });
-        if (ticket.Status is "Reject" or "Cancel" or "คืน")
-            return BadRequest(new { message = "Ticket is already closed." });
+        var batch = _context.WithdrawBatches.FirstOrDefault(b => b.WithdrawBatchId == batchId && b.TicketId == ticketId);
+        if (batch == null) return NotFound(new { message = "Batch not found." });
+        if (batch.Status is "Reject" or "Cancel" or "เบิก")
+            return BadRequest(new { message = "Batch is already closed." });
 
-        var lines = _context.TicketPartLines.Where(l => l.TicketId == id).ToList();
-        var phase = Phase(ticket.ReturnAddress, lines);
-
-        // Once Admin has actually told DHL something (withdraw: เดินทาง; return: กำลังเดินทางรับคืน
-        // or later — เดินทาง on the return leg only happens after that point, once the tech has
-        // shipped), it's no longer a self-service undo — DHL is already acting on it. Cancel
-        // earlier (รอส่งเมล DHL / อนุมัติคืน, still just an internal commitment) is still fine.
-        if (ticket.Status == "เดินทาง" || ticket.Status == "กำลังเดินทางรับคืน")
+        // Once Admin has actually told DHL something (เดินทาง), it's no longer a self-service undo.
+        if (batch.Status == "เดินทาง")
             return BadRequest(new { message = "ยกเลิกไม่ได้แล้ว — Admin ส่งเมลแจ้ง DHL ไปแล้ว" });
 
         // Stock left WH-RAT the moment auto-approve ran (รอส่งเมล DHL) — cancelling from there has
         // stock sitting in limbo, put it back. Cancelling at รอ/รออะไหล่ never touched stock,
-        // nothing to undo. (เดินทาง is excluded — it's always locked above by this point.)
-        if (ticket.Status == "รอส่งเมล DHL")
+        // nothing to undo.
+        if (batch.Status == "รอส่งเมล DHL")
         {
             var mainWh = _context.Locations.FirstOrDefault(l => l.Code == "WH-RAT");
-            var withdrawLines = lines.Where(l => l.LineType == "Withdraw").ToList();
+            var withdrawLines = _context.TicketPartLines.Where(l => l.WithdrawBatchId == batchId).ToList();
             foreach (var line in withdrawLines)
             {
                 _stock.AdjustStock(
                     partNo: line.PartNo, locationId: mainWh?.Id ?? 0, qtyDelta: line.Quantity, condition: "Good",
-                    movementType: "Cancel", refType: "Ticket", refId: id.ToString(),
-                    userName: User?.Identity?.Name ?? "admin", remarks: $"Cancelled ticket {ticket.ExternalTicketNo} — returned to warehouse");
+                    movementType: "Cancel", refType: "WithdrawBatch", refId: batchId.ToString(),
+                    userName: User?.Identity?.Name ?? "admin", remarks: $"Cancelled batch {batchId} — returned to warehouse");
             }
         }
 
-        ticket.Status = "Cancel";
-        ticket.UpdatedAt = DateTime.Now;
+        batch.Status = "Cancel";
+        batch.UpdatedAt = DateTime.Now;
         _context.SaveChanges();
-        _audit.Log(User, "Ticket", id.ToString(), "CANCEL", null, new { ticket.TicketId, ticket.Status });
-        return Ok(new { message = "Cancelled.", ticket });
+        _audit.Log(User, "WithdrawBatch", batchId.ToString(), "CANCEL", null, new { batch.WithdrawBatchId, batch.Status });
+        return Ok(new { message = "Cancelled.", batch });
     }
 
-    // PUT /api/Ticket/{id}/receive — technician confirms physical receipt → เบิก (closes withdraw leg)
-    [HttpPut("{id}/receive")]
-    public IActionResult ReceiveTicket(int id)
+    // PUT /api/Ticket/{ticketId}/withdraw-batches/{batchId}/receive — technician confirms physical
+    // receipt → เบิก (closes this withdraw batch, makes it eligible to source a return).
+    [HttpPut("{ticketId}/withdraw-batches/{batchId}/receive")]
+    public IActionResult ReceiveBatch(int ticketId, int batchId)
     {
-        var ticket = _context.Tickets.FirstOrDefault(t => t.TicketId == id);
-        if (ticket == null) return NotFound(new { message = "Ticket not found." });
-        if (ticket.Status != "เดินทาง") return BadRequest(new { message = "Only an in-transit ticket can be received." });
+        var batch = _context.WithdrawBatches.FirstOrDefault(b => b.WithdrawBatchId == batchId && b.TicketId == ticketId);
+        if (batch == null) return NotFound(new { message = "Batch not found." });
+        if (batch.Status != "เดินทาง") return BadRequest(new { message = "Only an in-transit batch can be received." });
 
-        var withdrawLines = _context.TicketPartLines.Where(l => l.TicketId == id && l.LineType == "Withdraw").ToList();
+        var ticket = _context.Tickets.FirstOrDefault(t => t.TicketId == ticketId);
+        var withdrawLines = _context.TicketPartLines.Where(l => l.WithdrawBatchId == batchId).ToList();
         var techLoc = _context.Locations.FirstOrDefault(l => l.LocationType == "OL_TECHNICIAN");
 
-        // The WH-RAT side already left the books at ApproveTicket — this only lands the part in
-        // the tech's on-hand bucket now that they actually have it in hand. Pure addition, so
-        // there's no negative-stock case to guard against here.
+        // The WH-RAT side already left the books at ApproveBatch — this only lands the part in the
+        // tech's on-hand bucket now that they actually have it in hand. Pure addition, so there's
+        // no negative-stock case to guard against here.
         foreach (var line in withdrawLines)
         {
             _stock.AdjustStock(
                 partNo: line.PartNo, locationId: techLoc?.Id ?? 0, qtyDelta: line.Quantity, condition: "Good",
-                movementType: "Issue", refType: "Ticket", refId: id.ToString(),
-                userName: ticket.TechName, remarks: $"Issued for ticket {ticket.ExternalTicketNo}");
+                movementType: "Issue", refType: "WithdrawBatch", refId: batchId.ToString(),
+                userName: ticket?.TechName ?? "", remarks: $"Issued for ticket {ticket?.ExternalTicketNo}");
         }
 
-        ticket.Status = "เบิก";
-        ticket.UpdatedAt = DateTime.Now;
+        batch.Status = "เบิก";
+        batch.UpdatedAt = DateTime.Now;
         _context.SaveChanges();
-        return Ok(new { message = "Received.", ticket });
+        return Ok(new { message = "Received.", batch });
     }
 
-    // PUT /api/Ticket/{id}/return — technician submits the return request (Form 2, partial return OK)
+    // PUT /api/Ticket/{id}/return — technician submits the return request (Form 2, partial return
+    // OK). Sourced from any/all of this Ticket's withdraw batches currently at "เบิก" — no more
+    // combining separate sibling Tickets client-side, since it's all one Ticket now.
     [HttpPut("{id}/return")]
     public IActionResult SubmitReturn(int id, [FromBody] SubmitLinesDto dto)
     {
         var ticket = _context.Tickets.FirstOrDefault(t => t.TicketId == id);
         if (ticket == null) return NotFound(new { message = "Ticket not found." });
-        if (ticket.Status != "เบิก") return BadRequest(new { message = "Only a withdrawn ticket can be returned." });
+        if (!_context.WithdrawBatches.Any(b => b.TicketId == id && b.Status == "เบิก"))
+            return BadRequest(new { message = "Only a ticket with at least one received withdraw batch can be returned." });
         if (dto.Lines == null || dto.Lines.Count == 0) return BadRequest(new { message = "Select at least one part." });
         if (string.IsNullOrWhiteSpace(dto.Address)) return BadRequest(new { message = "Address is required." });
 
@@ -539,8 +599,8 @@ public class TicketController : ControllerBase
     }
 
     // PUT /api/Ticket/{id}/approve-return — Admin reviews a submitted return request (parts,
-    // conditions, attached photos — both the lines that match the original withdraw and any
-    // extra "off-ticket" ones the tech added, see isOffTicket on GetAllTickets) and confirms it.
+    // conditions, attached photos — both the lines that match an original withdraw and any extra
+    // "off-ticket" ones the tech added, see isOffTicket on GetAllTickets) and confirms it.
     [HttpPut("{id}/approve-return")]
     public IActionResult ApproveReturn(int id)
     {
@@ -556,10 +616,10 @@ public class TicketController : ControllerBase
         return Ok(new { message = "Return approved.", ticket });
     }
 
-    // PUT /api/Ticket/{id}/reject-return — Admin sends a submitted return back for the tech to
-    // fix and resubmit (mirrors RejectTicket on the withdraw leg). Clears the Return lines/reason
-    // so SubmitReturn starts clean next time, and reverts the ticket to เบิก — the tech still has
-    // the part in hand, nothing here should look like the whole withdraw got undone.
+    // PUT /api/Ticket/{id}/reject-return — Admin sends a submitted return back for the tech to fix
+    // and resubmit (mirrors RejectBatch on the withdraw leg). Clears the Return lines/reason so
+    // SubmitReturn starts clean next time, and reverts the ticket to เบิก — the tech still has the
+    // part in hand, nothing here should look like the whole withdraw got undone.
     [HttpPut("{id}/reject-return")]
     public IActionResult RejectReturn(int id, [FromBody] RejectDto dto)
     {
@@ -582,8 +642,8 @@ public class TicketController : ControllerBase
     }
 
     // PUT /api/Ticket/{id}/send-email-return — Admin confirms the DHL "please come collect this
-    // return" email actually went out. Return-leg counterpart of SendEmailConfirmed. From here the
-    // ticket is locked against Cancel, same reasoning as the withdraw leg (see CancelTicket).
+    // return" email actually went out. Return-leg counterpart of SendEmailConfirmedBatch. From
+    // here the ticket is locked against Cancel, same reasoning as the withdraw leg.
     [HttpPut("{id}/send-email-return")]
     public IActionResult SendEmailConfirmedReturn(int id)
     {
@@ -635,9 +695,8 @@ public class TicketController : ControllerBase
             try
             {
                 // Comes out of the tech's on-hand bucket either way — Good/Bad go back into the
-                // warehouse, Lost is a write-off, but in every case it's no longer sitting with
-                // the tech once this confirms. (Previously this never touched techLoc at all, so
-                // "อยู่กับช่าง" only ever grew and never reflected completed returns.)
+                // warehouse, Lost is a write-off, but in every case it's no longer sitting with the
+                // tech once this confirms.
                 _stock.AdjustStock(
                     partNo: line.PartNo, locationId: techLoc?.Id ?? 0, qtyDelta: -line.Quantity, condition: "Good",
                     movementType: "Return", refType: "Ticket", refId: id.ToString(),
@@ -665,9 +724,32 @@ public class TicketController : ControllerBase
         return Ok(new { message = "Return confirmed.", ticket });
     }
 
+    // PUT /api/Ticket/{id}/cancel — Admin cancels the RETURN leg in progress. No reason needed.
+    // (Cancelling an individual withdraw batch is CancelBatch above — a Ticket no longer has a
+    // single withdraw status of its own to cancel.)
+    [HttpPut("{id}/cancel")]
+    public IActionResult CancelTicket(int id)
+    {
+        var ticket = _context.Tickets.FirstOrDefault(t => t.TicketId == id);
+        if (ticket == null) return NotFound(new { message = "Ticket not found." });
+        if (ticket.Status is null or "Reject" or "Cancel" or "คืน")
+            return BadRequest(new { message = "Ticket has no return in progress to cancel." });
+
+        // Once Admin has actually told DHL something (กำลังเดินทางรับคืน, or เดินทาง which only
+        // happens after that point once the tech has shipped), it's no longer a self-service undo.
+        if (ticket.Status == "กำลังเดินทางรับคืน" || ticket.Status == "เดินทาง")
+            return BadRequest(new { message = "ยกเลิกไม่ได้แล้ว — Admin ส่งเมลแจ้ง DHL ไปแล้ว" });
+
+        ticket.Status = "Cancel";
+        ticket.UpdatedAt = DateTime.Now;
+        _context.SaveChanges();
+        _audit.Log(User, "Ticket", id.ToString(), "CANCEL", null, new { ticket.TicketId, ticket.Status });
+        return Ok(new { message = "Cancelled.", ticket });
+    }
+
     // POST /api/Ticket/upload — technician attaches a photo to a withdraw/return submission.
     // Called once per file from the frontend; the returned path is then included in the
-    // Attachments list sent to /withdraw or /return so it gets tied to the ticket.
+    // Attachments list sent to /withdraw-batches or /return so it gets tied to the batch/ticket.
     [HttpPost("upload")]
     [RequestSizeLimit(10_000_000)]
     public async Task<IActionResult> UploadAttachment(IFormFile file)
@@ -699,23 +781,18 @@ public class TicketController : ControllerBase
         return Ok(new { filePath = $"/assets/tickets/{fileName}", fileName = file.FileName });
     }
 
-    // POST /api/Ticket/export-dhl-excel — Admin selects several tickets ready to notify DHL about
-    // (withdraw side: "รอส่งเมล DHL"; return side: "อนุมัติคืน") and downloads one Excel file
-    // covering all of them, instead of composing a separate email per ticket. Doesn't change any
-    // ticket state — purely a read/export; Admin still clicks "ส่งเมลสำเร็จ" / ships separately
-    // per ticket afterward.
+    // POST /api/Ticket/export-dhl-excel — Admin selects several withdraw batches ready to notify
+    // DHL about ("รอส่งเมล DHL") and/or several returns ("อนุมัติคืน") and downloads one Excel
+    // file covering all of them, instead of composing a separate email per item. Doesn't change
+    // any state — purely a read/export.
     [HttpPost("export-dhl-excel")]
     public IActionResult ExportDhlExcel([FromBody] ExportDhlExcelDto dto)
     {
-        if (dto.TicketIds == null || dto.TicketIds.Count == 0)
-            return BadRequest(new { message = "Select at least one ticket to export." });
+        var withdrawBatchIds = dto.WithdrawBatchIds ?? new();
+        var returnTicketIds = dto.TicketIds ?? new();
+        if (withdrawBatchIds.Count == 0 && returnTicketIds.Count == 0)
+            return BadRequest(new { message = "Select at least one item to export." });
 
-        var tickets = _context.Tickets.Where(t => dto.TicketIds.Contains(t.TicketId)).ToList();
-        if (!tickets.Any()) return NotFound(new { message = "No matching tickets found." });
-
-        var lines = _context.TicketPartLines
-            .Where(l => dto.TicketIds.Contains(l.TicketId))
-            .ToList();
         var partNameByNo = _context.Parts.ToDictionary(p => p.PartNo, p => p.PartName);
 
         using var wb = new ClosedXML.Excel.XLWorkbook();
@@ -725,39 +802,72 @@ public class TicketController : ControllerBase
         ws.Row(1).Style.Font.Bold = true;
 
         int row = 2;
-        foreach (var t in tickets)
+
+        if (withdrawBatchIds.Count > 0)
         {
-            var isWithdraw = t.Status == "รอส่งเมล DHL";
-            var lineType = isWithdraw ? "Withdraw" : "Return";
-            var ticketLines = lines.Where(l => l.TicketId == t.TicketId && l.LineType == lineType).ToList();
-            var address = isWithdraw ? t.WithdrawAddress : t.ReturnAddress;
-            var typeLabel = isWithdraw ? "เบิก" : "คืน";
-
-            if (!ticketLines.Any())
+            var batches = _context.WithdrawBatches.Include(b => b.Ticket).Where(b => withdrawBatchIds.Contains(b.WithdrawBatchId)).ToList();
+            var batchLines = _context.TicketPartLines.Where(l => l.WithdrawBatchId != null && withdrawBatchIds.Contains(l.WithdrawBatchId.Value)).ToList();
+            foreach (var b in batches)
             {
-                ws.Cell(row, 1).Value = typeLabel;
-                ws.Cell(row, 2).Value = t.ExternalTicketNo;
-                ws.Cell(row, 3).Value = t.WithdrawSlipNo ?? "";
-                ws.Cell(row, 4).Value = t.TechName;
-                ws.Cell(row, 5).Value = t.TechDept;
-                ws.Cell(row, 10).Value = address ?? "";
-                row++;
-                continue;
+                var bLines = batchLines.Where(l => l.WithdrawBatchId == b.WithdrawBatchId).ToList();
+                if (!bLines.Any())
+                {
+                    ws.Cell(row, 1).Value = "เบิก";
+                    ws.Cell(row, 2).Value = b.Ticket?.ExternalTicketNo ?? "";
+                    ws.Cell(row, 3).Value = b.WithdrawSlipNo ?? "";
+                    ws.Cell(row, 4).Value = b.Ticket?.TechName ?? "";
+                    ws.Cell(row, 5).Value = b.Ticket?.TechDept ?? "";
+                    ws.Cell(row, 10).Value = b.WithdrawAddress ?? "";
+                    row++;
+                    continue;
+                }
+                foreach (var l in bLines)
+                {
+                    ws.Cell(row, 1).Value = "เบิก";
+                    ws.Cell(row, 2).Value = b.Ticket?.ExternalTicketNo ?? "";
+                    ws.Cell(row, 3).Value = b.WithdrawSlipNo ?? "";
+                    ws.Cell(row, 4).Value = b.Ticket?.TechName ?? "";
+                    ws.Cell(row, 5).Value = b.Ticket?.TechDept ?? "";
+                    ws.Cell(row, 6).Value = l.PartNo;
+                    ws.Cell(row, 7).Value = partNameByNo.GetValueOrDefault(l.PartNo, l.PartNo);
+                    ws.Cell(row, 8).Value = l.Quantity;
+                    ws.Cell(row, 9).Value = l.Condition ?? "";
+                    ws.Cell(row, 10).Value = b.WithdrawAddress ?? "";
+                    row++;
+                }
             }
+        }
 
-            foreach (var l in ticketLines)
+        if (returnTicketIds.Count > 0)
+        {
+            var tickets = _context.Tickets.Where(t => returnTicketIds.Contains(t.TicketId)).ToList();
+            var tLines = _context.TicketPartLines.Where(l => returnTicketIds.Contains(l.TicketId) && l.LineType == "Return").ToList();
+            foreach (var t in tickets)
             {
-                ws.Cell(row, 1).Value = typeLabel;
-                ws.Cell(row, 2).Value = t.ExternalTicketNo;
-                ws.Cell(row, 3).Value = t.WithdrawSlipNo ?? "";
-                ws.Cell(row, 4).Value = t.TechName;
-                ws.Cell(row, 5).Value = t.TechDept;
-                ws.Cell(row, 6).Value = l.PartNo;
-                ws.Cell(row, 7).Value = partNameByNo.GetValueOrDefault(l.PartNo, l.PartNo);
-                ws.Cell(row, 8).Value = l.Quantity;
-                ws.Cell(row, 9).Value = l.Condition ?? "";
-                ws.Cell(row, 10).Value = address ?? "";
-                row++;
+                var ticketLines = tLines.Where(l => l.TicketId == t.TicketId).ToList();
+                if (!ticketLines.Any())
+                {
+                    ws.Cell(row, 1).Value = "คืน";
+                    ws.Cell(row, 2).Value = t.ExternalTicketNo;
+                    ws.Cell(row, 4).Value = t.TechName;
+                    ws.Cell(row, 5).Value = t.TechDept;
+                    ws.Cell(row, 10).Value = t.ReturnAddress ?? "";
+                    row++;
+                    continue;
+                }
+                foreach (var l in ticketLines)
+                {
+                    ws.Cell(row, 1).Value = "คืน";
+                    ws.Cell(row, 2).Value = t.ExternalTicketNo;
+                    ws.Cell(row, 4).Value = t.TechName;
+                    ws.Cell(row, 5).Value = t.TechDept;
+                    ws.Cell(row, 6).Value = l.PartNo;
+                    ws.Cell(row, 7).Value = partNameByNo.GetValueOrDefault(l.PartNo, l.PartNo);
+                    ws.Cell(row, 8).Value = l.Quantity;
+                    ws.Cell(row, 9).Value = l.Condition ?? "";
+                    ws.Cell(row, 10).Value = t.ReturnAddress ?? "";
+                    row++;
+                }
             }
         }
         ws.Columns().AdjustToContents();
@@ -771,7 +881,8 @@ public class TicketController : ControllerBase
 
 public class ExportDhlExcelDto
 {
-    public List<int> TicketIds { get; set; } = new();
+    public List<int> TicketIds { get; set; } = new();          // return-leg candidates (unchanged)
+    public List<int>? WithdrawBatchIds { get; set; } = new();  // withdraw-leg candidates (batch-scoped)
 }
 
 public class SubstituteDto
@@ -795,11 +906,11 @@ public class SubmitLinesDto
     public List<AttachmentDto>? Attachments { get; set; }
     // Withdraw only — free-text note on why these parts are needed (e.g. "Card reader เสีย").
     public string? Description { get; set; }
-    // Withdraw only — see Ticket.WithdrawDate/EmployeeCode/UsageStatus.
+    // Withdraw only — see WithdrawBatch.WithdrawDate/EmployeeCode/UsageStatus.
     public DateTime? WithdrawDate { get; set; }
     public string? EmployeeCode { get; set; }
     public string? UsageStatus { get; set; } // "Repair" | "Keep"
-    // Withdraw only — see Ticket.TechSupportName. Null/blank = "ไม่มี" (didn't consult anyone).
+    // Withdraw only — see WithdrawBatch.TechSupportName. Null/blank = "ไม่มี" (didn't consult anyone).
     public string? TechSupportName { get; set; }
 }
 

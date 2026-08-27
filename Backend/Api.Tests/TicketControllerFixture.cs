@@ -67,12 +67,12 @@ public static class TicketControllerFixture
         context.SaveChanges();
     }
 
-    /// <summary>Syncs a ticket, submits+receives a withdraw so it's ready for a return test.
+    /// <summary>Syncs a ticket, submits+receives a withdraw batch so it's ready for a return test.
     /// SubmitWithdraw auto-approves on its own now (see TicketController.TryAutoApprove) as long
-    /// as the fixture's default 100-unit stock covers qty, landing on "รอส่งเมล DHL" — SendEmailConfirmed
-    /// is what actually moves it to "เดินทาง" (Admin confirming the DHL email went out) so
-    /// ReceiveTicket has something to receive.</summary>
-    public static Ticket CreateReceivedTicket(TicketController controller, AppDbContext context, string externalNo, int qty = 1)
+    /// as the fixture's default 100-unit stock covers qty, landing the batch on "รอส่งเมล DHL" —
+    /// SendEmailConfirmedBatch is what actually moves it to "เดินทาง" (Admin confirming the DHL
+    /// email went out) so ReceiveBatch has something to receive.</summary>
+    public static (Ticket Ticket, WithdrawBatch Batch) CreateReceivedTicket(TicketController controller, AppDbContext context, string externalNo, int qty = 1)
     {
         controller.SyncFromAservice(new SyncTicketDto { ExternalTicketNo = externalNo, TechName = "Tech" });
         var ticket = context.Tickets.First(t => t.ExternalTicketNo == externalNo);
@@ -82,10 +82,11 @@ public static class TicketControllerFixture
             Lines = new() { new LineDto { PartNo = PartNo, Quantity = qty } },
             Address = "Withdraw Addr"
         });
-        controller.SendEmailConfirmed(ticket.TicketId);
-        controller.ReceiveTicket(ticket.TicketId);
+        var batch = context.WithdrawBatches.First(b => b.TicketId == ticket.TicketId);
+        controller.SendEmailConfirmedBatch(ticket.TicketId, batch.WithdrawBatchId);
+        controller.ReceiveBatch(ticket.TicketId, batch.WithdrawBatchId);
 
-        return context.Tickets.First(t => t.TicketId == ticket.TicketId);
+        return (context.Tickets.First(t => t.TicketId == ticket.TicketId), context.WithdrawBatches.First(b => b.WithdrawBatchId == batch.WithdrawBatchId));
     }
 
     private class FakeWebHostEnvironment : IWebHostEnvironment

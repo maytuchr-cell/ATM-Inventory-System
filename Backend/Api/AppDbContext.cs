@@ -78,11 +78,11 @@ public class AppDbContext : DbContext
             .HasForeignKey(p => p.CategoryId)
             .OnDelete(DeleteBehavior.SetNull);
 
-        // Not unique — one Aservice Ticket can carry multiple independent ใบเบิก (withdraw
-        // slips), each its own Ticket row with its own withdraw/return cycle. See
-        // TicketController.CreateAdditionalWithdraw.
+        // One Ticket row per Case No. — multiple independent ใบเบิก under the same case now live
+        // as WithdrawBatch rows (see WithdrawBatch.cs) instead of separate sibling Ticket rows.
         modelBuilder.Entity<Ticket>()
-            .HasIndex(t => t.ExternalTicketNo);
+            .HasIndex(t => t.ExternalTicketNo)
+            .IsUnique();
 
         modelBuilder.Entity<TicketPartLine>()
             .HasOne(l => l.Ticket)

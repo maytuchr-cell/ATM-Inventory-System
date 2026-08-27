@@ -347,24 +347,11 @@ using (var scope = app.Services.CreateScope())
                 context.Database.ExecuteSqlRaw("ALTER TABLE Tickets ADD COLUMN ReturnEmailSentAt TEXT NULL;");
                 Console.WriteLine("✅ Migration: added Tickets.ReturnEmailSentAt");
             }
-            // One Aservice Ticket can now carry multiple independent ใบเบิก (withdraw slips) —
-            // drop the old unique index on ExternalTicketNo on DBs created before this, so a
-            // second/third withdraw under the same ticket number is no longer blocked.
-            try
-            {
-                using var cmd = context.Database.GetDbConnection().CreateCommand();
-                if (cmd.Connection!.State != System.Data.ConnectionState.Open) cmd.Connection.Open();
-                cmd.CommandText = "SELECT sql FROM sqlite_master WHERE type='index' AND name='IX_Tickets_ExternalTicketNo';";
-                var indexSql = cmd.ExecuteScalar() as string;
-                if (indexSql != null && indexSql.Contains("UNIQUE", StringComparison.OrdinalIgnoreCase))
-                {
-                    context.Database.ExecuteSqlRaw("DROP INDEX IX_Tickets_ExternalTicketNo;");
-                    context.Database.ExecuteSqlRaw(
-                        "CREATE INDEX IF NOT EXISTS IX_Tickets_ExternalTicketNo ON Tickets (ExternalTicketNo);");
-                    Console.WriteLine("✅ Migration: made Tickets.ExternalTicketNo non-unique (multi-withdraw support)");
-                }
-            }
-            catch (Exception mex) { Console.WriteLine($"⚠ ExternalTicketNo uniqueness migration skipped: {mex.Message}"); }
+            // NOTE: this used to drop ExternalTicketNo's unique index here (multi-withdraw
+            // support via sibling Ticket rows). That mechanic is superseded by WithdrawBatch —
+            // see the "Tighten Tickets.ExternalTicketNo back to a unique index" migration below,
+            // which re-adds uniqueness once the WithdrawBatch backfill has merged any sibling
+            // rows that still exist from before this change.
             context.Database.ExecuteSqlRaw(@"
                 CREATE TABLE IF NOT EXISTS TicketPartLines (
                     TicketPartLineId INTEGER NOT NULL CONSTRAINT PK_TicketPartLines PRIMARY KEY AUTOINCREMENT,
@@ -466,6 +453,190 @@ using (var scope = app.Services.CreateScope())
             }
         }
         catch (Exception mex) { Console.WriteLine($"⚠ WithdrawBatches migration skipped: {mex.Message}"); }
+
+        // ── One-shot data migration: fold existing Ticket rows' withdraw fields into
+        //    WithdrawBatch rows, and merge "sibling" Ticket rows that share an ExternalTicketNo
+        //    (the old multi-withdraw mechanic — see CreateAdditionalWithdraw, now removed) into a
+        //    single canonical Ticket per Case No. Ticket.cs no longer maps the legacy withdraw
+        //    columns (WithdrawAddress, WithdrawSlipNo, etc.), so they're read here via raw ADO.NET
+        //    against the still-present physical columns (see the "don't drop vestigial columns"
+        //    note on Ticket.cs / the WithdrawBatches migration above). Guarded to run only once —
+        //    skipped entirely once any WithdrawBatch row exists. ──
+        if (isSqlite) try
+        {
+            if (!context.WithdrawBatches.Any())
+            {
+                var rawTickets = new List<RawTicketRow>();
+                using (var cmd = context.Database.GetDbConnection().CreateCommand())
+                {
+                    if (cmd.Connection!.State != System.Data.ConnectionState.Open) cmd.Connection.Open();
+                    cmd.CommandText = @"SELECT TicketId, ExternalTicketNo, Status, RejectReason, ApproverName, ApprovedAt,
+                        EmailSentAt, WithdrawAddress, ReturnAddress, WithdrawDescription, WithdrawSlipNo, WithdrawDate,
+                        EmployeeCode, UsageStatus, TechSupportName, ReturnEmailSentAt, CreatedAt, UpdatedAt
+                        FROM Tickets ORDER BY CreatedAt;";
+                    using var reader = cmd.ExecuteReader();
+                    while (reader.Read())
+                    {
+                        rawTickets.Add(new RawTicketRow
+                        {
+                            TicketId = reader.GetInt32(0),
+                            ExternalTicketNo = reader.GetString(1),
+                            Status = reader.IsDBNull(2) ? null : reader.GetString(2),
+                            RejectReason = reader.IsDBNull(3) ? null : reader.GetString(3),
+                            ApproverName = reader.IsDBNull(4) ? null : reader.GetString(4),
+                            ApprovedAt = reader.IsDBNull(5) ? null : DateTime.Parse(reader.GetString(5)),
+                            EmailSentAt = reader.IsDBNull(6) ? null : DateTime.Parse(reader.GetString(6)),
+                            WithdrawAddress = reader.IsDBNull(7) ? null : reader.GetString(7),
+                            ReturnAddress = reader.IsDBNull(8) ? null : reader.GetString(8),
+                            WithdrawDescription = reader.IsDBNull(9) ? null : reader.GetString(9),
+                            WithdrawSlipNo = reader.IsDBNull(10) ? null : reader.GetString(10),
+                            WithdrawDate = reader.IsDBNull(11) ? null : DateTime.Parse(reader.GetString(11)),
+                            EmployeeCode = reader.IsDBNull(12) ? null : reader.GetString(12),
+                            UsageStatus = reader.IsDBNull(13) ? null : reader.GetString(13),
+                            TechSupportName = reader.IsDBNull(14) ? null : reader.GetString(14),
+                            ReturnEmailSentAt = reader.IsDBNull(15) ? null : DateTime.Parse(reader.GetString(15)),
+                            CreatedAt = DateTime.Parse(reader.GetString(16)),
+                            UpdatedAt = DateTime.Parse(reader.GetString(17)),
+                        });
+                    }
+                }
+
+                var conflictLog = new List<string>();
+                var groups = rawTickets.GroupBy(t => t.ExternalTicketNo).ToList();
+                foreach (var group in groups)
+                {
+                    var ordered = group.OrderBy(t => t.CreatedAt).ToList();
+                    var canonicalId = ordered[0].TicketId;
+                    var canonicalTicket = context.Tickets.First(t => t.TicketId == canonicalId);
+
+                    foreach (var row in ordered)
+                    {
+                        var hasWithdrawLines = context.TicketPartLines.Any(l => l.TicketId == row.TicketId && l.LineType == "Withdraw");
+                        var hasReturnLines = context.TicketPartLines.Any(l => l.TicketId == row.TicketId && l.LineType == "Return");
+                        var isReturnPhase = row.ReturnAddress != null || hasReturnLines;
+
+                        // Never actually submitted a withdraw (bare synced Ticket) — nothing to
+                        // turn into a batch.
+                        if (row.Status == null && !hasWithdrawLines && !isReturnPhase)
+                        {
+                            if (row.TicketId != canonicalId)
+                                context.Tickets.Remove(context.Tickets.First(t => t.TicketId == row.TicketId));
+                            continue;
+                        }
+
+                        // A row that had already moved into its return leg has a return-phase
+                        // Status, not a withdraw one — the withdraw batch's true terminal status
+                        // must have been "เบิก" (the precondition for a return to exist).
+                        var batchStatus = isReturnPhase ? "เบิก" : row.Status;
+
+                        var batch = new WithdrawBatch
+                        {
+                            TicketId = canonicalId,
+                            Status = batchStatus,
+                            RejectReason = isReturnPhase ? null : row.RejectReason,
+                            ApproverName = row.ApproverName,
+                            ApprovedAt = row.ApprovedAt,
+                            EmailSentAt = row.EmailSentAt,
+                            WithdrawAddress = row.WithdrawAddress,
+                            WithdrawDescription = row.WithdrawDescription,
+                            WithdrawSlipNo = row.WithdrawSlipNo,
+                            WithdrawDate = row.WithdrawDate,
+                            EmployeeCode = row.EmployeeCode,
+                            UsageStatus = row.UsageStatus,
+                            TechSupportName = row.TechSupportName,
+                            CreatedAt = row.CreatedAt,
+                            UpdatedAt = row.UpdatedAt,
+                        };
+                        context.WithdrawBatches.Add(batch);
+                        context.SaveChanges(); // need batch.WithdrawBatchId below
+
+                        foreach (var l in context.TicketPartLines.Where(l => l.TicketId == row.TicketId && l.LineType == "Withdraw"))
+                        {
+                            l.WithdrawBatchId = batch.WithdrawBatchId;
+                            l.TicketId = canonicalId;
+                        }
+                        foreach (var a in context.TicketAttachments.Where(a => a.TicketId == row.TicketId && a.Phase == "Withdraw"))
+                        {
+                            a.WithdrawBatchId = batch.WithdrawBatchId;
+                            a.TicketId = canonicalId;
+                        }
+
+                        if (row.TicketId != canonicalId)
+                        {
+                            // Sibling — re-point its Return-phase lines/attachments to canonical,
+                            // and merge its return data if canonical doesn't already have one in
+                            // flight (two independent in-flight returns can't both survive under
+                            // one Ticket — flag, don't silently drop).
+                            foreach (var l in context.TicketPartLines.Where(l => l.TicketId == row.TicketId && l.LineType == "Return"))
+                                l.TicketId = canonicalId;
+                            foreach (var a in context.TicketAttachments.Where(a => a.TicketId == row.TicketId && a.Phase == "Return"))
+                                a.TicketId = canonicalId;
+
+                            if (isReturnPhase)
+                            {
+                                if (canonicalTicket.ReturnAddress != null)
+                                    conflictLog.Add($"ExternalTicketNo={row.ExternalTicketNo}: sibling TicketId={row.TicketId} had its own return in flight (ReturnAddress={row.ReturnAddress}) while canonical TicketId={canonicalId} already has one (ReturnAddress={canonicalTicket.ReturnAddress}) — manual review needed, return data left on the re-pointed lines.");
+                                else
+                                {
+                                    canonicalTicket.Status = row.Status;
+                                    canonicalTicket.ReturnAddress = row.ReturnAddress;
+                                    canonicalTicket.RejectReason = row.RejectReason;
+                                    canonicalTicket.ApproverName = row.ApproverName;
+                                    canonicalTicket.ApprovedAt = row.ApprovedAt;
+                                    canonicalTicket.ReturnEmailSentAt = row.ReturnEmailSentAt;
+                                }
+                            }
+
+                            context.SaveChanges();
+                            context.Tickets.Remove(context.Tickets.First(t => t.TicketId == row.TicketId));
+                        }
+                        else if (isReturnPhase)
+                        {
+                            canonicalTicket.Status = row.Status;
+                            canonicalTicket.ReturnAddress = row.ReturnAddress;
+                            canonicalTicket.RejectReason = row.RejectReason;
+                            canonicalTicket.ApproverName = row.ApproverName;
+                            canonicalTicket.ApprovedAt = row.ApprovedAt;
+                            canonicalTicket.ReturnEmailSentAt = row.ReturnEmailSentAt;
+                        }
+                        else
+                        {
+                            canonicalTicket.Status = null;
+                        }
+
+                        context.SaveChanges();
+                    }
+                }
+
+                Console.WriteLine($"✅ Migration: backfilled {groups.Count} canonical Tickets from {rawTickets.Count} rows into WithdrawBatches" +
+                    (conflictLog.Any() ? $" ({conflictLog.Count} conflicts flagged — see below)" : ""));
+                foreach (var c in conflictLog) Console.WriteLine($"⚠ MERGE CONFLICT: {c}");
+            }
+        }
+        catch (Exception mex) { Console.WriteLine($"⚠ WithdrawBatch backfill skipped: {mex.Message}"); }
+
+        // Tighten Tickets.ExternalTicketNo back to a unique index — must run strictly after the
+        // backfill/merge above dedupes any sibling rows, otherwise creating the constraint fails
+        // outright on a DB that still has duplicates (which would mean the backfill left some
+        // behind — a bug worth surfacing loudly, not skipping quietly).
+        if (isSqlite) try
+        {
+            using var cmd = context.Database.GetDbConnection().CreateCommand();
+            if (cmd.Connection!.State != System.Data.ConnectionState.Open) cmd.Connection.Open();
+            cmd.CommandText = "SELECT sql FROM sqlite_master WHERE type='index' AND name='IX_Tickets_ExternalTicketNo';";
+            var indexSql = cmd.ExecuteScalar() as string;
+            if (indexSql != null && !indexSql.Contains("UNIQUE", StringComparison.OrdinalIgnoreCase))
+            {
+                context.Database.ExecuteSqlRaw("DROP INDEX IX_Tickets_ExternalTicketNo;");
+                context.Database.ExecuteSqlRaw(
+                    "CREATE UNIQUE INDEX IF NOT EXISTS IX_Tickets_ExternalTicketNo ON Tickets (ExternalTicketNo);");
+                Console.WriteLine("✅ Migration: made Tickets.ExternalTicketNo unique again (WithdrawBatch backfill complete)");
+            }
+        }
+        catch (Exception mex)
+        {
+            Console.WriteLine($"⚠⚠ ExternalTicketNo uniqueness migration FAILED — this likely means duplicate ExternalTicketNo rows survived the backfill above. Investigate before relying on Ticket uniqueness. Error: {mex.Message}");
+        }
 
         // ── Lightweight migration: add StockMovement.PartId (FK to Part) on existing DBs ──
         if (isSqlite) try
@@ -1355,27 +1526,38 @@ using (var scope = app.Services.CreateScope())
             void SeedTicket(string extNo, string techName, string techDept, string status,
                 string partNo, int daysAgo, string? withdrawAddr = "Demo Address", string? returnAddr = null)
             {
+                // `status` here is the WITHDRAW batch's status, except "คืน" which really means
+                // the withdraw batch is เบิก (received) AND the Ticket's return leg has closed.
+                var batchStatus = status == "คืน" ? "เบิก" : status;
+                var ticketReturnStatus = status == "คืน" ? "คืน" : null;
+
                 var ticket = new Ticket
                 {
                     ExternalTicketNo = extNo, TechEmail = "tech@atm.com", TechName = techName, TechDept = techDept,
-                    Status = status, WithdrawAddress = withdrawAddr, ReturnAddress = returnAddr,
-                    ApproverName = status is "เดินทาง" or "เบิก" or "คืน" ? "admin@atm.com" : null,
-                    ApprovedAt = status is "เดินทาง" or "เบิก" or "คืน" ? DateTime.Now.AddDays(-daysAgo + 1) : null,
+                    Status = ticketReturnStatus, ReturnAddress = returnAddr,
                     CreatedAt = DateTime.Now.AddDays(-daysAgo), UpdatedAt = DateTime.Now.AddDays(-daysAgo + 1),
                 };
                 context.Tickets.Add(ticket);
                 context.SaveChanges();
-                if (status != null)
+
+                var batch = new WithdrawBatch
                 {
+                    TicketId = ticket.TicketId, Status = batchStatus, WithdrawAddress = withdrawAddr,
+                    ApproverName = batchStatus is "เดินทาง" or "เบิก" ? "admin@atm.com" : null,
+                    ApprovedAt = batchStatus is "เดินทาง" or "เบิก" ? DateTime.Now.AddDays(-daysAgo + 1) : null,
+                    CreatedAt = DateTime.Now.AddDays(-daysAgo), UpdatedAt = DateTime.Now.AddDays(-daysAgo + 1),
+                };
+                context.WithdrawBatches.Add(batch);
+                context.SaveChanges();
+
+                context.TicketPartLines.Add(new TicketPartLine
+                { TicketId = ticket.TicketId, WithdrawBatchId = batch.WithdrawBatchId, PartId = context.Parts.First(p => p.PartNo == partNo).Id,
+                  PartNo = partNo, Quantity = 1, LineType = "Withdraw" });
+                if (returnAddr != null)
                     context.TicketPartLines.Add(new TicketPartLine
                     { TicketId = ticket.TicketId, PartId = context.Parts.First(p => p.PartNo == partNo).Id,
-                      PartNo = partNo, Quantity = 1, LineType = "Withdraw" });
-                    if (returnAddr != null)
-                        context.TicketPartLines.Add(new TicketPartLine
-                        { TicketId = ticket.TicketId, PartId = context.Parts.First(p => p.PartNo == partNo).Id,
-                          PartNo = partNo, Quantity = 1, LineType = "Return", Condition = "Good" });
-                    context.SaveChanges();
-                }
+                      PartNo = partNo, Quantity = 1, LineType = "Return", Condition = "Good" });
+                context.SaveChanges();
             }
 
             // เบิก — received, closed withdraw leg (admin history)
@@ -1388,17 +1570,23 @@ using (var scope = app.Services.CreateScope())
             SeedTicket("ASV-SEED-004", "Wanchai Deeprom", "East Zone", "รอ", "ATM-002", 1);
             // รอ — second waiting request
             SeedTicket("ASV-SEED-005", "Nattapong Ruanrit", "West Zone", "รอ", "ATM-008", 0);
-            // Reject (admin history)
+            // Reject (admin history) — the withdraw batch is rejected, Ticket itself has no return in flight
             var rejected = new Ticket
             {
                 ExternalTicketNo = "ASV-SEED-006", TechEmail = "tech@atm.com", TechName = "Somkiat Suchivit",
-                TechDept = "South Zone", Status = "Reject", RejectReason = "อะไหล่ไม่ตรงกับรุ่นเครื่อง",
-                WithdrawAddress = "Demo Address", CreatedAt = DateTime.Now.AddDays(-3), UpdatedAt = DateTime.Now.AddDays(-3),
+                TechDept = "South Zone", CreatedAt = DateTime.Now.AddDays(-3), UpdatedAt = DateTime.Now.AddDays(-3),
             };
             context.Tickets.Add(rejected);
             context.SaveChanges();
+            var rejectedBatch = new WithdrawBatch
+            {
+                TicketId = rejected.TicketId, Status = "Reject", RejectReason = "อะไหล่ไม่ตรงกับรุ่นเครื่อง",
+                WithdrawAddress = "Demo Address", CreatedAt = DateTime.Now.AddDays(-3), UpdatedAt = DateTime.Now.AddDays(-3),
+            };
+            context.WithdrawBatches.Add(rejectedBatch);
+            context.SaveChanges();
             context.TicketPartLines.Add(new TicketPartLine
-            { TicketId = rejected.TicketId, PartId = context.Parts.First(p => p.PartNo == "ATM-003").Id,
+            { TicketId = rejected.TicketId, WithdrawBatchId = rejectedBatch.WithdrawBatchId, PartId = context.Parts.First(p => p.PartNo == "ATM-003").Id,
               PartNo = "ATM-003", Quantity = 1, LineType = "Withdraw" });
             context.SaveChanges();
 
@@ -1548,3 +1736,28 @@ app.UseAuthorization();
 app.MapControllers();
 
 app.Run();
+
+// Row shape for the one-shot Ticket → WithdrawBatch backfill migration above — reads the legacy
+// withdraw columns that Ticket.cs no longer maps (they're read via raw ADO.NET against the
+// still-present physical columns; see the migration block's comment).
+class RawTicketRow
+{
+    public int TicketId { get; set; }
+    public string ExternalTicketNo { get; set; } = string.Empty;
+    public string? Status { get; set; }
+    public string? RejectReason { get; set; }
+    public string? ApproverName { get; set; }
+    public DateTime? ApprovedAt { get; set; }
+    public DateTime? EmailSentAt { get; set; }
+    public string? WithdrawAddress { get; set; }
+    public string? ReturnAddress { get; set; }
+    public string? WithdrawDescription { get; set; }
+    public string? WithdrawSlipNo { get; set; }
+    public DateTime? WithdrawDate { get; set; }
+    public string? EmployeeCode { get; set; }
+    public string? UsageStatus { get; set; }
+    public string? TechSupportName { get; set; }
+    public DateTime? ReturnEmailSentAt { get; set; }
+    public DateTime CreatedAt { get; set; }
+    public DateTime UpdatedAt { get; set; }
+}

@@ -220,28 +220,29 @@ public class PartsController : ControllerBase
         var part = _context.Parts.FirstOrDefault(p => p.Id == id);
         if (part == null) return NotFound();
 
-        var lines = _context.TicketPartLines.Where(l => l.PartNo == part.PartNo).ToList();
-        var ticketIds = lines.Select(l => l.TicketId).Distinct().ToList();
-        var tickets = _context.Tickets.Where(t => ticketIds.Contains(t.TicketId)).ToList();
+        // A withdraw batch counts as "holding" the part once the tech has physically received it
+        // (Status == "เบิก") — that stays true regardless of whether a return has since started
+        // against the Ticket (unlike the withdraw leg used to, a batch's own Status doesn't shift
+        // once received; the return leg is tracked separately on Ticket).
+        var lines = _context.TicketPartLines
+            .Where(l => l.PartNo == part.PartNo && l.LineType == "Withdraw" && l.WithdrawBatchId != null)
+            .ToList();
+        var batchIds = lines.Select(l => l.WithdrawBatchId!.Value).Distinct().ToList();
+        var batches = _context.WithdrawBatches.Include(b => b.Ticket).Where(b => batchIds.Contains(b.WithdrawBatchId)).ToList();
 
         var holders = new List<object>();
-        foreach (var ticket in tickets)
+        foreach (var batch in batches)
         {
-            if (ticket.Status is "คืน" or "Reject" or "Cancel" or null) continue;
+            if (batch.Status != "เบิก") continue;
 
-            var tLines = lines.Where(l => l.TicketId == ticket.TicketId).ToList();
-            var isReturnPhase = ticket.ReturnAddress != null || tLines.Any(l => l.LineType == "Return");
-            // Still waiting to be picked up (withdraw leg not yet received) — nothing physically
-            // held yet regardless of what the lines say.
-            if (!isReturnPhase && ticket.Status != "เบิก") continue;
-
-            var withdrawQty = tLines.Where(l => l.LineType == "Withdraw").Sum(l => l.Quantity);
-            if (withdrawQty <= 0) continue;
+            var qty = lines.Where(l => l.WithdrawBatchId == batch.WithdrawBatchId).Sum(l => l.Quantity);
+            if (qty <= 0) continue;
 
             holders.Add(new
             {
-                ticket.TicketId, ticket.ExternalTicketNo, ticket.TechName, ticket.TechDept,
-                ticket.Status, Quantity = withdrawQty
+                TicketId = batch.TicketId, ExternalTicketNo = batch.Ticket?.ExternalTicketNo,
+                TechName = batch.Ticket?.TechName, TechDept = batch.Ticket?.TechDept,
+                Status = batch.Status, Quantity = qty
             });
         }
 

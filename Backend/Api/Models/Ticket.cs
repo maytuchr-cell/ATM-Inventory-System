@@ -1,68 +1,45 @@
 namespace Api.Models;
 
-// เบิก/ยืม/คืน — Ticket synced from Aservice. One ticket carries both the withdraw leg and the
-// return leg; TicketPartLine holds the actual part quantities for each leg (LineType).
+// เบิก/ยืม/คืน — Ticket synced from Aservice, one row per Case No. (ExternalTicketNo, unique).
+// The withdraw leg is split out into WithdrawBatches — a Ticket can carry several independent
+// ใบเบิก, each running its own รอ→รออะไหล่→รอส่งเมล DHL→เดินทาง→เบิก lifecycle. The fields below
+// (Status/RejectReason/ApproverName/ApprovedAt/ReturnAddress/ReturnEmailSentAt) now describe ONLY
+// the return leg — null until a return is submitted (SubmitReturn) against one of this Ticket's
+// received (เบิก) batches. See WithdrawBatch.cs for the withdraw-leg fields.
 public class Ticket
 {
     public int TicketId { get; set; }
 
-    public string ExternalTicketNo { get; set; } = string.Empty; // Aservice ticket no. — dedupe key for sync
+    public string ExternalTicketNo { get; set; } = string.Empty; // Aservice ticket no. — unique, dedupe key for sync
 
     // Technician (no separate Technician table in this codebase — kept inline as on the old Ticket)
     public string TechEmail { get; set; } = string.Empty;
     public string TechName  { get; set; } = string.Empty;
     public string TechDept  { get; set; } = string.Empty;
 
-    // null = synced from Aservice but the technician hasn't submitted a withdraw request yet.
-    // รอ / เดินทาง / เบิก / คืน / Reject / Cancel
+    // null = no return leg in flight (nothing submitted yet, or the last one fully closed).
+    // รอ / อนุมัติคืน / กำลังเดินทางรับคืน / เดินทาง / คืน / Reject / Cancel
     public string? Status { get; set; }
 
     public string? RejectReason { get; set; }   // required only when Status = Reject
     public string? ApproverName { get; set; }
     public DateTime? ApprovedAt { get; set; }
 
-    // Set when Admin confirms the DHL email actually went out (รอส่งเมล DHL → เดินทาง) — the
-    // tech's "expected delivery" estimate is +1 day from THIS, not ApprovedAt (auto-approve can
-    // happen well before Admin gets around to emailing DHL).
-    public DateTime? EmailSentAt { get; set; }
-
-    // Return-leg counterpart of EmailSentAt — set when Admin confirms the DHL email asking them
-    // to come collect the return went out (อนุมัติคืน → กำลังเดินทางรับคืน).
-    public DateTime? ReturnEmailSentAt { get; set; }
-
-    public string? WithdrawAddress { get; set; }
     public string? ReturnAddress  { get; set; }
 
-    // Free-text note from the tech on why they need these parts (e.g. "Card reader เสีย,
-    // ปลั๊ก Sensor ขาด") — optional, shown to Admin alongside the withdraw request.
-    public string? WithdrawDescription { get; set; }
-
-    // Set once, at the moment a withdraw request is actually submitted (SubmitWithdraw) —
-    // "WD-{year}-{5-digit running no.}", resets every calendar year. System-generated, the tech
-    // never types it in.
-    public string? WithdrawSlipNo { get; set; }
-
-    // Tech-entered date/employee code on the withdraw form — informational, doesn't drive any
-    // state transition (CreatedAt/UpdatedAt already track when the system recorded things).
-    public DateTime? WithdrawDate { get; set; }
-    public string? EmployeeCode { get; set; }
-
-    // "Repair" (เบิกไปซ่อม — tied to a specific job/Case No., expected back after the job closes)
-    // or "Keep" (เก็บ — the tech holds it as personal buffer stock, not tied to any job).
-    public string? UsageStatus { get; set; }
-
-    // Technical advisor the tech consulted before requesting this withdraw — null/omitted means
-    // "ไม่มี" (didn't consult anyone). Source list is currently mock data (see TechSupportController);
-    // planned to be swapped for a real KMM-mobile-backed roster later without changing this field.
-    public string? TechSupportName { get; set; }
+    // Set when Admin confirms the DHL email asking them to come collect the return went out
+    // (อนุมัติคืน → กำลังเดินทางรับคืน).
+    public DateTime? ReturnEmailSentAt { get; set; }
 
     public DateTime CreatedAt { get; set; } = DateTime.Now;
     public DateTime UpdatedAt { get; set; } = DateTime.Now;
 
+    // Return-leg part lines (LineType=="Return") only — withdraw lines live on each
+    // WithdrawBatch's own Lines collection instead. Kept as a direct nav property (via
+    // TicketPartLine.TicketId, which both Withdraw and Return lines still carry) mainly for
+    // EF Core convenience; controllers filter by LineType where it matters.
     public ICollection<TicketPartLine> Lines { get; set; } = new List<TicketPartLine>();
 
-    // "ใบเบิก" plural — see WithdrawBatch.cs. Populated once the Level B migration/rewrite lands;
-    // until then this stays empty and every withdraw field above (Status, WithdrawSlipNo, etc.)
-    // is still the source of truth.
+    // "ใบเบิก" plural — see WithdrawBatch.cs.
     public ICollection<WithdrawBatch> WithdrawBatches { get; set; } = new List<WithdrawBatch>();
 }

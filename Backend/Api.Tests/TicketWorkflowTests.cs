@@ -6,22 +6,22 @@ using Xunit;
 namespace Api.Tests;
 
 /// <summary>
-/// Covers the เบิก/คืน (withdraw/return) Ticket state machine end to end: sync, submit,
-/// approve, receive, submit-return, the Admin approve-return gate, ship, and confirm-return
-/// (including the resulting stock adjustment). See TicketController.cs for the state machine
-/// this mirrors.
+/// Covers the เบิก/คืน (withdraw/return) state machine end to end. The withdraw leg lives on
+/// WithdrawBatch (a Ticket can carry several independent ใบเบิก); the return leg stays on Ticket
+/// itself (one active return cycle at a time, sourced from whichever batches are at เบิก). See
+/// TicketController.cs for the state machine this mirrors.
 /// </summary>
 public class TicketWorkflowTests
 {
-    // ── Happy path ───────────────────────────────────────────────────────────
+    // ── Happy path — withdraw batch ─────────────────────────────────────────
 
     [Fact]
     public void SubmitWithdraw_WithSufficientStock_AutoApprovesAndDeductsStockImmediately()
     {
         // Auto-approve replaces the old manual-Approve-required flow: as long as the central
         // warehouse (seeded with 100 by the fixture) covers what's requested, submitting a
-        // withdraw goes straight to เดินทาง — stock cut right here, same as a manual approve
-        // used to do — with no Admin click in between. See TicketController.TryAutoApprove.
+        // withdraw goes straight to รอส่งเมล DHL — stock cut right here — with no Admin click in
+        // between. See TicketController.TryAutoApprove.
         var (controller, context) = TicketControllerFixture.Create();
         controller.SyncFromAservice(new SyncTicketDto { ExternalTicketNo = "T1", TechName = "Tech" });
         var ticket = context.Tickets.First(t => t.ExternalTicketNo == "T1");
@@ -33,20 +33,20 @@ public class TicketWorkflowTests
         });
 
         Assert.IsType<OkObjectResult>(result);
-        var updated = context.Tickets.First(t => t.TicketId == ticket.TicketId);
-        Assert.Equal("รอส่งเมล DHL", updated.Status);
-        Assert.Equal("Auto", updated.ApproverName);
-        Assert.NotNull(updated.ApprovedAt);
-        Assert.Null(updated.EmailSentAt); // not "เดินทาง" yet — that's SendEmailConfirmed's job
-        Assert.Equal("123 Main St", updated.WithdrawAddress);
-        Assert.Single(context.TicketPartLines.Where(l => l.TicketId == ticket.TicketId));
+        var batch = context.WithdrawBatches.First(b => b.TicketId == ticket.TicketId);
+        Assert.Equal("รอส่งเมล DHL", batch.Status);
+        Assert.Equal("Auto", batch.ApproverName);
+        Assert.NotNull(batch.ApprovedAt);
+        Assert.Null(batch.EmailSentAt); // not "เดินทาง" yet — that's SendEmailConfirmedBatch's job
+        Assert.Equal("123 Main St", batch.WithdrawAddress);
+        Assert.Single(context.TicketPartLines.Where(l => l.WithdrawBatchId == batch.WithdrawBatchId));
 
         var mainWh = context.Locations.First(l => l.Code == "WH-RAT");
         Assert.Equal(98, context.PartStocks.First(s => s.LocationId == mainWh.Id).GoodQty); // seeded 100 - 2
     }
 
     [Fact]
-    public void SendEmailConfirmed_OnTicketWaitingToEmailDhl_MovesToTransit()
+    public void SendEmailConfirmedBatch_OnBatchWaitingToEmailDhl_MovesToTransit()
     {
         var (controller, context) = TicketControllerFixture.Create();
         controller.SyncFromAservice(new SyncTicketDto { ExternalTicketNo = "T1C", TechName = "Tech" });
@@ -56,18 +56,19 @@ public class TicketWorkflowTests
             Lines = new() { new LineDto { PartNo = TicketControllerFixture.PartNo, Quantity = 1 } },
             Address = "Addr"
         });
-        Assert.Equal("รอส่งเมล DHL", context.Tickets.First(t => t.TicketId == ticket.TicketId).Status);
+        var batch = context.WithdrawBatches.First(b => b.TicketId == ticket.TicketId);
+        Assert.Equal("รอส่งเมล DHL", batch.Status);
 
-        var result = controller.SendEmailConfirmed(ticket.TicketId);
+        var result = controller.SendEmailConfirmedBatch(ticket.TicketId, batch.WithdrawBatchId);
 
         Assert.IsType<OkObjectResult>(result);
-        var updated = context.Tickets.First(t => t.TicketId == ticket.TicketId);
+        var updated = context.WithdrawBatches.First(b => b.WithdrawBatchId == batch.WithdrawBatchId);
         Assert.Equal("เดินทาง", updated.Status);
         Assert.NotNull(updated.EmailSentAt);
     }
 
     [Fact]
-    public void CancelTicket_OnceEmailedToDhl_IsLocked()
+    public void CancelBatch_OnceEmailedToDhl_IsLocked()
     {
         var (controller, context) = TicketControllerFixture.Create();
         controller.SyncFromAservice(new SyncTicketDto { ExternalTicketNo = "T1D", TechName = "Tech" });
@@ -77,16 +78,17 @@ public class TicketWorkflowTests
             Lines = new() { new LineDto { PartNo = TicketControllerFixture.PartNo, Quantity = 1 } },
             Address = "Addr"
         });
-        controller.SendEmailConfirmed(ticket.TicketId);
+        var batch = context.WithdrawBatches.First(b => b.TicketId == ticket.TicketId);
+        controller.SendEmailConfirmedBatch(ticket.TicketId, batch.WithdrawBatchId);
 
-        var result = controller.CancelTicket(ticket.TicketId);
+        var result = controller.CancelBatch(ticket.TicketId, batch.WithdrawBatchId);
 
         Assert.IsType<BadRequestObjectResult>(result);
-        Assert.Equal("เดินทาง", context.Tickets.First(t => t.TicketId == ticket.TicketId).Status);
+        Assert.Equal("เดินทาง", context.WithdrawBatches.First(b => b.WithdrawBatchId == batch.WithdrawBatchId).Status);
     }
 
     [Fact]
-    public void CancelTicket_WhileWaitingToEmailDhl_RestocksWarehouse()
+    public void CancelBatch_WhileWaitingToEmailDhl_RestocksWarehouse()
     {
         // Not locked yet — Admin hasn't actually told DHL anything, just an internal
         // auto-approve commitment. Cancelling here should still hand the stock back.
@@ -98,13 +100,14 @@ public class TicketWorkflowTests
             Lines = new() { new LineDto { PartNo = TicketControllerFixture.PartNo, Quantity = 4 } },
             Address = "Addr"
         });
+        var batch = context.WithdrawBatches.First(b => b.TicketId == ticket.TicketId);
         var mainWh = context.Locations.First(l => l.Code == "WH-RAT");
         Assert.Equal(96, context.PartStocks.First(s => s.LocationId == mainWh.Id).GoodQty);
 
-        var result = controller.CancelTicket(ticket.TicketId);
+        var result = controller.CancelBatch(ticket.TicketId, batch.WithdrawBatchId);
 
         Assert.IsType<OkObjectResult>(result);
-        Assert.Equal("Cancel", context.Tickets.First(t => t.TicketId == ticket.TicketId).Status);
+        Assert.Equal("Cancel", context.WithdrawBatches.First(b => b.WithdrawBatchId == batch.WithdrawBatchId).Status);
         Assert.Equal(100, context.PartStocks.First(s => s.LocationId == mainWh.Id).GoodQty); // back to seeded 100
     }
 
@@ -127,30 +130,32 @@ public class TicketWorkflowTests
         });
 
         Assert.IsType<OkObjectResult>(result);
-        var updated = context.Tickets.First(t => t.TicketId == ticket.TicketId);
-        Assert.Equal("รออะไหล่", updated.Status);
-        Assert.Null(updated.ApprovedAt);
+        var batch = context.WithdrawBatches.First(b => b.TicketId == ticket.TicketId);
+        Assert.Equal("รออะไหล่", batch.Status);
+        Assert.Null(batch.ApprovedAt);
         Assert.Equal(1, context.PartStocks.First(s => s.LocationId == mainWh.Id).GoodQty); // untouched
     }
 
     [Fact]
-    public void ApproveTicket_ThenReceive_MovesThroughเดินทางToเบิก_AndIssuesStock()
+    public void ApproveBatch_ThenReceive_MovesThroughเดินทางToเบิก_AndIssuesStock()
     {
         var (controller, context) = TicketControllerFixture.Create();
-        var ticket = TicketControllerFixture.CreateReceivedTicket(controller, context, "T2", qty: 3);
+        var (ticket, batch) = TicketControllerFixture.CreateReceivedTicket(controller, context, "T2", qty: 3);
 
-        Assert.Equal("เบิก", ticket.Status);
+        Assert.Equal("เบิก", batch.Status);
 
         var techLoc = context.Locations.First(l => l.LocationType == "OL_TECHNICIAN");
         var stock = context.PartStocks.First(s => s.LocationId == techLoc.Id);
         Assert.Equal(3, stock.GoodQty);
     }
 
+    // ── Return leg (Ticket-scoped, unchanged from before Level B) ──────────
+
     [Fact]
     public void FullReturnFlow_RequiresAdminApprovalBeforeShip_ThenConfirmMovesStockToWarehouse()
     {
         var (controller, context) = TicketControllerFixture.Create();
-        var ticket = TicketControllerFixture.CreateReceivedTicket(controller, context, "T3", qty: 1);
+        var (ticket, batch) = TicketControllerFixture.CreateReceivedTicket(controller, context, "T3", qty: 1);
 
         controller.SubmitReturn(ticket.TicketId, new SubmitLinesDto
         {
@@ -191,7 +196,7 @@ public class TicketWorkflowTests
     public void ConfirmReturnArrived_WithLostCondition_DoesNotAddStock()
     {
         var (controller, context) = TicketControllerFixture.Create();
-        var ticket = TicketControllerFixture.CreateReceivedTicket(controller, context, "T4", qty: 1);
+        var (ticket, batch) = TicketControllerFixture.CreateReceivedTicket(controller, context, "T4", qty: 1);
 
         controller.SubmitReturn(ticket.TicketId, new SubmitLinesDto
         {
@@ -214,7 +219,7 @@ public class TicketWorkflowTests
     public void ConfirmReturnArrived_WithMixedConditions_SplitsIntoGoodAndBadBuckets()
     {
         var (controller, context) = TicketControllerFixture.Create();
-        var ticket = TicketControllerFixture.CreateReceivedTicket(controller, context, "T5", qty: 3);
+        var (ticket, batch) = TicketControllerFixture.CreateReceivedTicket(controller, context, "T5", qty: 3);
 
         controller.SubmitReturn(ticket.TicketId, new SubmitLinesDto
         {
@@ -244,7 +249,7 @@ public class TicketWorkflowTests
     public void SubmitReturn_WithInvalidCondition_ReturnsBadRequest()
     {
         var (controller, context) = TicketControllerFixture.Create();
-        var ticket = TicketControllerFixture.CreateReceivedTicket(controller, context, "T6", qty: 1);
+        var (ticket, batch) = TicketControllerFixture.CreateReceivedTicket(controller, context, "T6", qty: 1);
 
         var result = controller.SubmitReturn(ticket.TicketId, new SubmitLinesDto
         {
@@ -253,11 +258,14 @@ public class TicketWorkflowTests
         });
 
         Assert.IsType<BadRequestObjectResult>(result);
-        Assert.Equal("เบิก", context.Tickets.First(t => t.TicketId == ticket.TicketId).Status); // status unchanged
+        // No return has ever started on this Ticket — its (return-only) Status stays null; the
+        // batch itself is untouched at เบิก.
+        Assert.Null(context.Tickets.First(t => t.TicketId == ticket.TicketId).Status);
+        Assert.Equal("เบิก", context.WithdrawBatches.First(b => b.WithdrawBatchId == batch.WithdrawBatchId).Status);
     }
 
     [Fact]
-    public void SubmitReturn_BeforeWithdrawIsReceived_ReturnsBadRequest()
+    public void SubmitReturn_BeforeAnyBatchIsReceived_ReturnsBadRequest()
     {
         var (controller, context) = TicketControllerFixture.Create();
         controller.SyncFromAservice(new SyncTicketDto { ExternalTicketNo = "T7", TechName = "Tech" });
@@ -267,7 +275,7 @@ public class TicketWorkflowTests
             Lines = new() { new LineDto { PartNo = TicketControllerFixture.PartNo, Quantity = 1 } },
             Address = "Addr"
         });
-        // Not yet approved/received — still "รอ" on the withdraw leg.
+        // Batch auto-approves (default stock) but is not yet emailed/received — no batch at เบิก.
 
         var result = controller.SubmitReturn(ticket.TicketId, new SubmitLinesDto
         {
@@ -279,14 +287,13 @@ public class TicketWorkflowTests
     }
 
     [Fact]
-    public void ApproveTicket_ManualRecheckOnStillShortTicket_ReturnsOk_StaysWaitingForParts_StockUntouched()
+    public void ApproveBatch_ManualRecheckOnStillShortBatch_ReturnsOk_StaysWaitingForParts_StockUntouched()
     {
         // Insufficient stock is now caught automatically at SubmitWithdraw (see TryAutoApprove),
-        // not at a later manual Approve click — a "รออะไหล่" ticket's Approve button is now a
+        // not at a later manual Approve click — a "รออะไหล่" batch's Approve button is now a
         // manual recheck (for when stock might have recovered without a substitution), and it
         // no longer errors when stock is still short; it just reports nothing changed.
         var (controller, context) = TicketControllerFixture.Create();
-        // Fixture seeds 100 GoodQty at WH-RAT by default — drop it below what's requested.
         var mainWh = context.Locations.First(l => l.Code == "WH-RAT");
         var stock = context.PartStocks.First(s => s.LocationId == mainWh.Id);
         stock.GoodQty = 2;
@@ -299,12 +306,13 @@ public class TicketWorkflowTests
             Lines = new() { new LineDto { PartNo = TicketControllerFixture.PartNo, Quantity = 5 } },
             Address = "Addr"
         });
-        Assert.Equal("รออะไหล่", context.Tickets.First(t => t.TicketId == ticket.TicketId).Status);
+        var batch = context.WithdrawBatches.First(b => b.TicketId == ticket.TicketId);
+        Assert.Equal("รออะไหล่", batch.Status);
 
-        var result = controller.ApproveTicket(ticket.TicketId);
+        var result = controller.ApproveBatch(ticket.TicketId, batch.WithdrawBatchId);
 
         Assert.IsType<OkObjectResult>(result);
-        Assert.Equal("รออะไหล่", context.Tickets.First(t => t.TicketId == ticket.TicketId).Status);
+        Assert.Equal("รออะไหล่", context.WithdrawBatches.First(b => b.WithdrawBatchId == batch.WithdrawBatchId).Status);
         Assert.Equal(2, context.PartStocks.First(s => s.LocationId == mainWh.Id).GoodQty); // untouched
     }
 
@@ -312,8 +320,7 @@ public class TicketWorkflowTests
     public void SubmitWithdraw_DeductsFromWarehouseImmediately_ViaAutoApprove_BeforeReceive()
     {
         // Stock now leaves WH-RAT the moment auto-approve runs (SubmitWithdraw) — not at Receive
-        // and not at a later manual approve click — so a second ticket can't be approved into
-        // stock this one already claimed while still waiting to email DHL / in transit.
+        // and not at a later manual approve click.
         var (controller, context) = TicketControllerFixture.Create();
         controller.SyncFromAservice(new SyncTicketDto { ExternalTicketNo = "T14", TechName = "Tech" });
         var ticket = context.Tickets.First(t => t.ExternalTicketNo == "T14");
@@ -327,27 +334,27 @@ public class TicketWorkflowTests
         var techLoc = context.Locations.First(l => l.LocationType == "OL_TECHNICIAN");
         Assert.Equal(96, context.PartStocks.First(s => s.LocationId == mainWh.Id).GoodQty); // seeded 100 - 4
         Assert.Null(context.PartStocks.FirstOrDefault(s => s.LocationId == techLoc.Id)); // not yet at the tech
-        Assert.Equal("รอส่งเมล DHL", context.Tickets.First(t => t.TicketId == ticket.TicketId).Status);
+        Assert.Equal("รอส่งเมล DHL", context.WithdrawBatches.First(b => b.TicketId == ticket.TicketId).Status);
     }
 
     [Fact]
-    public void ReceiveTicket_OnlyAddsToTechLocation_WarehouseAlreadyDeductedAtApprove()
+    public void ReceiveBatch_OnlyAddsToTechLocation_WarehouseAlreadyDeductedAtApprove()
     {
         var (controller, context) = TicketControllerFixture.Create();
-        var ticket = TicketControllerFixture.CreateReceivedTicket(controller, context, "T15", qty: 4);
-        Assert.Equal("เบิก", ticket.Status);
+        var (ticket, batch) = TicketControllerFixture.CreateReceivedTicket(controller, context, "T15", qty: 4);
+        Assert.Equal("เบิก", batch.Status);
 
         var mainWh  = context.Locations.First(l => l.Code == "WH-RAT");
         var techLoc = context.Locations.First(l => l.LocationType == "OL_TECHNICIAN");
         var whStock = context.PartStocks.First(s => s.LocationId == mainWh.Id);
         var techStock = context.PartStocks.First(s => s.LocationId == techLoc.Id);
 
-        Assert.Equal(96, whStock.GoodQty); // seeded 100 - 4, unchanged since ApproveTicket
+        Assert.Equal(96, whStock.GoodQty); // seeded 100 - 4, unchanged since ApproveBatch
         Assert.Equal(4, techStock.GoodQty);
     }
 
     [Fact]
-    public void CancelTicket_WhileInTransit_RestocksWarehouse()
+    public void CancelBatch_WhileInTransit_RestocksWarehouse()
     {
         var (controller, context) = TicketControllerFixture.Create();
         controller.SyncFromAservice(new SyncTicketDto { ExternalTicketNo = "T16", TechName = "Tech" });
@@ -357,23 +364,27 @@ public class TicketWorkflowTests
             Lines = new() { new LineDto { PartNo = TicketControllerFixture.PartNo, Quantity = 4 } },
             Address = "Addr"
         });
-        controller.ApproveTicket(ticket.TicketId);
+        var batch = context.WithdrawBatches.First(b => b.TicketId == ticket.TicketId);
+        controller.ApproveBatch(ticket.TicketId, batch.WithdrawBatchId);
         var mainWh = context.Locations.First(l => l.Code == "WH-RAT");
         Assert.Equal(96, context.PartStocks.First(s => s.LocationId == mainWh.Id).GoodQty);
 
-        var result = controller.CancelTicket(ticket.TicketId);
+        var result = controller.CancelBatch(ticket.TicketId, batch.WithdrawBatchId);
 
         Assert.IsType<OkObjectResult>(result);
-        Assert.Equal("Cancel", context.Tickets.First(t => t.TicketId == ticket.TicketId).Status);
+        Assert.Equal("Cancel", context.WithdrawBatches.First(b => b.WithdrawBatchId == batch.WithdrawBatchId).Status);
         Assert.Equal(100, context.PartStocks.First(s => s.LocationId == mainWh.Id).GoodQty); // back to seeded 100
     }
 
     [Fact]
-    public void CancelTicket_WhileWaiting_DoesNotTouchStock()
+    public void CancelBatch_WhileWaiting_DoesNotTouchStock()
     {
         // Stock is only ever deducted starting at Approve — cancelling before that (status รอ)
         // has nothing to undo.
         var (controller, context) = TicketControllerFixture.Create();
+        var mainWh = context.Locations.First(l => l.Code == "WH-RAT");
+        context.PartStocks.First(s => s.LocationId == mainWh.Id).GoodQty = 0; // force รอ, not auto-approved
+        context.SaveChanges();
         controller.SyncFromAservice(new SyncTicketDto { ExternalTicketNo = "T17", TechName = "Tech" });
         var ticket = context.Tickets.First(t => t.ExternalTicketNo == "T17");
         controller.SubmitWithdraw(ticket.TicketId, new SubmitLinesDto
@@ -381,18 +392,18 @@ public class TicketWorkflowTests
             Lines = new() { new LineDto { PartNo = TicketControllerFixture.PartNo, Quantity = 4 } },
             Address = "Addr"
         });
+        var batch = context.WithdrawBatches.First(b => b.TicketId == ticket.TicketId);
 
-        controller.CancelTicket(ticket.TicketId);
+        controller.CancelBatch(ticket.TicketId, batch.WithdrawBatchId);
 
-        var mainWh = context.Locations.First(l => l.Code == "WH-RAT");
-        Assert.Equal(100, context.PartStocks.First(s => s.LocationId == mainWh.Id).GoodQty); // untouched
+        Assert.Equal(0, context.PartStocks.First(s => s.LocationId == mainWh.Id).GoodQty); // untouched
     }
 
     [Fact]
     public void ConfirmReturnArrived_DeductsFromTechLocation_RegardlessOfCondition()
     {
         var (controller, context) = TicketControllerFixture.Create();
-        var ticket = TicketControllerFixture.CreateReceivedTicket(controller, context, "T15", qty: 3);
+        var (ticket, batch) = TicketControllerFixture.CreateReceivedTicket(controller, context, "T15b", qty: 3);
 
         controller.SubmitReturn(ticket.TicketId, new SubmitLinesDto
         {
@@ -411,8 +422,7 @@ public class TicketWorkflowTests
 
         // All 3 units left the tech's hands regardless of what condition they came back in
         // (Good/Bad go to the warehouse, Lost is a write-off) — none of that changes that the
-        // tech no longer has them. Previously ConfirmReturnArrived never touched techLoc at all,
-        // so this bucket only ever grew.
+        // tech no longer has them.
         var techLoc = context.Locations.First(l => l.LocationType == "OL_TECHNICIAN");
         var techStock = context.PartStocks.First(s => s.LocationId == techLoc.Id);
         Assert.Equal(0, techStock.GoodQty);
@@ -422,8 +432,8 @@ public class TicketWorkflowTests
     public void ApproveReturn_WhenNotAwaitingApproval_ReturnsBadRequest()
     {
         var (controller, context) = TicketControllerFixture.Create();
-        var ticket = TicketControllerFixture.CreateReceivedTicket(controller, context, "T8", qty: 1);
-        // Ticket is at เบิก, no return submitted yet — nothing to approve.
+        var (ticket, batch) = TicketControllerFixture.CreateReceivedTicket(controller, context, "T8", qty: 1);
+        // Ticket has a received batch, no return submitted yet — nothing to approve.
 
         var result = controller.ApproveReturn(ticket.TicketId);
 
@@ -434,7 +444,7 @@ public class TicketWorkflowTests
     public void MarkShipped_CalledTwice_SecondCallIsRejected()
     {
         var (controller, context) = TicketControllerFixture.Create();
-        var ticket = TicketControllerFixture.CreateReceivedTicket(controller, context, "T9", qty: 1);
+        var (ticket, batch) = TicketControllerFixture.CreateReceivedTicket(controller, context, "T9", qty: 1);
         controller.SubmitReturn(ticket.TicketId, new SubmitLinesDto
         {
             Lines = new() { new LineDto { PartNo = TicketControllerFixture.PartNo, Quantity = 1, Condition = "Good" } },
@@ -450,9 +460,9 @@ public class TicketWorkflowTests
     }
 
     [Fact]
-    public void RejectTicket_ThenResubmitWithdraw_ClearsOldLinesAndRejectReason()
+    public void RejectBatch_ThenResubmit_ClearsOldLinesAndRejectReason()
     {
-        // Reject only makes sense on a ticket auto-approve couldn't already whisk away — seed
+        // Reject only makes sense on a batch auto-approve couldn't already whisk away — seed
         // zero stock so both submits land (and stay) at รออะไหล่, keeping this test's focus on
         // reject/resubmit's line/reason cleanup rather than the auto-approve outcome.
         var (controller, context) = TicketControllerFixture.Create();
@@ -467,21 +477,22 @@ public class TicketWorkflowTests
             Lines = new() { new LineDto { PartNo = TicketControllerFixture.PartNo, Quantity = 1 } },
             Address = "Addr"
         });
-        Assert.Equal("รออะไหล่", context.Tickets.First(t => t.TicketId == ticket.TicketId).Status);
-        controller.RejectTicket(ticket.TicketId, new RejectDto { Reason = "Wrong part" });
-        Assert.Equal("Reject", context.Tickets.First(t => t.TicketId == ticket.TicketId).Status);
-        var oldLineId = context.TicketPartLines.First(l => l.TicketId == ticket.TicketId).TicketPartLineId;
+        var batch = context.WithdrawBatches.First(b => b.TicketId == ticket.TicketId);
+        Assert.Equal("รออะไหล่", batch.Status);
+        controller.RejectBatch(ticket.TicketId, batch.WithdrawBatchId, new RejectDto { Reason = "Wrong part" });
+        Assert.Equal("Reject", context.WithdrawBatches.First(b => b.WithdrawBatchId == batch.WithdrawBatchId).Status);
+        var oldLineId = context.TicketPartLines.First(l => l.WithdrawBatchId == batch.WithdrawBatchId).TicketPartLineId;
 
-        controller.SubmitWithdraw(ticket.TicketId, new SubmitLinesDto
+        controller.ResubmitWithdrawBatch(ticket.TicketId, batch.WithdrawBatchId, new SubmitLinesDto
         {
             Lines = new() { new LineDto { PartNo = TicketControllerFixture.PartNo, Quantity = 5 } },
             Address = "New Addr"
         });
 
-        var updated = context.Tickets.First(t => t.TicketId == ticket.TicketId);
+        var updated = context.WithdrawBatches.First(b => b.WithdrawBatchId == batch.WithdrawBatchId);
         Assert.Equal("รออะไหล่", updated.Status);
         Assert.Null(updated.RejectReason);
-        var remainingLines = context.TicketPartLines.Where(l => l.TicketId == ticket.TicketId).ToList();
+        var remainingLines = context.TicketPartLines.Where(l => l.WithdrawBatchId == batch.WithdrawBatchId).ToList();
         Assert.Single(remainingLines);
         Assert.NotEqual(oldLineId, remainingLines[0].TicketPartLineId);
         Assert.Equal(5, remainingLines[0].Quantity);
@@ -509,7 +520,7 @@ public class TicketWorkflowTests
     public void CancelTicket_OnAlreadyReturnedTicket_ReturnsBadRequest()
     {
         var (controller, context) = TicketControllerFixture.Create();
-        var ticket = TicketControllerFixture.CreateReceivedTicket(controller, context, "T12", qty: 1);
+        var (ticket, batch) = TicketControllerFixture.CreateReceivedTicket(controller, context, "T12", qty: 1);
         controller.SubmitReturn(ticket.TicketId, new SubmitLinesDto
         {
             Lines = new() { new LineDto { PartNo = TicketControllerFixture.PartNo, Quantity = 1, Condition = "Good" } },
@@ -525,61 +536,80 @@ public class TicketWorkflowTests
         Assert.IsType<BadRequestObjectResult>(result);
     }
 
-    // ── Multiple ใบเบิก under one Aservice Ticket ───────────────────────────
+    // ── Multiple ใบเบิก under one Ticket ─────────────────────────────────────
 
     [Fact]
-    public void CreateAdditionalWithdraw_OnKnownExternalTicketNo_CreatesIndependentSecondTicket()
+    public void SecondSubmitWithdraw_OnSameTicket_CreatesIndependentSecondBatch_NoSiblingTicketRow()
     {
+        // The old "CreateAdditionalWithdraw" mechanic (a second Ticket row sharing the same
+        // ExternalTicketNo) is gone — a second withdraw request is just another SubmitWithdraw
+        // call against the same Ticket, creating a second WithdrawBatch instead.
         var (controller, context) = TicketControllerFixture.Create();
         controller.SyncFromAservice(new SyncTicketDto { ExternalTicketNo = "ASV-100", TechName = "Tech" });
-        var first = context.Tickets.First(t => t.ExternalTicketNo == "ASV-100");
-
-        var result = controller.CreateAdditionalWithdraw(new SyncTicketDto
+        var ticket = context.Tickets.First(t => t.ExternalTicketNo == "ASV-100");
+        controller.SubmitWithdraw(ticket.TicketId, new SubmitLinesDto
         {
-            ExternalTicketNo = "ASV-100", TechName = "Tech", TechDept = "Zone A"
+            Lines = new() { new LineDto { PartNo = TicketControllerFixture.PartNo, Quantity = 1 } },
+            Address = "Addr 1"
+        });
+
+        var result = controller.SubmitWithdraw(ticket.TicketId, new SubmitLinesDto
+        {
+            Lines = new() { new LineDto { PartNo = TicketControllerFixture.PartNo, Quantity = 1 } },
+            Address = "Addr 2"
         });
 
         Assert.IsType<OkObjectResult>(result);
-        var rows = context.Tickets.Where(t => t.ExternalTicketNo == "ASV-100").ToList();
-        Assert.Equal(2, rows.Count);
-        Assert.NotEqual(first.TicketId, rows.First(t => t.TicketId != first.TicketId).TicketId);
-        Assert.All(rows, t => Assert.Null(t.Status)); // both start fresh, independently withdrawable
+        Assert.Single(context.Tickets.Where(t => t.ExternalTicketNo == "ASV-100")); // still one Ticket row
+        Assert.Equal(2, context.WithdrawBatches.Count(b => b.TicketId == ticket.TicketId));
     }
 
     [Fact]
-    public void CreateAdditionalWithdraw_OnUnknownExternalTicketNo_ReturnsBadRequest()
-    {
-        var (controller, _) = TicketControllerFixture.Create();
-
-        var result = controller.CreateAdditionalWithdraw(new SyncTicketDto
-        {
-            ExternalTicketNo = "NEVER-SYNCED", TechName = "Tech"
-        });
-
-        Assert.IsType<BadRequestObjectResult>(result);
-    }
-
-    [Fact]
-    public void SecondWithdrawSlip_SubmittedAndAutoApproved_DoesNotAffectFirstSlipsStatus()
+    public void SecondWithdrawBatch_SubmittedAndAutoApproved_DoesNotAffectFirstBatchsStatus()
     {
         var (controller, context) = TicketControllerFixture.Create();
-        var first = TicketControllerFixture.CreateReceivedTicket(controller, context, "ASV-200", qty: 1);
-        Assert.Equal("เบิก", first.Status);
+        var (ticket, firstBatch) = TicketControllerFixture.CreateReceivedTicket(controller, context, "ASV-200", qty: 1);
+        Assert.Equal("เบิก", firstBatch.Status);
 
-        controller.CreateAdditionalWithdraw(new SyncTicketDto { ExternalTicketNo = "ASV-200", TechName = "Tech" });
-        var second = context.Tickets.First(t => t.ExternalTicketNo == "ASV-200" && t.TicketId != first.TicketId);
-        controller.SubmitWithdraw(second.TicketId, new SubmitLinesDto
+        controller.SubmitWithdraw(ticket.TicketId, new SubmitLinesDto
         {
             Lines = new() { new LineDto { PartNo = TicketControllerFixture.PartNo, Quantity = 2 } },
             Address = "Addr 2"
         });
 
-        // First slip is already at เบิก (fully received) — submitting the second slip (which
+        // First batch is already at เบิก (fully received) — submitting the second batch (which
         // auto-approves on its own, stock permitting) must not touch it.
-        var firstAfter = context.Tickets.First(t => t.TicketId == first.TicketId);
+        var firstAfter = context.WithdrawBatches.First(b => b.WithdrawBatchId == firstBatch.WithdrawBatchId);
         Assert.Equal("เบิก", firstAfter.Status);
-        var secondAfter = context.Tickets.First(t => t.TicketId == second.TicketId);
-        Assert.Equal("รอส่งเมล DHL", secondAfter.Status);
+        var secondBatch = context.WithdrawBatches.First(b => b.TicketId == ticket.TicketId && b.WithdrawBatchId != firstBatch.WithdrawBatchId);
+        Assert.Equal("รอส่งเมล DHL", secondBatch.Status);
+    }
+
+    [Fact]
+    public void SubmitReturn_SourcesLinesFromWhicheverBatchesAreเบิก_NotJustOne()
+    {
+        // With two received batches under one Ticket, a return can be submitted against parts
+        // from either (or both) — this is what replaces the old client-side "combine sibling
+        // Tickets into one return" hack.
+        var (controller, context) = TicketControllerFixture.Create();
+        var (ticket, firstBatch) = TicketControllerFixture.CreateReceivedTicket(controller, context, "ASV-300", qty: 1);
+        controller.SubmitWithdraw(ticket.TicketId, new SubmitLinesDto
+        {
+            Lines = new() { new LineDto { PartNo = TicketControllerFixture.PartNo, Quantity = 1 } },
+            Address = "Addr 2"
+        });
+        var secondBatch = context.WithdrawBatches.First(b => b.TicketId == ticket.TicketId && b.WithdrawBatchId != firstBatch.WithdrawBatchId);
+        controller.SendEmailConfirmedBatch(ticket.TicketId, secondBatch.WithdrawBatchId);
+        controller.ReceiveBatch(ticket.TicketId, secondBatch.WithdrawBatchId);
+
+        var result = controller.SubmitReturn(ticket.TicketId, new SubmitLinesDto
+        {
+            Lines = new() { new LineDto { PartNo = TicketControllerFixture.PartNo, Quantity = 2, Condition = "Good" } },
+            Address = "Return Addr"
+        });
+
+        Assert.IsType<OkObjectResult>(result);
+        Assert.Equal("รอ", context.Tickets.First(t => t.TicketId == ticket.TicketId).Status);
     }
 
     // ── Return leg: Reject/Cancel, DHL email confirmation, off-ticket lines ─────
@@ -588,7 +618,7 @@ public class TicketWorkflowTests
     public void RejectReturn_ClearsReturnLinesAndReasonRevertsToเบิก_ForResubmit()
     {
         var (controller, context) = TicketControllerFixture.Create();
-        var ticket = TicketControllerFixture.CreateReceivedTicket(controller, context, "RT-REJ-1", qty: 1);
+        var (ticket, batch) = TicketControllerFixture.CreateReceivedTicket(controller, context, "RT-REJ-1", qty: 1);
         controller.SubmitReturn(ticket.TicketId, new SubmitLinesDto
         {
             Lines = new() { new LineDto { PartNo = TicketControllerFixture.PartNo, Quantity = 1, Condition = "Good" } },
@@ -609,7 +639,7 @@ public class TicketWorkflowTests
     public void SubmitReturn_AfterRejection_ClearsThePriorReason()
     {
         var (controller, context) = TicketControllerFixture.Create();
-        var ticket = TicketControllerFixture.CreateReceivedTicket(controller, context, "RT-REJ-2", qty: 1);
+        var (ticket, batch) = TicketControllerFixture.CreateReceivedTicket(controller, context, "RT-REJ-2", qty: 1);
         controller.SubmitReturn(ticket.TicketId, new SubmitLinesDto
         {
             Lines = new() { new LineDto { PartNo = TicketControllerFixture.PartNo, Quantity = 1, Condition = "Good" } },
@@ -632,7 +662,7 @@ public class TicketWorkflowTests
     public void SendEmailConfirmedReturn_MovesApprovedReturnToTransitToCollect()
     {
         var (controller, context) = TicketControllerFixture.Create();
-        var ticket = TicketControllerFixture.CreateReceivedTicket(controller, context, "RT-EMAIL-1", qty: 1);
+        var (ticket, batch) = TicketControllerFixture.CreateReceivedTicket(controller, context, "RT-EMAIL-1", qty: 1);
         controller.SubmitReturn(ticket.TicketId, new SubmitLinesDto
         {
             Lines = new() { new LineDto { PartNo = TicketControllerFixture.PartNo, Quantity = 1, Condition = "Good" } },
@@ -652,7 +682,7 @@ public class TicketWorkflowTests
     public void CancelTicket_OnceReturnEmailedToDhl_IsLocked()
     {
         var (controller, context) = TicketControllerFixture.Create();
-        var ticket = TicketControllerFixture.CreateReceivedTicket(controller, context, "RT-EMAIL-2", qty: 1);
+        var (ticket, batch) = TicketControllerFixture.CreateReceivedTicket(controller, context, "RT-EMAIL-2", qty: 1);
         controller.SubmitReturn(ticket.TicketId, new SubmitLinesDto
         {
             Lines = new() { new LineDto { PartNo = TicketControllerFixture.PartNo, Quantity = 1, Condition = "Good" } },
@@ -674,7 +704,7 @@ public class TicketWorkflowTests
         // lock point), so it must stay locked — cancelling here must not be allowed to undo stock
         // that was never touched by return-side actions in the first place.
         var (controller, context) = TicketControllerFixture.Create();
-        var ticket = TicketControllerFixture.CreateReceivedTicket(controller, context, "RT-EMAIL-4", qty: 1);
+        var (ticket, batch) = TicketControllerFixture.CreateReceivedTicket(controller, context, "RT-EMAIL-4", qty: 1);
         controller.SubmitReturn(ticket.TicketId, new SubmitLinesDto
         {
             Lines = new() { new LineDto { PartNo = TicketControllerFixture.PartNo, Quantity = 1, Condition = "Good" } },
@@ -695,7 +725,7 @@ public class TicketWorkflowTests
     {
         // Not locked yet — Admin approved internally but hasn't told DHL anything.
         var (controller, context) = TicketControllerFixture.Create();
-        var ticket = TicketControllerFixture.CreateReceivedTicket(controller, context, "RT-EMAIL-3", qty: 1);
+        var (ticket, batch) = TicketControllerFixture.CreateReceivedTicket(controller, context, "RT-EMAIL-3", qty: 1);
         controller.SubmitReturn(ticket.TicketId, new SubmitLinesDto
         {
             Lines = new() { new LineDto { PartNo = TicketControllerFixture.PartNo, Quantity = 1, Condition = "Good" } },
@@ -713,7 +743,7 @@ public class TicketWorkflowTests
     public void GetAllTickets_FlagsReturnLineNotOnOriginalWithdrawAsOffTicket()
     {
         var (controller, context) = TicketControllerFixture.Create();
-        var ticket = TicketControllerFixture.CreateReceivedTicket(controller, context, "RT-OFF-1", qty: 1);
+        var (ticket, batch) = TicketControllerFixture.CreateReceivedTicket(controller, context, "RT-OFF-1", qty: 1);
         TicketControllerFixture.SeedEquivalentPart(context); // gives us a second real Part to use as the "extra" one
 
         controller.SubmitReturn(ticket.TicketId, new SubmitLinesDto
@@ -745,9 +775,9 @@ public class TicketWorkflowTests
     public void SubstitutePart_OnRegisteredEquivalent_SetsPartNoAndRecordsOriginalPartNo()
     {
         var (controller, context) = TicketControllerFixture.Create();
-        // Substitution only has a window while the ticket is waiting — with the fixture's
-        // default 100-unit stock the submit below would auto-approve straight past "waiting"
-        // before this test gets a chance to substitute anything, so zero it out first.
+        // Substitution only has a window while the batch is waiting — with the fixture's default
+        // 100-unit stock the submit below would auto-approve straight past "waiting" before this
+        // test gets a chance to substitute anything, so zero it out first.
         context.PartStocks.First(s => s.LocationId == context.Locations.First(l => l.Code == "WH-RAT").Id).GoodQty = 0;
         context.SaveChanges();
         TicketControllerFixture.SeedEquivalentPart(context);
@@ -758,9 +788,10 @@ public class TicketWorkflowTests
             Lines = new() { new LineDto { PartNo = TicketControllerFixture.PartNo, Quantity = 1 } },
             Address = "Addr"
         });
-        var line = context.TicketPartLines.First(l => l.TicketId == ticket.TicketId);
+        var batch = context.WithdrawBatches.First(b => b.TicketId == ticket.TicketId);
+        var line = context.TicketPartLines.First(l => l.WithdrawBatchId == batch.WithdrawBatchId);
 
-        var result = controller.SubstitutePart(ticket.TicketId, line.TicketPartLineId,
+        var result = controller.SubstitutePart(ticket.TicketId, batch.WithdrawBatchId, line.TicketPartLineId,
             new SubstituteDto { PartNo = TicketControllerFixture.EquivalentPartNo });
 
         Assert.IsType<OkObjectResult>(result);
@@ -784,9 +815,10 @@ public class TicketWorkflowTests
             Lines = new() { new LineDto { PartNo = TicketControllerFixture.PartNo, Quantity = 1 } },
             Address = "Addr"
         });
-        var line = context.TicketPartLines.First(l => l.TicketId == ticket.TicketId);
+        var batch = context.WithdrawBatches.First(b => b.TicketId == ticket.TicketId);
+        var line = context.TicketPartLines.First(l => l.WithdrawBatchId == batch.WithdrawBatchId);
 
-        var result = controller.SubstitutePart(ticket.TicketId, line.TicketPartLineId,
+        var result = controller.SubstitutePart(ticket.TicketId, batch.WithdrawBatchId, line.TicketPartLineId,
             new SubstituteDto { PartNo = "TEST-PART-UNRELATED" });
 
         Assert.IsType<BadRequestObjectResult>(result);
@@ -817,11 +849,12 @@ public class TicketWorkflowTests
             Lines = new() { new LineDto { PartNo = TicketControllerFixture.PartNo, Quantity = 1 } },
             Address = "Addr"
         });
-        var line = context.TicketPartLines.First(l => l.TicketId == ticket.TicketId);
+        var batch = context.WithdrawBatches.First(b => b.TicketId == ticket.TicketId);
+        var line = context.TicketPartLines.First(l => l.WithdrawBatchId == batch.WithdrawBatchId);
 
-        controller.SubstitutePart(ticket.TicketId, line.TicketPartLineId,
+        controller.SubstitutePart(ticket.TicketId, batch.WithdrawBatchId, line.TicketPartLineId,
             new SubstituteDto { PartNo = TicketControllerFixture.EquivalentPartNo });
-        controller.SubstitutePart(ticket.TicketId, line.TicketPartLineId,
+        controller.SubstitutePart(ticket.TicketId, batch.WithdrawBatchId, line.TicketPartLineId,
             new SubstituteDto { PartNo = thirdPart.PartNo });
 
         var lineAfter = context.TicketPartLines.First(l => l.TicketPartLineId == line.TicketPartLineId);
@@ -830,15 +863,15 @@ public class TicketWorkflowTests
     }
 
     [Fact]
-    public void SubstitutePart_WhenTicketNotWaiting_ReturnsBadRequest()
+    public void SubstitutePart_WhenBatchNotWaiting_ReturnsBadRequest()
     {
         var (controller, context) = TicketControllerFixture.Create();
         TicketControllerFixture.SeedEquivalentPart(context);
-        var ticket = TicketControllerFixture.CreateReceivedTicket(controller, context, "SUB-4", qty: 1);
-        var line = context.TicketPartLines.First(l => l.TicketId == ticket.TicketId);
+        var (ticket, batch) = TicketControllerFixture.CreateReceivedTicket(controller, context, "SUB-4", qty: 1);
+        var line = context.TicketPartLines.First(l => l.WithdrawBatchId == batch.WithdrawBatchId);
 
-        // Ticket is already เบิก (received), not รอ — substitution window has closed.
-        var result = controller.SubstitutePart(ticket.TicketId, line.TicketPartLineId,
+        // Batch is already เบิก (received), not รอ — substitution window has closed.
+        var result = controller.SubstitutePart(ticket.TicketId, batch.WithdrawBatchId, line.TicketPartLineId,
             new SubstituteDto { PartNo = TicketControllerFixture.EquivalentPartNo });
 
         Assert.IsType<BadRequestObjectResult>(result);
@@ -857,8 +890,9 @@ public class TicketWorkflowTests
             Lines = new() { new LineDto { PartNo = TicketControllerFixture.PartNo, Quantity = 1 } },
             Address = "Addr"
         });
-        var line = context.TicketPartLines.First(l => l.TicketId == ticket.TicketId);
-        controller.SubstitutePart(ticket.TicketId, line.TicketPartLineId,
+        var batch = context.WithdrawBatches.First(b => b.TicketId == ticket.TicketId);
+        var line = context.TicketPartLines.First(l => l.WithdrawBatchId == batch.WithdrawBatchId);
+        controller.SubstitutePart(ticket.TicketId, batch.WithdrawBatchId, line.TicketPartLineId,
             new SubstituteDto { PartNo = TicketControllerFixture.EquivalentPartNo });
 
         var ok = Assert.IsType<OkObjectResult>(controller.GetAllTickets());
@@ -869,7 +903,8 @@ public class TicketWorkflowTests
         using var doc = System.Text.Json.JsonDocument.Parse(json);
         var ticketJson = doc.RootElement.EnumerateArray()
             .First(t => t.GetProperty("TicketId").GetInt32() == ticket.TicketId);
-        var lineJson = ticketJson.GetProperty("lines").EnumerateArray().First();
+        var batchJson = ticketJson.GetProperty("withdrawBatches").EnumerateArray().First();
+        var lineJson = batchJson.GetProperty("lines").EnumerateArray().First();
 
         Assert.Equal(TicketControllerFixture.PartNo, lineJson.GetProperty("OriginalPartNo").GetString());
         Assert.Equal("Test Part", lineJson.GetProperty("originalPartName").GetString());
@@ -894,11 +929,11 @@ public class TicketWorkflowTests
         });
 
         Assert.IsType<OkObjectResult>(result);
-        var ticketAfter = context.Tickets.First(t => t.TicketId == ticket.TicketId);
-        Assert.Matches(@"^WD-\d{4}-\d{5}$", ticketAfter.WithdrawSlipNo);
-        Assert.Equal(new DateTime(2026, 3, 2), ticketAfter.WithdrawDate);
-        Assert.Equal("EMP001", ticketAfter.EmployeeCode);
-        Assert.Equal("Repair", ticketAfter.UsageStatus);
+        var batch = context.WithdrawBatches.First(b => b.TicketId == ticket.TicketId);
+        Assert.Matches(@"^WD-\d{4}-\d{5}$", batch.WithdrawSlipNo);
+        Assert.Equal(new DateTime(2026, 3, 2), batch.WithdrawDate);
+        Assert.Equal("EMP001", batch.EmployeeCode);
+        Assert.Equal("Repair", batch.UsageStatus);
     }
 
     [Fact]
@@ -921,8 +956,8 @@ public class TicketWorkflowTests
             Lines = new() { new LineDto { PartNo = TicketControllerFixture.EquivalentPartNo, Quantity = 1 } }, Address = "Addr"
         });
 
-        var slip1 = context.Tickets.First(t => t.TicketId == t1.TicketId).WithdrawSlipNo;
-        var slip2 = context.Tickets.First(t => t.TicketId == t2.TicketId).WithdrawSlipNo;
+        var slip1 = context.WithdrawBatches.First(b => b.TicketId == t1.TicketId).WithdrawSlipNo;
+        var slip2 = context.WithdrawBatches.First(b => b.TicketId == t2.TicketId).WithdrawSlipNo;
         Assert.NotEqual(slip1, slip2);
         var year = DateTime.Now.Year;
         Assert.Equal($"WD-{year}-00001", slip1);
@@ -930,7 +965,7 @@ public class TicketWorkflowTests
     }
 
     [Fact]
-    public void RejectTicket_ThenResubmit_KeepsTheSameWithdrawSlipNo()
+    public void RejectBatch_ThenResubmit_KeepsTheSameWithdrawSlipNo()
     {
         // Resubmitting after Reject is still the same ใบเบิก, not a new one.
         var (controller, context) = TicketControllerFixture.Create();
@@ -940,15 +975,16 @@ public class TicketWorkflowTests
         {
             Lines = new() { new LineDto { PartNo = TicketControllerFixture.PartNo, Quantity = 1 } }, Address = "Addr"
         });
-        var firstSlipNo = context.Tickets.First(t => t.TicketId == ticket.TicketId).WithdrawSlipNo;
+        var batch = context.WithdrawBatches.First(b => b.TicketId == ticket.TicketId);
+        var firstSlipNo = batch.WithdrawSlipNo;
 
-        controller.RejectTicket(ticket.TicketId, new RejectDto { Reason = "ผิดรุ่น" });
-        controller.SubmitWithdraw(ticket.TicketId, new SubmitLinesDto
+        controller.RejectBatch(ticket.TicketId, batch.WithdrawBatchId, new RejectDto { Reason = "ผิดรุ่น" });
+        controller.ResubmitWithdrawBatch(ticket.TicketId, batch.WithdrawBatchId, new SubmitLinesDto
         {
             Lines = new() { new LineDto { PartNo = TicketControllerFixture.PartNo, Quantity = 2 } }, Address = "Addr2"
         });
 
-        var secondSlipNo = context.Tickets.First(t => t.TicketId == ticket.TicketId).WithdrawSlipNo;
+        var secondSlipNo = context.WithdrawBatches.First(b => b.WithdrawBatchId == batch.WithdrawBatchId).WithdrawSlipNo;
         Assert.Equal(firstSlipNo, secondSlipNo);
     }
 }
