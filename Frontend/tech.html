@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Tech Workspace — ATM Inventory</title>
-    <link rel="stylesheet" href="shared/styles.css?v=50">
+    <link rel="stylesheet" href="shared/styles.css?v=51">
     <style>
         .section-head { display:flex; align-items:center; gap:10px; margin-bottom:20px; }
         .section-accent { width:4px; height:22px; background:var(--orange); border-radius:2px; }
@@ -400,10 +400,10 @@
     </div>
 </div>
 
-<script src="shared/translations.js?v=50"></script>
-<script src="shared/toast.js?v=50"></script>
-<script src="shared/api.js?v=50"></script>
-<script src="shared/layout.js?v=50"></script>
+<script src="shared/translations.js?v=51"></script>
+<script src="shared/toast.js?v=51"></script>
+<script src="shared/api.js?v=51"></script>
+<script src="shared/layout.js?v=51"></script>
 <script>
     /* Status: รอ / เดินทาง / เบิก / คืน / Reject / Cancel   (null = ยังไม่เริ่มเบิก) */
     const currentEmail = localStorage.getItem('userEmail') || 'tech@atm.com';
@@ -504,8 +504,50 @@
                 ${l.originalPartName ? `<div style="font-size:10px;color:var(--orange);margin-top:1px;">🔄 ขอไป: ${l.originalPartName} — Admin เปลี่ยนเป็นอะไหล่เทียบเคียงนี้แทน</div>` : ''}</div>`).join('')
             : `<span class="text-muted">—</span>`;
     }
-    function withdrawSummaryHtml(tk) { return linesSummaryHtml(tk.lines.filter(l => l.lineType === 'Withdraw')); }
-    function returnSummaryHtml(tk) { return linesSummaryHtml(tk.lines.filter(l => l.lineType === 'Return')); }
+    // Every action a tech can take on a Ticket, now surfaced only inside the detail modal (see
+    // openTicketDetail) rather than the row itself — the main table went back to being a plain
+    // ticket-level list. `tab` says which of the modal's two tabs the action belongs under:
+    // "เบิก" for the withdraw side, "return" for anything about getting the return moving.
+    // Every action closes the detail modal first (closeTicketDetail()) so it doesn't sit open
+    // underneath whatever form/confirm the action triggers next.
+    function computeTicketAction(tk) {
+        if (tk.status === null) {
+            return { tab: 'withdraw', html: `<button class="btn-withdraw" onclick="closeTicketDetail();openWithdrawModal(${tk.ticketId})">📤 เบิก</button>` };
+        } else if (tk.status === 'รอ' && tk.phase === 'withdraw') {
+            return { tab: 'withdraw', html: `<span class="text-muted" style="font-size:12px;">รอ Admin อนุมัติ</span>
+                <button class="btn-cancel-withdraw" onclick="closeTicketDetail();cancelWithdraw(${tk.ticketId})">ยกเลิกคำขอ</button>` };
+        } else if (tk.status === 'รออะไหล่' && tk.phase === 'withdraw') {
+            return { tab: 'withdraw', html: `<span class="text-muted" style="font-size:12px;">อะไหล่ในคลังไม่พอ — รอ Admin จัดหา</span>
+                <button class="btn-cancel-withdraw" onclick="closeTicketDetail();cancelWithdraw(${tk.ticketId})">ยกเลิกคำขอ</button>` };
+        } else if (tk.status === 'รอส่งเมล DHL' && tk.phase === 'withdraw') {
+            return { tab: 'withdraw', html: `<span class="text-muted" style="font-size:12px;">อนุมัติแล้ว — รอ Admin ส่งเมล DHL</span>
+                <button class="btn-cancel-withdraw" onclick="closeTicketDetail();cancelWithdraw(${tk.ticketId})">ยกเลิกคำขอ</button>` };
+        } else if (tk.status === 'เดินทาง' && tk.phase === 'withdraw') {
+            const eta = deliveryEtaHtml(tk.emailSentAt);
+            return { tab: 'withdraw', html: `<button class="btn-return" onclick="closeTicketDetail();confirmReceive(${tk.ticketId})">✅ ยืนยันรับของ</button>${eta}` };
+        } else if (tk.status === 'เบิก' && tk.phase === 'withdraw') {
+            // Same Case No. can have more than one ใบเบิก sitting at "เบิก" (received) at once —
+            // combine them into a single Return form instead of one-by-one.
+            const returnGroup = cachedTickets.filter(t => t.status === 'เบิก' && t.phase === 'withdraw' && t.externalTicketNo === tk.externalTicketNo);
+            const html = returnGroup.length > 1
+                ? (returnGroup[0].ticketId === tk.ticketId
+                    ? `<button class="btn-return" onclick="closeTicketDetail();openReturnModal([${returnGroup.map(g => g.ticketId).join(',')}])">📥 คืนรวม (${returnGroup.length} ใบ)</button>`
+                    : `<span class="text-muted" style="font-size:12px;">รวมคืนพร้อมใบที่ 1 แล้ว</span>`)
+                : `<button class="btn-return" onclick="closeTicketDetail();openReturnModal([${tk.ticketId}])">📥 คืน</button>`;
+            return { tab: 'return', html };
+        } else if (tk.status === 'อนุมัติคืน' && tk.phase === 'return') {
+            return { tab: 'return', html: `<span class="text-muted" style="font-size:12px;">Admin อนุมัติแล้ว — รอ Admin ส่งเมล DHL</span>` };
+        } else if (tk.status === 'กำลังเดินทางรับคืน' && tk.phase === 'return') {
+            return { tab: 'return', html: `<button class="btn-ship" onclick="closeTicketDetail();markShipped(${tk.ticketId})">🚚 จัดส่งแล้ว</button>` };
+        } else if (tk.status === 'รอ' && tk.phase === 'return') {
+            return { tab: 'return', html: `<span class="text-muted" style="font-size:12px;">รอ Admin ยืนยัน</span>` };
+        } else if (tk.status === 'เดินทาง' && tk.phase === 'return') {
+            return { tab: 'return', html: `<span class="text-muted" style="font-size:12px;">รอถึง DHL</span>` };
+        } else if (tk.status === 'Reject') {
+            return { tab: 'withdraw', html: `<button class="btn-withdraw" onclick="closeTicketDetail();openWithdrawModal(${tk.ticketId})">📝 แก้ไขและส่งใหม่</button>` };
+        }
+        return { tab: 'withdraw', html: `<span class="text-muted">—</span>` };
+    }
 
     /* ── Ticket Detail modal — read-only, split into "ใบเบิก"/"ใบคืน" tabs so it's clear at a
        glance what this Ticket withdrew vs. what (if anything) has been returned against it. ── */
@@ -542,8 +584,13 @@
         const returnLines = tk.lines.filter(l => l.lineType === 'Return');
         const withdrawAttachments = (tk.attachments || []).filter(a => a.phase === 'Withdraw');
         const returnAttachments = (tk.attachments || []).filter(a => a.phase === 'Return');
+        const ticketAction = computeTicketAction(tk);
+        // Always offered regardless of this Ticket's own status — same Aservice Ticket can carry
+        // more than one independent ใบเบิก (e.g. the job needs more parts while the first request
+        // is still open).
+        const addlBtn = `<button class="btn-add-line" style="margin-top:10px;font-size:11px;padding:4px 8px;width:auto;" onclick="closeTicketDetail();requestAdditionalWithdraw(${tk.ticketId})">➕ เบิกเพิ่ม (ใบใหม่)</button>`;
 
-        document.getElementById('detailTabWithdraw').innerHTML = withdrawLines.length ? `
+        document.getElementById('detailTabWithdraw').innerHTML = (withdrawLines.length ? `
             <div class="tk-readonly-box">
                 <div class="tk-readonly-grid">
                     <div class="tk-readonly-field"><label>เลขที่ใบเบิก</label><span>${tk.withdrawSlipNo || 'ยังไม่ออกเลข'}</span></div>
@@ -557,9 +604,10 @@
             ${tk.withdrawDescription ? `<span class="tk-detail-section-label">หมายเหตุ / อาการเสีย</span><div style="font-size:13px;white-space:pre-wrap;">${tk.withdrawDescription}</div>` : ''}
             <span class="tk-detail-section-label">รูปภาพแนบ</span>
             ${detailAttachmentGalleryHtml(withdrawAttachments)}
-        ` : `<div class="text-muted" style="padding:20px 0;text-align:center;">ยังไม่ได้ส่งคำขอเบิก</div>`;
+        ` : `<div class="text-muted" style="padding:20px 0;text-align:center;">ยังไม่ได้ส่งคำขอเบิก</div>`)
+            + `<div class="tk-modal-actions" style="justify-content:flex-start;flex-wrap:wrap;">${ticketAction.tab === 'withdraw' ? ticketAction.html : ''}</div>${addlBtn}`;
 
-        document.getElementById('detailTabReturn').innerHTML = tk.returnAddress ? `
+        document.getElementById('detailTabReturn').innerHTML = (tk.returnAddress ? `
             <div class="tk-readonly-box">
                 <div class="tk-readonly-grid">
                     <div class="tk-readonly-field"><label>สถานะฝั่งคืน</label><span>${STATUS_BADGE[tk.status]?.label || tk.status}</span></div>
@@ -572,7 +620,8 @@
             ${linesSummaryHtml(returnLines.filter(l => l.isOffTicket))}
             <span class="tk-detail-section-label">รูปภาพแนบ</span>
             ${detailAttachmentGalleryHtml(returnAttachments)}
-        ` : `<div class="text-muted" style="padding:20px 0;text-align:center;">ยังไม่มีการคืนอะไหล่</div>`;
+        ` : `<div class="text-muted" style="padding:20px 0;text-align:center;">ยังไม่มีการคืนอะไหล่</div>`)
+            + (ticketAction.tab === 'return' ? `<div class="tk-modal-actions" style="justify-content:flex-start;">${ticketAction.html}</div>` : '');
 
         switchDetailTab('withdraw');
         document.getElementById('detailOverlay').classList.add('open');
@@ -589,56 +638,13 @@
         if (activeTab === 'active') {
             let body = '';
             if (!rows.length) {
-                body = `<tr><td colspan="6" class="empty-state">ไม่มี Ticket ที่ต้องดำเนินการ</td></tr>`;
+                body = `<tr><td colspan="3" class="empty-state">ไม่มี Ticket ที่ต้องดำเนินการ</td></tr>`;
             } else {
                 rows.forEach(tk => {
                     const b = STATUS_BADGE[tk.status] || STATUS_BADGE[null];
                     const badgeLabel = (tk.status === 'เดินทาง' && tk.phase === 'withdraw') ? 'กำลังเดินทาง' : b.label;
                     const badge = `<span class="badge ${b.cls}"><span class="badge-dot"></span>${badgeLabel}</span>`;
                     const phaseLabel = tk.phase ? (tk.phase === 'withdraw' ? 'ขาเบิก' : 'ขาคืน') : '<span class="text-muted">—</span>';
-
-                    let action = `<span class="text-muted">—</span>`;
-                    if (tk.status === null) {
-                        action = `<button class="btn-withdraw" onclick="openWithdrawModal(${tk.ticketId})">📤 เบิก</button>`;
-                    } else if (tk.status === 'รอส่งเมล DHL' && tk.phase === 'withdraw') {
-                        action = `<span class="text-muted" style="font-size:12px;">อนุมัติแล้ว — รอ Admin ส่งเมล DHL</span>
-                            <button class="btn-cancel-withdraw" onclick="cancelWithdraw(${tk.ticketId})">ยกเลิกคำขอ</button>`;
-                    } else if (tk.status === 'เดินทาง' && tk.phase === 'withdraw') {
-                        const eta = deliveryEtaHtml(tk.emailSentAt);
-                        action = `<button class="btn-return" onclick="confirmReceive(${tk.ticketId})">✅ ยืนยันรับของ</button>${eta}`;
-                    } else if (tk.status === 'เบิก' && tk.phase === 'withdraw') {
-                        // Same Case No. can have more than one ใบเบิก sitting at "เบิก" (received)
-                        // at once — combine them into a single Return form instead of one-by-one.
-                        const returnGroup = cachedTickets.filter(t => t.status === 'เบิก' && t.phase === 'withdraw' && t.externalTicketNo === tk.externalTicketNo);
-                        if (returnGroup.length > 1) {
-                            action = returnGroup[0].ticketId === tk.ticketId
-                                ? `<button class="btn-return" onclick="openReturnModal([${returnGroup.map(g => g.ticketId).join(',')}])">📥 คืนรวม (${returnGroup.length} ใบ)</button>`
-                                : `<span class="text-muted" style="font-size:12px;">รวมคืนพร้อมใบที่ 1 แล้ว</span>`;
-                        } else {
-                            action = `<button class="btn-return" onclick="openReturnModal([${tk.ticketId}])">📥 คืน</button>`;
-                        }
-                    } else if (tk.status === 'อนุมัติคืน' && tk.phase === 'return') {
-                        action = `<span class="text-muted" style="font-size:12px;">Admin อนุมัติแล้ว — รอ Admin ส่งเมล DHL</span>`;
-                    } else if (tk.status === 'กำลังเดินทางรับคืน' && tk.phase === 'return') {
-                        action = `<button class="btn-ship" onclick="markShipped(${tk.ticketId})">🚚 จัดส่งแล้ว</button>`;
-                    } else if (tk.status === 'รอ' && tk.phase === 'return') {
-                        action = `<span class="text-muted" style="font-size:12px;">รอ Admin ยืนยัน</span>`;
-                    } else if (tk.status === 'รอ' && tk.phase === 'withdraw') {
-                        action = `<span class="text-muted" style="font-size:12px;">รอ Admin อนุมัติ</span>
-                            <button class="btn-cancel-withdraw" onclick="cancelWithdraw(${tk.ticketId})">ยกเลิกคำขอ</button>`;
-                    } else if (tk.status === 'รออะไหล่' && tk.phase === 'withdraw') {
-                        action = `<span class="text-muted" style="font-size:12px;">อะไหล่ในคลังไม่พอ — รอ Admin จัดหา</span>
-                            <button class="btn-cancel-withdraw" onclick="cancelWithdraw(${tk.ticketId})">ยกเลิกคำขอ</button>`;
-                    } else if (tk.status === 'เดินทาง' && tk.phase === 'return') {
-                        action = `<span class="text-muted" style="font-size:12px;">รอถึง DHL</span>`;
-                    } else if (tk.status === 'Reject') {
-                        action = `<button class="btn-withdraw" onclick="openWithdrawModal(${tk.ticketId})">📝 แก้ไขและส่งใหม่</button>`;
-                    }
-
-                    // Same Aservice Ticket can carry more than one independent ใบเบิก (e.g. the
-                    // job needs more parts while the first request is still open) — always
-                    // offered, regardless of this row's own status.
-                    const addlBtn = `<button class="btn-add-line" style="margin-top:4px;font-size:11px;padding:4px 8px;width:auto;" onclick="requestAdditionalWithdraw(${tk.ticketId})">➕ เบิกเพิ่ม (ใบใหม่)</button>`;
                     const slipNoLine = tk.withdrawSlipNo ? `<div class="text-muted" style="font-size:10.5px;margin-top:2px;">${tk.withdrawSlipNo}</div>` : '';
                     const ticketLabel = (tk.siblingCount > 1
                         ? `<span class="id-chip ticket-id">${tk.externalTicketNo}</span><div class="text-muted" style="font-size:11px;margin-top:2px;">ใบที่ ${tk.siblingIndex} จาก ${tk.siblingCount}</div>`
@@ -647,11 +653,8 @@
                     body += `
                         <tr class="tk-row-clickable" onclick="openTicketDetail(${tk.ticketId})">
                             <td data-label="ตั๋ว">${ticketLabel}</td>
-                            <td data-label="เบิก">${withdrawSummaryHtml(tk)}</td>
-                            <td data-label="คืน">${returnSummaryHtml(tk)}</td>
                             <td data-label="ขั้นตอน">${phaseLabel}</td>
                             <td data-label="สถานะ">${badge}</td>
-                            <td data-label="การดำเนินการ" class="tk-action-cell" onclick="event.stopPropagation()">${action}${addlBtn}</td>
                         </tr>`;
                 });
             }
@@ -659,12 +662,9 @@
                 <table class="tk-tickets-table">
                     <thead>
                         <tr>
-                            <th style="width:13%">ตั๋ว</th>
-                            <th style="width:20%">เบิก</th>
-                            <th style="width:20%">คืน</th>
-                            <th style="width:11%">ขั้นตอน</th>
-                            <th style="width:14%">สถานะ</th>
-                            <th style="width:22%">การดำเนินการ</th>
+                            <th style="width:40%">ตั๋ว</th>
+                            <th style="width:25%">ขั้นตอน</th>
+                            <th style="width:35%">สถานะ</th>
                         </tr>
                     </thead>
                     <tbody>${body}</tbody>
