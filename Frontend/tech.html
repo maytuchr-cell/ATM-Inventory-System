@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Tech Workspace — ATM Inventory</title>
-    <link rel="stylesheet" href="shared/styles.css?v=49">
+    <link rel="stylesheet" href="shared/styles.css?v=50">
     <style>
         .section-head { display:flex; align-items:center; gap:10px; margin-bottom:20px; }
         .section-accent { width:4px; height:22px; background:var(--orange); border-radius:2px; }
@@ -98,6 +98,19 @@
 
         .tk-modal-actions { display:flex; gap:10px; justify-content:flex-end; margin-top:20px; }
         .tk-2col { display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-bottom:10px; }
+
+        /* Row opens the detail modal on click — the action-cell buttons stop propagation so
+           clicking them doesn't also open the modal underneath. */
+        .tk-row-clickable { cursor:pointer; }
+        .tk-row-clickable:hover td { background:var(--bg-hover, rgba(0,0,0,.03)); }
+
+        .tk-detail-tabs { display:flex; gap:4px; border-bottom:1px solid var(--border); margin-bottom:16px; }
+        .tk-detail-tab {
+            padding:10px 16px; font-size:13.5px; font-weight:600; color:var(--text-muted);
+            border:none; background:none; cursor:pointer; border-bottom:2px solid transparent;
+        }
+        .tk-detail-tab.active { color:var(--orange); border-bottom-color:var(--orange); }
+        .tk-detail-section-label { font-size:11px; font-weight:700; letter-spacing:.4px; text-transform:uppercase; color:var(--text-muted); display:block; margin:14px 0 6px; }
 
         /* ── Phone screens ── */
         @media(max-width:640px) {
@@ -245,6 +258,36 @@
     </div>
 </div>
 
+<!-- Ticket Detail (read-only, opened by clicking a row) -->
+<div class="tk-overlay" id="detailOverlay">
+    <div class="tk-modal">
+        <div class="tk-modal-header">
+            <span class="tk-modal-title" id="detailTicketTitle">รายละเอียด Ticket</span>
+            <button class="tk-modal-close" onclick="closeTicketDetail()">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+            </button>
+        </div>
+        <div class="tk-modal-body">
+            <div class="tk-readonly-box">
+                <div class="tk-readonly-grid">
+                    <div class="tk-readonly-field"><label>ช่าง</label><span id="detailTechName">—</span></div>
+                    <div class="tk-readonly-field"><label>แผนก / โซน</label><span id="detailTechDept">—</span></div>
+                    <div class="tk-readonly-field"><label>สถานะปัจจุบัน</label><span id="detailStatus">—</span></div>
+                    <div class="tk-readonly-field"><label>วันที่แจ้ง</label><span id="detailCreatedAt">—</span></div>
+                </div>
+            </div>
+
+            <div class="tk-detail-tabs">
+                <button type="button" class="tk-detail-tab active" id="detailTabWithdrawBtn" onclick="switchDetailTab('withdraw')">📤 ใบเบิก</button>
+                <button type="button" class="tk-detail-tab" id="detailTabReturnBtn" onclick="switchDetailTab('return')">📥 ใบคืน</button>
+            </div>
+
+            <div id="detailTabWithdraw"></div>
+            <div id="detailTabReturn" style="display:none;"></div>
+        </div>
+    </div>
+</div>
+
 <!-- Return Form (Form 2) -->
 <div class="tk-overlay" id="returnOverlay">
     <div class="tk-modal">
@@ -357,10 +400,10 @@
     </div>
 </div>
 
-<script src="shared/translations.js?v=49"></script>
-<script src="shared/toast.js?v=49"></script>
-<script src="shared/api.js?v=49"></script>
-<script src="shared/layout.js?v=49"></script>
+<script src="shared/translations.js?v=50"></script>
+<script src="shared/toast.js?v=50"></script>
+<script src="shared/api.js?v=50"></script>
+<script src="shared/layout.js?v=50"></script>
 <script>
     /* Status: รอ / เดินทาง / เบิก / คืน / Reject / Cancel   (null = ยังไม่เริ่มเบิก) */
     const currentEmail = localStorage.getItem('userEmail') || 'tech@atm.com';
@@ -453,6 +496,90 @@
                 ${l.originalPartName ? `<div style="font-size:10px;color:var(--orange);margin-top:1px;">🔄 ขอไป: ${l.originalPartName} — Admin เปลี่ยนเป็นอะไหล่เทียบเคียงนี้แทน</div>` : ''}</div>`).join('')
             : `<span class="text-muted">—</span>`;
     }
+    // Split-column versions for the main table — one line's worth of markup per part, no
+    // (เบิก)/(คืน) tag needed since each column is already scoped to one lineType.
+    function linesSummaryHtml(lines) {
+        return lines.length
+            ? lines.map(l => `<div style="font-size:12px;">${l.partName} <span class="text-muted">×${l.quantity}</span>${l.condition ? ` <span style="font-size:10px;color:var(--text-muted)">(${CONDITION_LABEL[l.condition]})</span>` : ''}${l.isOffTicket ? ' <span style="font-size:10px;color:var(--orange);">🆕 นอกใบเบิก</span>' : ''}
+                ${l.originalPartName ? `<div style="font-size:10px;color:var(--orange);margin-top:1px;">🔄 ขอไป: ${l.originalPartName} — Admin เปลี่ยนเป็นอะไหล่เทียบเคียงนี้แทน</div>` : ''}</div>`).join('')
+            : `<span class="text-muted">—</span>`;
+    }
+    function withdrawSummaryHtml(tk) { return linesSummaryHtml(tk.lines.filter(l => l.lineType === 'Withdraw')); }
+    function returnSummaryHtml(tk) { return linesSummaryHtml(tk.lines.filter(l => l.lineType === 'Return')); }
+
+    /* ── Ticket Detail modal — read-only, split into "ใบเบิก"/"ใบคืน" tabs so it's clear at a
+       glance what this Ticket withdrew vs. what (if anything) has been returned against it. ── */
+    function detailAttachmentGalleryHtml(list) {
+        if (!list || !list.length) return `<span class="text-muted">—</span>`;
+        return `<div style="display:flex;flex-wrap:wrap;gap:8px;">${list.map(a => `
+            <img src="${IMG_BASE}${a.filePath}" alt="${a.fileName}"
+                 style="width:72px;height:72px;object-fit:cover;border-radius:8px;border:1px solid var(--border);cursor:pointer;"
+                 onclick="window.open('${IMG_BASE}${a.filePath}','_blank')">`).join('')}</div>`;
+    }
+
+    function switchDetailTab(tab) {
+        document.getElementById('detailTabWithdrawBtn').classList.toggle('active', tab === 'withdraw');
+        document.getElementById('detailTabReturnBtn').classList.toggle('active', tab === 'return');
+        document.getElementById('detailTabWithdraw').style.display = tab === 'withdraw' ? 'block' : 'none';
+        document.getElementById('detailTabReturn').style.display = tab === 'return' ? 'block' : 'none';
+    }
+
+    function openTicketDetail(id) {
+        const tk = cachedTickets.find(t => t.ticketId === id);
+        if (!tk) return;
+
+        document.getElementById('detailTicketTitle').textContent = tk.externalTicketNo;
+        document.getElementById('detailTechName').textContent = tk.techName || '—';
+        document.getElementById('detailTechDept').textContent = tk.techDept || '—';
+        const b = STATUS_BADGE[tk.status] || STATUS_BADGE[null];
+        const statusLabel = (tk.status === 'เดินทาง' && tk.phase === 'withdraw') ? 'กำลังเดินทาง' : b.label;
+        document.getElementById('detailStatus').textContent = tk.status
+            ? `${statusLabel} (${tk.phase === 'withdraw' ? 'ขาเบิก' : 'ขาคืน'})`
+            : 'ยังไม่เบิก';
+        document.getElementById('detailCreatedAt').textContent = new Date(tk.createdAt).toLocaleString('th-TH');
+
+        const withdrawLines = tk.lines.filter(l => l.lineType === 'Withdraw');
+        const returnLines = tk.lines.filter(l => l.lineType === 'Return');
+        const withdrawAttachments = (tk.attachments || []).filter(a => a.phase === 'Withdraw');
+        const returnAttachments = (tk.attachments || []).filter(a => a.phase === 'Return');
+
+        document.getElementById('detailTabWithdraw').innerHTML = withdrawLines.length ? `
+            <div class="tk-readonly-box">
+                <div class="tk-readonly-grid">
+                    <div class="tk-readonly-field"><label>เลขที่ใบเบิก</label><span>${tk.withdrawSlipNo || 'ยังไม่ออกเลข'}</span></div>
+                    <div class="tk-readonly-field"><label>วันที่เบิก</label><span>${tk.withdrawDate ? new Date(tk.withdrawDate).toLocaleDateString('th-TH') : '—'}</span></div>
+                    <div class="tk-readonly-field"><label>Tech Support ที่ปรึกษา</label><span>${tk.techSupportName || 'ไม่มี'}</span></div>
+                    <div class="tk-readonly-field"><label>ที่อยู่จัดส่ง</label><span>${tk.withdrawAddress || '—'}</span></div>
+                </div>
+            </div>
+            <span class="tk-detail-section-label">รายการอะไหล่ที่เบิก</span>
+            ${linesSummaryHtml(withdrawLines)}
+            ${tk.withdrawDescription ? `<span class="tk-detail-section-label">หมายเหตุ / อาการเสีย</span><div style="font-size:13px;white-space:pre-wrap;">${tk.withdrawDescription}</div>` : ''}
+            <span class="tk-detail-section-label">รูปภาพแนบ</span>
+            ${detailAttachmentGalleryHtml(withdrawAttachments)}
+        ` : `<div class="text-muted" style="padding:20px 0;text-align:center;">ยังไม่ได้ส่งคำขอเบิก</div>`;
+
+        document.getElementById('detailTabReturn').innerHTML = tk.returnAddress ? `
+            <div class="tk-readonly-box">
+                <div class="tk-readonly-grid">
+                    <div class="tk-readonly-field"><label>สถานะฝั่งคืน</label><span>${STATUS_BADGE[tk.status]?.label || tk.status}</span></div>
+                    <div class="tk-readonly-field"><label>ที่อยู่จัดส่งคืน</label><span>${tk.returnAddress}</span></div>
+                </div>
+            </div>
+            <span class="tk-detail-section-label">อะไหล่ที่ตรงกับใบเบิก</span>
+            ${linesSummaryHtml(returnLines.filter(l => !l.isOffTicket))}
+            <span class="tk-detail-section-label">อะไหล่นอกเหนือใบเบิก</span>
+            ${linesSummaryHtml(returnLines.filter(l => l.isOffTicket))}
+            <span class="tk-detail-section-label">รูปภาพแนบ</span>
+            ${detailAttachmentGalleryHtml(returnAttachments)}
+        ` : `<div class="text-muted" style="padding:20px 0;text-align:center;">ยังไม่มีการคืนอะไหล่</div>`;
+
+        switchDetailTab('withdraw');
+        document.getElementById('detailOverlay').classList.add('open');
+    }
+    function closeTicketDetail() {
+        document.getElementById('detailOverlay').classList.remove('open');
+    }
 
     function renderTicketsTable() {
         const rows = cachedTickets.filter(tk => TERMINAL_STATUSES.includes(tk.status) === (activeTab === 'history'));
@@ -462,7 +589,7 @@
         if (activeTab === 'active') {
             let body = '';
             if (!rows.length) {
-                body = `<tr><td colspan="5" class="empty-state">ไม่มี Ticket ที่ต้องดำเนินการ</td></tr>`;
+                body = `<tr><td colspan="6" class="empty-state">ไม่มี Ticket ที่ต้องดำเนินการ</td></tr>`;
             } else {
                 rows.forEach(tk => {
                     const b = STATUS_BADGE[tk.status] || STATUS_BADGE[null];
@@ -518,12 +645,13 @@
                         : `<span class="id-chip ticket-id">${tk.externalTicketNo}</span>`) + slipNoLine;
 
                     body += `
-                        <tr>
+                        <tr class="tk-row-clickable" onclick="openTicketDetail(${tk.ticketId})">
                             <td data-label="ตั๋ว">${ticketLabel}</td>
-                            <td data-label="อะไหล่">${partsSummaryHtml(tk)}</td>
+                            <td data-label="เบิก">${withdrawSummaryHtml(tk)}</td>
+                            <td data-label="คืน">${returnSummaryHtml(tk)}</td>
                             <td data-label="ขั้นตอน">${phaseLabel}</td>
                             <td data-label="สถานะ">${badge}</td>
-                            <td data-label="การดำเนินการ" class="tk-action-cell">${action}${addlBtn}</td>
+                            <td data-label="การดำเนินการ" class="tk-action-cell" onclick="event.stopPropagation()">${action}${addlBtn}</td>
                         </tr>`;
                 });
             }
@@ -531,11 +659,12 @@
                 <table class="tk-tickets-table">
                     <thead>
                         <tr>
-                            <th style="width:14%">ตั๋ว</th>
-                            <th style="width:30%">อะไหล่</th>
-                            <th style="width:14%">ขั้นตอน</th>
-                            <th style="width:18%">สถานะ</th>
-                            <th style="width:24%">การดำเนินการ</th>
+                            <th style="width:13%">ตั๋ว</th>
+                            <th style="width:20%">เบิก</th>
+                            <th style="width:20%">คืน</th>
+                            <th style="width:11%">ขั้นตอน</th>
+                            <th style="width:14%">สถานะ</th>
+                            <th style="width:22%">การดำเนินการ</th>
                         </tr>
                     </thead>
                     <tbody>${body}</tbody>
@@ -551,7 +680,7 @@
                     const badge = `<span class="badge ${b.cls}"><span class="badge-dot"></span>${b.label}</span>`;
                     const dt = new Date(tk.updatedAt).toLocaleString('th-TH', { dateStyle: 'medium', timeStyle: 'short' });
                     body += `
-                        <tr>
+                        <tr class="tk-row-clickable" onclick="openTicketDetail(${tk.ticketId})">
                             <td data-label="ตั๋ว"><span class="id-chip ticket-id">${tk.externalTicketNo}</span></td>
                             <td data-label="อะไหล่">${partsSummaryHtml(tk)}</td>
                             <td data-label="สถานะ">${badge}</td>
