@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Tech Workspace — ATM Inventory</title>
-    <link rel="stylesheet" href="shared/styles.css?v=53">
+    <link rel="stylesheet" href="shared/styles.css?v=54">
     <style>
         .section-head { display:flex; align-items:center; gap:10px; margin-bottom:20px; }
         .section-accent { width:4px; height:22px; background:var(--orange); border-radius:2px; }
@@ -400,10 +400,10 @@
     </div>
 </div>
 
-<script src="shared/translations.js?v=53"></script>
-<script src="shared/toast.js?v=53"></script>
-<script src="shared/api.js?v=53"></script>
-<script src="shared/layout.js?v=53"></script>
+<script src="shared/translations.js?v=54"></script>
+<script src="shared/toast.js?v=54"></script>
+<script src="shared/api.js?v=54"></script>
+<script src="shared/layout.js?v=54"></script>
 <script>
     /* Status: รอ / เดินทาง / เบิก / คืน / Reject / Cancel   (null = ยังไม่เริ่มเบิก) */
     const currentEmail = localStorage.getItem('userEmail') || 'tech@atm.com';
@@ -500,15 +500,29 @@
                 ${l.originalPartName ? `<div style="font-size:10px;color:var(--orange);margin-top:1px;">🔄 ขอไป: ${l.originalPartName} — Admin เปลี่ยนเป็นอะไหล่เทียบเคียงนี้แทน</div>` : ''}</div>`).join('')
             : `<span class="text-muted">—</span>`;
     }
-    // History tab needs both legs together in one cell — flatten every WithdrawBatch's lines
-    // (tagged เบิก) alongside the Ticket's own Return lines (tagged คืน).
+    // History tab needs both legs together in one cell — grouped by WithdrawBatch (so it's clear
+    // which items belong to which ใบเบิก, e.g. "ใบที่ 1: ฐาน ×1" vs "ใบที่ 2: เสา ×2") rather than
+    // one flat mixed list, then the Ticket's own Return lines (คืน) at the end.
     function allLinesSummaryHtml(tk) {
-        const withdrawLines = (tk.withdrawBatches || []).flatMap(b => b.lines.map(l => ({ ...l, lineType: 'Withdraw' })));
-        const combined = [...withdrawLines, ...tk.lines];
-        return combined.length
-            ? combined.map(l => `<div style="font-size:12px;">${l.partName} <span class="text-muted">×${l.quantity}</span> <span style="font-size:10px;color:var(--text-muted)">(${l.lineType === 'Withdraw' ? 'เบิก' : 'คืน'}${l.condition ? ' — ' + CONDITION_LABEL[l.condition] : ''})</span>${l.isOffTicket ? ' <span style="font-size:10px;color:var(--orange);">🆕 นอกใบเบิก</span>' : ''}
-                ${l.originalPartName ? `<div style="font-size:10px;color:var(--orange);margin-top:1px;">🔄 ขอไป: ${l.originalPartName} — Admin เปลี่ยนเป็นอะไหล่เทียบเคียงนี้แทน</div>` : ''}</div>`).join('')
-            : `<span class="text-muted">—</span>`;
+        const batches = tk.withdrawBatches || [];
+        const returnLines = tk.lines;
+        if (!batches.length && !returnLines.length) return `<span class="text-muted">—</span>`;
+
+        const lineHtml = (l, tag) => `<div style="font-size:12px;">${l.partName} <span class="text-muted">×${l.quantity}</span> <span style="font-size:10px;color:var(--text-muted)">(${tag}${l.condition ? ' — ' + CONDITION_LABEL[l.condition] : ''})</span>${l.isOffTicket ? ' <span style="font-size:10px;color:var(--orange);">🆕 นอกใบเบิก</span>' : ''}
+            ${l.originalPartName ? `<div style="font-size:10px;color:var(--orange);margin-top:1px;">🔄 ขอไป: ${l.originalPartName} — Admin เปลี่ยนเป็นอะไหล่เทียบเคียงนี้แทน</div>` : ''}</div>`;
+
+        let html = '';
+        batches.forEach((b, i) => {
+            if (batches.length > 1) {
+                html += `<div style="font-size:10px;font-weight:700;color:var(--text-muted);text-transform:uppercase;margin-top:${i ? 6 : 0}px;">ใบที่ ${i + 1}${b.withdrawSlipNo ? ' — ' + b.withdrawSlipNo : ''}</div>`;
+            }
+            html += b.lines.length ? b.lines.map(l => lineHtml(l, 'เบิก')).join('') : `<span class="text-muted">—</span>`;
+        });
+        if (returnLines.length) {
+            html += `<div style="font-size:10px;font-weight:700;color:var(--text-muted);text-transform:uppercase;margin-top:6px;">คืนแล้ว</div>`;
+            html += returnLines.map(l => lineHtml(l, 'คืน')).join('');
+        }
+        return html;
     }
     // Most recent activity across the Ticket itself and every one of its batches — used for
     // history sorting, since a batch's own actions no longer touch Ticket.updatedAt.

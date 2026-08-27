@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>History — ATM Inventory</title>
-  <link rel="stylesheet" href="shared/styles.css?v=53">
+  <link rel="stylesheet" href="shared/styles.css?v=54">
   <style>
     /* Filter bar */
     .filter-grid { display:grid; grid-template-columns:1fr 1fr auto; gap:16px; align-items:end; margin-bottom:20px; padding:20px; background:var(--bg-subtle); border-radius:10px; border:1px solid var(--border); }
@@ -144,10 +144,10 @@
   </div>
 </div>
 
-<script src="shared/translations.js?v=53"></script>
-<script src="shared/toast.js?v=53"></script>
-<script src="shared/api.js?v=53"></script>
-<script src="shared/layout.js?v=53"></script>
+<script src="shared/translations.js?v=54"></script>
+<script src="shared/toast.js?v=54"></script>
+<script src="shared/api.js?v=54"></script>
+<script src="shared/layout.js?v=54"></script>
 <script>
   const CONDITION_LABEL = { Good: 'ของดี', Bad: 'ของเสีย', Lost: 'สูญหาย' };
   let allTickets = [];
@@ -165,6 +165,30 @@
       document.getElementById('historyTableBody').innerHTML =
         `<tr><td colspan="7" class="empty-state" style="color:var(--red)">⚠ ไม่สามารถเชื่อมต่อเซิร์ฟเวอร์ได้</td></tr>`;
     }
+  }
+
+  // Grouped by WithdrawBatch (so it's clear which items belong to which ใบเบิก, e.g.
+  // "ใบที่ 1: ฐาน ×1" vs "ใบที่ 2: เสา ×2") rather than one flat mixed list, then the Ticket's
+  // own Return lines (คืน) at the end.
+  function groupedPartsSummaryHtml(tk) {
+    const batches = tk.withdrawBatches || [];
+    const returnLines = tk.lines;
+    if (!batches.length && !returnLines.length) return `<span class="sub-text">—</span>`;
+
+    const lineHtml = (l, tag) => `<div style="font-size:12px;">${l.partName} <span class="sub-text" style="display:inline">×${l.quantity}</span> <span style="font-size:10px;color:var(--text-muted)">(${tag}${l.condition ? ' — ' + CONDITION_LABEL[l.condition] : ''})</span>${l.isOffTicket ? ' <span style="font-size:10px;color:var(--orange);">🆕 นอกใบเบิก</span>' : ''}</div>`;
+
+    let html = '';
+    batches.forEach((b, i) => {
+      if (batches.length > 1) {
+        html += `<div style="font-size:10px;font-weight:700;color:var(--text-muted);text-transform:uppercase;margin-top:${i ? 6 : 0}px;">ใบที่ ${i + 1}${b.withdrawSlipNo ? ' — ' + b.withdrawSlipNo : ''}</div>`;
+      }
+      html += b.lines.length ? b.lines.map(l => lineHtml(l, 'เบิก')).join('') : `<span class="sub-text">—</span>`;
+    });
+    if (returnLines.length) {
+      html += `<div style="font-size:10px;font-weight:700;color:var(--text-muted);text-transform:uppercase;margin-top:6px;">คืนแล้ว</div>`;
+      html += returnLines.map(l => lineHtml(l, 'คืน')).join('');
+    }
+    return html;
   }
 
   const STATUS_BADGE = {
@@ -197,11 +221,7 @@
       const badge = `<span class="badge ${b.cls}"><span class="badge-dot"></span>${b.label}</span>`;
       const batchCount = (tk.withdrawBatches || []).length;
       const batchLabel = batchCount ? `×${batchCount} ใบเบิก` : '—';
-      const withdrawLines = (tk.withdrawBatches || []).flatMap(bt => bt.lines.map(l => ({ ...l, lineType: 'Withdraw' })));
-      const allLines = [...withdrawLines, ...tk.lines];
-      const partsSummary = allLines.length
-        ? allLines.map(l => `<div style="font-size:12px;">${l.partName} <span class="sub-text" style="display:inline">×${l.quantity}</span> <span style="font-size:10px;color:var(--text-muted)">(${l.lineType === 'Withdraw' ? 'เบิก' : 'คืน'}${l.condition ? ' — ' + CONDITION_LABEL[l.condition] : ''})</span></div>`).join('')
-        : `<span class="sub-text">—</span>`;
+      const partsSummary = groupedPartsSummaryHtml(tk);
 
       tbody.innerHTML += `
         <tr>
