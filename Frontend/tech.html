@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Tech Workspace — ATM Inventory</title>
-    <link rel="stylesheet" href="shared/styles.css?v=48">
+    <link rel="stylesheet" href="shared/styles.css?v=49">
     <style>
         .section-head { display:flex; align-items:center; gap:10px; margin-bottom:20px; }
         .section-accent { width:4px; height:22px; background:var(--orange); border-radius:2px; }
@@ -265,10 +265,13 @@
             <span class="tk-section-label">ประวัติการเบิก (อ้างอิงเท่านั้น)</span>
             <div class="tk-readonly-box" id="rtHistory" style="margin-bottom:18px;"></div>
 
-            <span class="tk-section-label">เลือกอะไหล่ที่จะคืน</span>
-            <div id="rtLines"></div>
-            <button type="button" class="btn-add-line" onclick="addLine('return')">+ เพิ่มอะไหล่</button>
-            <div style="font-size:11.5px;color:var(--text-muted);margin-top:6px;">* คืนน้อยกว่าจำนวนที่เบิกไปได้ (กรณีของหายหรือใช้ไปแล้ว)</div>
+            <span class="tk-section-label">อะไหล่ที่ตรงกับใบเบิก</span>
+            <div id="rtLinesMatched"></div>
+            <div style="font-size:11.5px;color:var(--text-muted);margin-top:6px;">* คืนน้อยกว่าจำนวนที่เบิกไปได้ (กรณีของหายหรือใช้ไปแล้ว) หรือลบแถวออกได้ถ้าไม่คืนชิ้นนั้นเลย</div>
+
+            <span class="tk-section-label" style="margin-top:18px;display:block;">อะไหล่นอกเหนือใบเบิก <span class="text-muted" style="font-weight:400;">(ของที่ช่างถืออยู่แต่ไม่ได้อยู่ในใบเบิกนี้)</span></span>
+            <div id="rtLinesExtra"></div>
+            <button type="button" class="btn-add-line" onclick="addLine('return')">+ เพิ่มอะไหล่นอกเหนือใบเบิก</button>
 
             <span class="tk-section-label" style="margin-top:18px;display:block;">ที่อยู่ (จุดส่งคืน)</span>
             <textarea id="rtAddress" class="form-textarea" placeholder="กรอกที่อยู่ที่จะส่งของคืน..." style="min-height:70px;"></textarea>
@@ -354,10 +357,10 @@
     </div>
 </div>
 
-<script src="shared/translations.js?v=48"></script>
-<script src="shared/toast.js?v=48"></script>
-<script src="shared/api.js?v=48"></script>
-<script src="shared/layout.js?v=48"></script>
+<script src="shared/translations.js?v=49"></script>
+<script src="shared/toast.js?v=49"></script>
+<script src="shared/api.js?v=49"></script>
+<script src="shared/layout.js?v=49"></script>
 <script>
     /* Status: รอ / เดินทาง / เบิก / คืน / Reject / Cancel   (null = ยังไม่เริ่มเบิก) */
     const currentEmail = localStorage.getItem('userEmail') || 'tech@atm.com';
@@ -665,7 +668,7 @@
         } else {
             rtLineCount++;
             const defaultTicketId = activeReturnTicketIds[activeReturnTicketIds.length - 1];
-            document.getElementById('rtLines').insertAdjacentHTML('beforeend', lineRowHtml('rt', rtLineCount, null, null, null, defaultTicketId));
+            document.getElementById('rtLinesExtra').insertAdjacentHTML('beforeend', lineRowHtml('rt', rtLineCount, null, null, null, defaultTicketId));
         }
     }
     function removeLine(prefix, idx) {
@@ -956,14 +959,17 @@
         document.getElementById('rtHistory').innerHTML = historyHtml || `<span class="text-muted">—</span>`;
 
         document.getElementById('rtAddress').value = '';
-        document.getElementById('rtLines').innerHTML = '';
+        document.getElementById('rtLinesMatched').innerHTML = '';
+        document.getElementById('rtLinesExtra').innerHTML = '';
         rtLineCount = 0;
         // pre-fill one row per withdrawn part per ticket, defaulting qty to what was withdrawn
         // (partial return allowed), tagged with its own ticketId so Submit knows where it belongs.
+        // These go in the "ตรงกับใบเบิก" group — anything the tech adds manually via "+ เพิ่มอะไหล่
+        // นอกเหนือใบเบิก" lands in the separate extra group instead (see addLine()).
         group.forEach(tk => {
             tk.lines.filter(l => l.lineType === 'Withdraw').forEach(l => {
                 rtLineCount++;
-                document.getElementById('rtLines').insertAdjacentHTML('beforeend', lineRowHtml('rt', rtLineCount, l.partNo, l.quantity, null, tk.ticketId));
+                document.getElementById('rtLinesMatched').insertAdjacentHTML('beforeend', lineRowHtml('rt', rtLineCount, l.partNo, l.quantity, null, tk.ticketId));
             });
         });
         if (!rtLineCount) addLine('return');
