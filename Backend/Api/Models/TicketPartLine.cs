@@ -7,6 +7,12 @@ public class TicketPartLine
     public int TicketId { get; set; }
     public Ticket? Ticket { get; set; }
 
+    // Set for LineType=="Withdraw" rows once the Level B rewrite lands — which ใบเบิก (WithdrawBatch)
+    // this line belongs to. LineType=="Return" rows leave this null and are addressed by TicketId
+    // directly (the return leg stays Ticket-scoped, not batch-scoped).
+    public int? WithdrawBatchId { get; set; }
+    public WithdrawBatch? WithdrawBatch { get; set; }
+
     public int PartId { get; set; }
     public string PartNo { get; set; } = string.Empty; // snapshot, same pattern as ReturnRequest.PartNo
     public Part? Part { get; set; }

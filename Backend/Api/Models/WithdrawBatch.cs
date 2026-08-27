@@ -1,20 +1,18 @@
 namespace Api.Models;
 
-// เบิก/ยืม/คืน — Ticket synced from Aservice. One ticket carries both the withdraw leg and the
-// return leg; TicketPartLine holds the actual part quantities for each leg (LineType).
-public class Ticket
+// One "ใบเบิก" — an independent withdraw request under a Ticket (Case No.). A Ticket can carry
+// multiple WithdrawBatches (the tech can request more parts under the same Case No. while an
+// earlier request is still open — "เบิกเพิ่ม"), each running its own รอ→รออะไหล่→รอส่งเมล DHL→
+// เดินทาง→เบิก lifecycle independently. The return leg stays on Ticket itself (see Ticket.cs) —
+// a return can pull parts from any of this Ticket's เบิก-status batches.
+public class WithdrawBatch
 {
+    public int WithdrawBatchId { get; set; }
+
     public int TicketId { get; set; }
+    public Ticket? Ticket { get; set; }
 
-    public string ExternalTicketNo { get; set; } = string.Empty; // Aservice ticket no. — dedupe key for sync
-
-    // Technician (no separate Technician table in this codebase — kept inline as on the old Ticket)
-    public string TechEmail { get; set; } = string.Empty;
-    public string TechName  { get; set; } = string.Empty;
-    public string TechDept  { get; set; } = string.Empty;
-
-    // null = synced from Aservice but the technician hasn't submitted a withdraw request yet.
-    // รอ / เดินทาง / เบิก / คืน / Reject / Cancel
+    // รอ / รออะไหล่ / รอส่งเมล DHL / เดินทาง / เบิก / Reject / Cancel
     public string? Status { get; set; }
 
     public string? RejectReason { get; set; }   // required only when Status = Reject
@@ -26,18 +24,13 @@ public class Ticket
     // happen well before Admin gets around to emailing DHL).
     public DateTime? EmailSentAt { get; set; }
 
-    // Return-leg counterpart of EmailSentAt — set when Admin confirms the DHL email asking them
-    // to come collect the return went out (อนุมัติคืน → กำลังเดินทางรับคืน).
-    public DateTime? ReturnEmailSentAt { get; set; }
-
     public string? WithdrawAddress { get; set; }
-    public string? ReturnAddress  { get; set; }
 
     // Free-text note from the tech on why they need these parts (e.g. "Card reader เสีย,
     // ปลั๊ก Sensor ขาด") — optional, shown to Admin alongside the withdraw request.
     public string? WithdrawDescription { get; set; }
 
-    // Set once, at the moment a withdraw request is actually submitted (SubmitWithdraw) —
+    // Set once, at the moment this batch is actually submitted (SubmitWithdraw) —
     // "WD-{year}-{5-digit running no.}", resets every calendar year. System-generated, the tech
     // never types it in.
     public string? WithdrawSlipNo { get; set; }
@@ -52,17 +45,12 @@ public class Ticket
     public string? UsageStatus { get; set; }
 
     // Technical advisor the tech consulted before requesting this withdraw — null/omitted means
-    // "ไม่มี" (didn't consult anyone). Source list is currently mock data (see TechSupportController);
-    // planned to be swapped for a real KMM-mobile-backed roster later without changing this field.
+    // "ไม่มี" (didn't consult anyone).
     public string? TechSupportName { get; set; }
 
     public DateTime CreatedAt { get; set; } = DateTime.Now;
     public DateTime UpdatedAt { get; set; } = DateTime.Now;
 
     public ICollection<TicketPartLine> Lines { get; set; } = new List<TicketPartLine>();
-
-    // "ใบเบิก" plural — see WithdrawBatch.cs. Populated once the Level B migration/rewrite lands;
-    // until then this stays empty and every withdraw field above (Status, WithdrawSlipNo, etc.)
-    // is still the source of truth.
-    public ICollection<WithdrawBatch> WithdrawBatches { get; set; } = new List<WithdrawBatch>();
+    public ICollection<TicketAttachment> Attachments { get; set; } = new List<TicketAttachment>();
 }

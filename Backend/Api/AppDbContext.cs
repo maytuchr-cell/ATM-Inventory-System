@@ -11,6 +11,7 @@ public class AppDbContext : DbContext
     public DbSet<Ticket> Tickets { get; set; }
     public DbSet<TicketPartLine> TicketPartLines { get; set; }
     public DbSet<TicketAttachment> TicketAttachments { get; set; }
+    public DbSet<WithdrawBatch> WithdrawBatches { get; set; }
     public DbSet<Category> Categories { get; set; }
     public DbSet<Location> Locations { get; set; }
     public DbSet<Vendor> Vendors { get; set; }
@@ -93,6 +94,24 @@ public class AppDbContext : DbContext
             .WithMany()
             .HasForeignKey(l => l.PartId)
             .OnDelete(DeleteBehavior.Restrict);
+
+        // WithdrawBatch ("ใบเบิก") — see WithdrawBatch.cs. A Ticket's withdraw leg is being split
+        // out to allow multiple independent ใบเบิก per Case No.; the return leg stays Ticket-scoped.
+        modelBuilder.Entity<WithdrawBatch>()
+            .HasOne(b => b.Ticket)
+            .WithMany(t => t.WithdrawBatches)
+            .HasForeignKey(b => b.TicketId)
+            .OnDelete(DeleteBehavior.Cascade);
+        modelBuilder.Entity<TicketPartLine>()
+            .HasOne(l => l.WithdrawBatch)
+            .WithMany(b => b.Lines)
+            .HasForeignKey(l => l.WithdrawBatchId)
+            .OnDelete(DeleteBehavior.Cascade);
+        modelBuilder.Entity<TicketAttachment>()
+            .HasOne(a => a.WithdrawBatch)
+            .WithMany(b => b.Attachments)
+            .HasForeignKey(a => a.WithdrawBatchId)
+            .OnDelete(DeleteBehavior.Cascade);
 
         // AuditLog index for fast lookup by entity
         modelBuilder.Entity<AuditLog>()

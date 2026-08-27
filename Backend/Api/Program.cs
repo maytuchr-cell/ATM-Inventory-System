@@ -405,6 +405,68 @@ using (var scope = app.Services.CreateScope())
         }
         catch (Exception mex) { Console.WriteLine($"⚠ Tickets/TicketPartLines migration skipped: {mex.Message}"); }
 
+        // ── Lightweight migration: create WithdrawBatches table (splitting the withdraw leg out
+        //    of Ticket so one Case No. can carry multiple independent ใบเบิก — see
+        //    WithdrawBatch.cs) and add the WithdrawBatchId FK column to TicketPartLines/
+        //    TicketAttachments. This is schema-only for now: no backfill of existing Ticket rows
+        //    into batches yet, and Tickets.ExternalTicketNo stays non-unique — that data
+        //    migration + the controller rewrite that actually populates/reads WithdrawBatches
+        //    lands separately. ──
+        if (isSqlite) try
+        {
+            context.Database.ExecuteSqlRaw(@"
+                CREATE TABLE IF NOT EXISTS WithdrawBatches (
+                    WithdrawBatchId INTEGER NOT NULL CONSTRAINT PK_WithdrawBatches PRIMARY KEY AUTOINCREMENT,
+                    TicketId INTEGER NOT NULL,
+                    Status TEXT NULL,
+                    RejectReason TEXT NULL,
+                    ApproverName TEXT NULL,
+                    ApprovedAt TEXT NULL,
+                    EmailSentAt TEXT NULL,
+                    WithdrawAddress TEXT NULL,
+                    WithdrawDescription TEXT NULL,
+                    WithdrawSlipNo TEXT NULL,
+                    WithdrawDate TEXT NULL,
+                    EmployeeCode TEXT NULL,
+                    UsageStatus TEXT NULL,
+                    TechSupportName TEXT NULL,
+                    CreatedAt TEXT NOT NULL,
+                    UpdatedAt TEXT NOT NULL,
+                    CONSTRAINT FK_WithdrawBatches_Tickets FOREIGN KEY (TicketId) REFERENCES Tickets (TicketId) ON DELETE CASCADE
+                );");
+            context.Database.ExecuteSqlRaw(
+                "CREATE INDEX IF NOT EXISTS IX_WithdrawBatches_TicketId ON WithdrawBatches (TicketId);");
+
+            var tplCols2 = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            using (var cmd = context.Database.GetDbConnection().CreateCommand())
+            {
+                if (cmd.Connection!.State != System.Data.ConnectionState.Open) cmd.Connection.Open();
+                cmd.CommandText = "PRAGMA table_info(TicketPartLines);";
+                using var reader = cmd.ExecuteReader();
+                while (reader.Read()) tplCols2.Add(reader.GetString(1));
+            }
+            if (!tplCols2.Contains("WithdrawBatchId"))
+            {
+                context.Database.ExecuteSqlRaw("ALTER TABLE TicketPartLines ADD COLUMN WithdrawBatchId INTEGER NULL;");
+                Console.WriteLine("✅ Migration: added TicketPartLines.WithdrawBatchId");
+            }
+
+            var attCols = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            using (var cmd = context.Database.GetDbConnection().CreateCommand())
+            {
+                if (cmd.Connection!.State != System.Data.ConnectionState.Open) cmd.Connection.Open();
+                cmd.CommandText = "PRAGMA table_info(TicketAttachments);";
+                using var reader = cmd.ExecuteReader();
+                while (reader.Read()) attCols.Add(reader.GetString(1));
+            }
+            if (!attCols.Contains("WithdrawBatchId"))
+            {
+                context.Database.ExecuteSqlRaw("ALTER TABLE TicketAttachments ADD COLUMN WithdrawBatchId INTEGER NULL;");
+                Console.WriteLine("✅ Migration: added TicketAttachments.WithdrawBatchId");
+            }
+        }
+        catch (Exception mex) { Console.WriteLine($"⚠ WithdrawBatches migration skipped: {mex.Message}"); }
+
         // ── Lightweight migration: add StockMovement.PartId (FK to Part) on existing DBs ──
         if (isSqlite) try
         {
