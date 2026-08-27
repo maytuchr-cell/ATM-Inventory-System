@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Tech Workspace — ATM Inventory</title>
-    <link rel="stylesheet" href="shared/styles.css?v=51">
+    <link rel="stylesheet" href="shared/styles.css?v=53">
     <style>
         .section-head { display:flex; align-items:center; gap:10px; margin-bottom:20px; }
         .section-accent { width:4px; height:22px; background:var(--orange); border-radius:2px; }
@@ -400,21 +400,22 @@
     </div>
 </div>
 
-<script src="shared/translations.js?v=51"></script>
-<script src="shared/toast.js?v=51"></script>
-<script src="shared/api.js?v=51"></script>
-<script src="shared/layout.js?v=51"></script>
+<script src="shared/translations.js?v=53"></script>
+<script src="shared/toast.js?v=53"></script>
+<script src="shared/api.js?v=53"></script>
+<script src="shared/layout.js?v=53"></script>
 <script>
     /* Status: รอ / เดินทาง / เบิก / คืน / Reject / Cancel   (null = ยังไม่เริ่มเบิก) */
     const currentEmail = localStorage.getItem('userEmail') || 'tech@atm.com';
     let cachedParts   = [];
     let cachedTickets = [];
     let activeTicketId = null;
+    // Set only when the withdraw modal is editing/resubmitting an existing (Reject) batch — null
+    // means Submit will create a brand new WithdrawBatch (covers both a Ticket's first-ever
+    // withdraw and any "เบิกเพิ่ม" after).
+    let activeBatchId = null;
+    let activeReturnTicketId = null;
     let wdLineCount = 0, rtLineCount = 0, nrLineCount = 0;
-    // Set while the withdraw modal is open for "เบิกเพิ่ม (ใบใหม่)" and no Ticket row exists yet —
-    // holds the source ticket to copy tech info from. The additional-withdraw Ticket is only
-    // actually created at Submit time (see submitWithdraw), so Cancel/Escape leaves nothing behind.
-    let pendingAdditionalSrc = null;
 
     window.addEventListener('DOMContentLoaded', async () => {
         initLayout();
@@ -490,63 +491,81 @@
     }
 
     const CONDITION_LABEL = { Good: 'ของดี', Bad: 'ของเสีย', Lost: 'สูญหาย' };
-    function partsSummaryHtml(tk) {
-        return tk.lines.length
-            ? tk.lines.map(l => `<div style="font-size:12px;">${l.partName} <span class="text-muted">×${l.quantity}</span> <span style="font-size:10px;color:var(--text-muted)">(${l.lineType === 'Withdraw' ? 'เบิก' : 'คืน'}${l.condition ? ' — ' + CONDITION_LABEL[l.condition] : ''})</span>${l.isOffTicket ? ' <span style="font-size:10px;color:var(--orange);">🆕 นอกใบเบิก</span>' : ''}
-                ${l.originalPartName ? `<div style="font-size:10px;color:var(--orange);margin-top:1px;">🔄 ขอไป: ${l.originalPartName} — Admin เปลี่ยนเป็นอะไหล่เทียบเคียงนี้แทน</div>` : ''}</div>`).join('')
-            : `<span class="text-muted">—</span>`;
-    }
-    // Split-column versions for the main table — one line's worth of markup per part, no
-    // (เบิก)/(คืน) tag needed since each column is already scoped to one lineType.
+    // Split-column / batch-scoped line list — no (เบิก)/(คืน) tag needed since each list is
+    // already scoped to one lineType (a batch's own lines are always Withdraw; tk.lines from the
+    // API is always Return-only now, see TicketController.GetAllTickets).
     function linesSummaryHtml(lines) {
         return lines.length
             ? lines.map(l => `<div style="font-size:12px;">${l.partName} <span class="text-muted">×${l.quantity}</span>${l.condition ? ` <span style="font-size:10px;color:var(--text-muted)">(${CONDITION_LABEL[l.condition]})</span>` : ''}${l.isOffTicket ? ' <span style="font-size:10px;color:var(--orange);">🆕 นอกใบเบิก</span>' : ''}
                 ${l.originalPartName ? `<div style="font-size:10px;color:var(--orange);margin-top:1px;">🔄 ขอไป: ${l.originalPartName} — Admin เปลี่ยนเป็นอะไหล่เทียบเคียงนี้แทน</div>` : ''}</div>`).join('')
             : `<span class="text-muted">—</span>`;
     }
-    // Every action a tech can take on a Ticket, now surfaced only inside the detail modal (see
-    // openTicketDetail) rather than the row itself — the main table went back to being a plain
-    // ticket-level list. `tab` says which of the modal's two tabs the action belongs under:
-    // "เบิก" for the withdraw side, "return" for anything about getting the return moving.
-    // Every action closes the detail modal first (closeTicketDetail()) so it doesn't sit open
+    // History tab needs both legs together in one cell — flatten every WithdrawBatch's lines
+    // (tagged เบิก) alongside the Ticket's own Return lines (tagged คืน).
+    function allLinesSummaryHtml(tk) {
+        const withdrawLines = (tk.withdrawBatches || []).flatMap(b => b.lines.map(l => ({ ...l, lineType: 'Withdraw' })));
+        const combined = [...withdrawLines, ...tk.lines];
+        return combined.length
+            ? combined.map(l => `<div style="font-size:12px;">${l.partName} <span class="text-muted">×${l.quantity}</span> <span style="font-size:10px;color:var(--text-muted)">(${l.lineType === 'Withdraw' ? 'เบิก' : 'คืน'}${l.condition ? ' — ' + CONDITION_LABEL[l.condition] : ''})</span>${l.isOffTicket ? ' <span style="font-size:10px;color:var(--orange);">🆕 นอกใบเบิก</span>' : ''}
+                ${l.originalPartName ? `<div style="font-size:10px;color:var(--orange);margin-top:1px;">🔄 ขอไป: ${l.originalPartName} — Admin เปลี่ยนเป็นอะไหล่เทียบเคียงนี้แทน</div>` : ''}</div>`).join('')
+            : `<span class="text-muted">—</span>`;
+    }
+    // Most recent activity across the Ticket itself and every one of its batches — used for
+    // history sorting, since a batch's own actions no longer touch Ticket.updatedAt.
+    function effectiveUpdatedAt(tk) {
+        const dates = [tk.updatedAt, ...(tk.withdrawBatches || []).map(b => b.updatedAt)]
+            .filter(Boolean).map(d => new Date(d).getTime());
+        return dates.length ? new Date(Math.max(...dates)) : new Date(tk.updatedAt);
+    }
+
+    // Action for a single WithdrawBatch — surfaced inside the detail modal's ใบเบิก tab, one per
+    // batch card. Closes the detail modal first (closeTicketDetail()) so it doesn't sit open
     // underneath whatever form/confirm the action triggers next.
-    function computeTicketAction(tk) {
-        if (tk.status === null) {
-            return { tab: 'withdraw', html: `<button class="btn-withdraw" onclick="closeTicketDetail();openWithdrawModal(${tk.ticketId})">📤 เบิก</button>` };
-        } else if (tk.status === 'รอ' && tk.phase === 'withdraw') {
-            return { tab: 'withdraw', html: `<span class="text-muted" style="font-size:12px;">รอ Admin อนุมัติ</span>
-                <button class="btn-cancel-withdraw" onclick="closeTicketDetail();cancelWithdraw(${tk.ticketId})">ยกเลิกคำขอ</button>` };
-        } else if (tk.status === 'รออะไหล่' && tk.phase === 'withdraw') {
-            return { tab: 'withdraw', html: `<span class="text-muted" style="font-size:12px;">อะไหล่ในคลังไม่พอ — รอ Admin จัดหา</span>
-                <button class="btn-cancel-withdraw" onclick="closeTicketDetail();cancelWithdraw(${tk.ticketId})">ยกเลิกคำขอ</button>` };
-        } else if (tk.status === 'รอส่งเมล DHL' && tk.phase === 'withdraw') {
-            return { tab: 'withdraw', html: `<span class="text-muted" style="font-size:12px;">อนุมัติแล้ว — รอ Admin ส่งเมล DHL</span>
-                <button class="btn-cancel-withdraw" onclick="closeTicketDetail();cancelWithdraw(${tk.ticketId})">ยกเลิกคำขอ</button>` };
-        } else if (tk.status === 'เดินทาง' && tk.phase === 'withdraw') {
-            const eta = deliveryEtaHtml(tk.emailSentAt);
-            return { tab: 'withdraw', html: `<button class="btn-return" onclick="closeTicketDetail();confirmReceive(${tk.ticketId})">✅ ยืนยันรับของ</button>${eta}` };
-        } else if (tk.status === 'เบิก' && tk.phase === 'withdraw') {
-            // Same Case No. can have more than one ใบเบิก sitting at "เบิก" (received) at once —
-            // combine them into a single Return form instead of one-by-one.
-            const returnGroup = cachedTickets.filter(t => t.status === 'เบิก' && t.phase === 'withdraw' && t.externalTicketNo === tk.externalTicketNo);
-            const html = returnGroup.length > 1
-                ? (returnGroup[0].ticketId === tk.ticketId
-                    ? `<button class="btn-return" onclick="closeTicketDetail();openReturnModal([${returnGroup.map(g => g.ticketId).join(',')}])">📥 คืนรวม (${returnGroup.length} ใบ)</button>`
-                    : `<span class="text-muted" style="font-size:12px;">รวมคืนพร้อมใบที่ 1 แล้ว</span>`)
-                : `<button class="btn-return" onclick="closeTicketDetail();openReturnModal([${tk.ticketId}])">📥 คืน</button>`;
-            return { tab: 'return', html };
-        } else if (tk.status === 'อนุมัติคืน' && tk.phase === 'return') {
-            return { tab: 'return', html: `<span class="text-muted" style="font-size:12px;">Admin อนุมัติแล้ว — รอ Admin ส่งเมล DHL</span>` };
-        } else if (tk.status === 'กำลังเดินทางรับคืน' && tk.phase === 'return') {
-            return { tab: 'return', html: `<button class="btn-ship" onclick="closeTicketDetail();markShipped(${tk.ticketId})">🚚 จัดส่งแล้ว</button>` };
-        } else if (tk.status === 'รอ' && tk.phase === 'return') {
-            return { tab: 'return', html: `<span class="text-muted" style="font-size:12px;">รอ Admin ยืนยัน</span>` };
-        } else if (tk.status === 'เดินทาง' && tk.phase === 'return') {
-            return { tab: 'return', html: `<span class="text-muted" style="font-size:12px;">รอถึง DHL</span>` };
-        } else if (tk.status === 'Reject') {
-            return { tab: 'withdraw', html: `<button class="btn-withdraw" onclick="closeTicketDetail();openWithdrawModal(${tk.ticketId})">📝 แก้ไขและส่งใหม่</button>` };
+    function computeBatchAction(tk, batch) {
+        if (batch.status === 'รอ') {
+            return `<span class="text-muted" style="font-size:12px;">รอ Admin อนุมัติ</span>
+                <button class="btn-cancel-withdraw" onclick="closeTicketDetail();cancelWithdrawBatch(${tk.ticketId},${batch.withdrawBatchId})">ยกเลิกคำขอ</button>`;
+        } else if (batch.status === 'รออะไหล่') {
+            return `<span class="text-muted" style="font-size:12px;">อะไหล่ในคลังไม่พอ — รอ Admin จัดหา</span>
+                <button class="btn-cancel-withdraw" onclick="closeTicketDetail();cancelWithdrawBatch(${tk.ticketId},${batch.withdrawBatchId})">ยกเลิกคำขอ</button>`;
+        } else if (batch.status === 'รอส่งเมล DHL') {
+            return `<span class="text-muted" style="font-size:12px;">อนุมัติแล้ว — รอ Admin ส่งเมล DHL</span>
+                <button class="btn-cancel-withdraw" onclick="closeTicketDetail();cancelWithdrawBatch(${tk.ticketId},${batch.withdrawBatchId})">ยกเลิกคำขอ</button>`;
+        } else if (batch.status === 'เดินทาง') {
+            const eta = deliveryEtaHtml(batch.emailSentAt);
+            return `<button class="btn-return" onclick="closeTicketDetail();confirmReceiveBatch(${tk.ticketId},${batch.withdrawBatchId})">✅ ยืนยันรับของ</button>${eta}`;
+        } else if (batch.status === 'เบิก') {
+            return `<span class="text-muted" style="font-size:12px;">รับของแล้ว</span>`;
+        } else if (batch.status === 'Reject') {
+            return `<button class="btn-withdraw" onclick="closeTicketDetail();openWithdrawModal(${tk.ticketId},${batch.withdrawBatchId})">📝 แก้ไขและส่งใหม่</button>`;
+        } else if (batch.status === 'Cancel') {
+            return `<span class="text-muted" style="font-size:12px;">ยกเลิกแล้ว</span>`;
         }
-        return { tab: 'withdraw', html: `<span class="text-muted">—</span>` };
+        return `<span class="text-muted">—</span>`;
+    }
+    // Action for the Ticket's return leg — surfaced in the detail modal's ใบคืน tab. The
+    // "เริ่มคืน" trigger lives here (not on any one batch) since a return can pull parts from
+    // several received batches at once.
+    function computeReturnAction(tk) {
+        if (tk.status === null) {
+            const hasReceivedBatch = (tk.withdrawBatches || []).some(b => b.status === 'เบิก');
+            return hasReceivedBatch
+                ? `<button class="btn-return" onclick="closeTicketDetail();openReturnModal(${tk.ticketId})">📥 คืน</button>`
+                : `<span class="text-muted" style="font-size:12px;">ยังไม่มีอะไหล่ที่รับแล้วให้คืน</span>`;
+        } else if (tk.status === 'รอ') {
+            return `<span class="text-muted" style="font-size:12px;">รอ Admin ยืนยัน</span>`;
+        } else if (tk.status === 'อนุมัติคืน') {
+            return `<span class="text-muted" style="font-size:12px;">Admin อนุมัติแล้ว — รอ Admin ส่งเมล DHL</span>`;
+        } else if (tk.status === 'กำลังเดินทางรับคืน') {
+            return `<button class="btn-ship" onclick="closeTicketDetail();markShipped(${tk.ticketId})">🚚 จัดส่งแล้ว</button>`;
+        } else if (tk.status === 'เดินทาง') {
+            return `<span class="text-muted" style="font-size:12px;">รอถึง DHL</span>`;
+        } else if (tk.status === 'คืน') {
+            return `<span class="text-muted" style="font-size:12px;">คืนสำเร็จแล้ว</span>`;
+        } else if (tk.status === 'Cancel') {
+            return `<span class="text-muted" style="font-size:12px;">ยกเลิกแล้ว</span>`;
+        }
+        return `<span class="text-muted">—</span>`;
     }
 
     /* ── Ticket Detail modal — read-only, split into "ใบเบิก"/"ใบคืน" tabs so it's clear at a
@@ -573,40 +592,37 @@
         document.getElementById('detailTicketTitle').textContent = tk.externalTicketNo;
         document.getElementById('detailTechName').textContent = tk.techName || '—';
         document.getElementById('detailTechDept').textContent = tk.techDept || '—';
-        const b = STATUS_BADGE[tk.status] || STATUS_BADGE[null];
-        const statusLabel = (tk.status === 'เดินทาง' && tk.phase === 'withdraw') ? 'กำลังเดินทาง' : b.label;
-        document.getElementById('detailStatus').textContent = tk.status
-            ? `${statusLabel} (${tk.phase === 'withdraw' ? 'ขาเบิก' : 'ขาคืน'})`
-            : 'ยังไม่เบิก';
+        const b = STATUS_BADGE[tk.displayStatus] || STATUS_BADGE[null];
+        document.getElementById('detailStatus').textContent = b.label;
         document.getElementById('detailCreatedAt').textContent = new Date(tk.createdAt).toLocaleString('th-TH');
 
-        const withdrawLines = tk.lines.filter(l => l.lineType === 'Withdraw');
-        const returnLines = tk.lines.filter(l => l.lineType === 'Return');
-        const withdrawAttachments = (tk.attachments || []).filter(a => a.phase === 'Withdraw');
-        const returnAttachments = (tk.attachments || []).filter(a => a.phase === 'Return');
-        const ticketAction = computeTicketAction(tk);
-        // Always offered regardless of this Ticket's own status — same Aservice Ticket can carry
-        // more than one independent ใบเบิก (e.g. the job needs more parts while the first request
-        // is still open).
-        const addlBtn = `<button class="btn-add-line" style="margin-top:10px;font-size:11px;padding:4px 8px;width:auto;" onclick="closeTicketDetail();requestAdditionalWithdraw(${tk.ticketId})">➕ เบิกเพิ่ม (ใบใหม่)</button>`;
-
-        document.getElementById('detailTabWithdraw').innerHTML = (withdrawLines.length ? `
-            <div class="tk-readonly-box">
-                <div class="tk-readonly-grid">
-                    <div class="tk-readonly-field"><label>เลขที่ใบเบิก</label><span>${tk.withdrawSlipNo || 'ยังไม่ออกเลข'}</span></div>
-                    <div class="tk-readonly-field"><label>วันที่เบิก</label><span>${tk.withdrawDate ? new Date(tk.withdrawDate).toLocaleDateString('th-TH') : '—'}</span></div>
-                    <div class="tk-readonly-field"><label>Tech Support ที่ปรึกษา</label><span>${tk.techSupportName || 'ไม่มี'}</span></div>
-                    <div class="tk-readonly-field"><label>ที่อยู่จัดส่ง</label><span>${tk.withdrawAddress || '—'}</span></div>
+        const batches = tk.withdrawBatches || [];
+        const batchesHtml = batches.map(batch => {
+            const bb = STATUS_BADGE[batch.status] || STATUS_BADGE[null];
+            return `
+            <div class="tk-readonly-box" style="margin-bottom:14px;">
+                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
+                    <span class="badge ${bb.cls}"><span class="badge-dot"></span>${bb.label}</span>
+                    <span class="text-muted" style="font-size:11px;">${batch.withdrawSlipNo || 'ยังไม่ออกเลข'}</span>
                 </div>
-            </div>
-            <span class="tk-detail-section-label">รายการอะไหล่ที่เบิก</span>
-            ${linesSummaryHtml(withdrawLines)}
-            ${tk.withdrawDescription ? `<span class="tk-detail-section-label">หมายเหตุ / อาการเสีย</span><div style="font-size:13px;white-space:pre-wrap;">${tk.withdrawDescription}</div>` : ''}
-            <span class="tk-detail-section-label">รูปภาพแนบ</span>
-            ${detailAttachmentGalleryHtml(withdrawAttachments)}
-        ` : `<div class="text-muted" style="padding:20px 0;text-align:center;">ยังไม่ได้ส่งคำขอเบิก</div>`)
-            + `<div class="tk-modal-actions" style="justify-content:flex-start;flex-wrap:wrap;">${ticketAction.tab === 'withdraw' ? ticketAction.html : ''}</div>${addlBtn}`;
+                <div class="tk-readonly-grid" style="margin-bottom:10px;">
+                    <div class="tk-readonly-field"><label>วันที่เบิก</label><span>${batch.withdrawDate ? new Date(batch.withdrawDate).toLocaleDateString('th-TH') : '—'}</span></div>
+                    <div class="tk-readonly-field"><label>Tech Support ที่ปรึกษา</label><span>${batch.techSupportName || 'ไม่มี'}</span></div>
+                    <div class="tk-readonly-field"><label>ที่อยู่จัดส่ง</label><span>${batch.withdrawAddress || '—'}</span></div>
+                </div>
+                ${linesSummaryHtml(batch.lines)}
+                ${batch.withdrawDescription ? `<div style="font-size:12px;color:var(--text-muted);margin-top:6px;">หมายเหตุ: ${batch.withdrawDescription}</div>` : ''}
+                <div style="margin-top:8px;">${detailAttachmentGalleryHtml(batch.attachments)}</div>
+                <div style="margin-top:10px;">${computeBatchAction(tk, batch)}</div>
+            </div>`;
+        }).join('');
+        const addlBtn = `<button class="btn-add-line" style="margin-top:4px;font-size:11px;padding:4px 8px;width:auto;" onclick="closeTicketDetail();openWithdrawModal(${tk.ticketId})">➕ เบิกเพิ่ม (ใบใหม่)</button>`;
 
+        document.getElementById('detailTabWithdraw').innerHTML = batches.length
+            ? batchesHtml + addlBtn
+            : `<button class="btn-withdraw" onclick="closeTicketDetail();openWithdrawModal(${tk.ticketId})">📤 เบิก</button>`;
+
+        const returnLines = tk.lines; // Return-phase lines only, per API shape
         document.getElementById('detailTabReturn').innerHTML = (tk.returnAddress ? `
             <div class="tk-readonly-box">
                 <div class="tk-readonly-grid">
@@ -619,9 +635,9 @@
             <span class="tk-detail-section-label">อะไหล่นอกเหนือใบเบิก</span>
             ${linesSummaryHtml(returnLines.filter(l => l.isOffTicket))}
             <span class="tk-detail-section-label">รูปภาพแนบ</span>
-            ${detailAttachmentGalleryHtml(returnAttachments)}
+            ${detailAttachmentGalleryHtml(tk.attachments)}
         ` : `<div class="text-muted" style="padding:20px 0;text-align:center;">ยังไม่มีการคืนอะไหล่</div>`)
-            + (ticketAction.tab === 'return' ? `<div class="tk-modal-actions" style="justify-content:flex-start;">${ticketAction.html}</div>` : '');
+            + `<div class="tk-modal-actions" style="justify-content:flex-start;">${computeReturnAction(tk)}</div>`;
 
         switchDetailTab('withdraw');
         document.getElementById('detailOverlay').classList.add('open');
@@ -631,29 +647,25 @@
     }
 
     function renderTicketsTable() {
-        const rows = cachedTickets.filter(tk => TERMINAL_STATUSES.includes(tk.status) === (activeTab === 'history'));
+        const rows = cachedTickets.filter(tk => TERMINAL_STATUSES.includes(tk.displayStatus) === (activeTab === 'history'));
         document.getElementById('tickets-count').textContent = rows.length + ' ตั๋ว';
         const wrap = document.getElementById('ticketsTableWrap');
 
         if (activeTab === 'active') {
             let body = '';
             if (!rows.length) {
-                body = `<tr><td colspan="3" class="empty-state">ไม่มี Ticket ที่ต้องดำเนินการ</td></tr>`;
+                body = `<tr><td colspan="2" class="empty-state">ไม่มี Ticket ที่ต้องดำเนินการ</td></tr>`;
             } else {
                 rows.forEach(tk => {
-                    const b = STATUS_BADGE[tk.status] || STATUS_BADGE[null];
-                    const badgeLabel = (tk.status === 'เดินทาง' && tk.phase === 'withdraw') ? 'กำลังเดินทาง' : b.label;
-                    const badge = `<span class="badge ${b.cls}"><span class="badge-dot"></span>${badgeLabel}</span>`;
-                    const phaseLabel = tk.phase ? (tk.phase === 'withdraw' ? 'ขาเบิก' : 'ขาคืน') : '<span class="text-muted">—</span>';
-                    const slipNoLine = tk.withdrawSlipNo ? `<div class="text-muted" style="font-size:10.5px;margin-top:2px;">${tk.withdrawSlipNo}</div>` : '';
-                    const ticketLabel = (tk.siblingCount > 1
-                        ? `<span class="id-chip ticket-id">${tk.externalTicketNo}</span><div class="text-muted" style="font-size:11px;margin-top:2px;">ใบที่ ${tk.siblingIndex} จาก ${tk.siblingCount}</div>`
-                        : `<span class="id-chip ticket-id">${tk.externalTicketNo}</span>`) + slipNoLine;
+                    const b = STATUS_BADGE[tk.displayStatus] || STATUS_BADGE[null];
+                    const badge = `<span class="badge ${b.cls}"><span class="badge-dot"></span>${b.label}</span>`;
+                    const batchCount = (tk.withdrawBatches || []).length;
+                    const batchLine = batchCount > 1 ? `<div class="text-muted" style="font-size:11px;margin-top:2px;">×${batchCount} ใบเบิก</div>` : '';
+                    const ticketLabel = `<span class="id-chip ticket-id">${tk.externalTicketNo}</span>${batchLine}`;
 
                     body += `
                         <tr class="tk-row-clickable" onclick="openTicketDetail(${tk.ticketId})">
                             <td data-label="ตั๋ว">${ticketLabel}</td>
-                            <td data-label="ขั้นตอน">${phaseLabel}</td>
                             <td data-label="สถานะ">${badge}</td>
                         </tr>`;
                 });
@@ -662,9 +674,8 @@
                 <table class="tk-tickets-table">
                     <thead>
                         <tr>
-                            <th style="width:40%">ตั๋ว</th>
-                            <th style="width:25%">ขั้นตอน</th>
-                            <th style="width:35%">สถานะ</th>
+                            <th style="width:55%">ตั๋ว</th>
+                            <th style="width:45%">สถานะ</th>
                         </tr>
                     </thead>
                     <tbody>${body}</tbody>
@@ -674,15 +685,15 @@
             if (!rows.length) {
                 body = `<tr><td colspan="4" class="empty-state">ยังไม่มีประวัติการเบิก</td></tr>`;
             } else {
-                rows.sort((a, b) => new Date(b.updatedAt) - new Date(a.updatedAt));
+                rows.sort((a, b) => effectiveUpdatedAt(b) - effectiveUpdatedAt(a));
                 rows.forEach(tk => {
-                    const b = STATUS_BADGE[tk.status] || STATUS_BADGE[null];
+                    const b = STATUS_BADGE[tk.displayStatus] || STATUS_BADGE[null];
                     const badge = `<span class="badge ${b.cls}"><span class="badge-dot"></span>${b.label}</span>`;
-                    const dt = new Date(tk.updatedAt).toLocaleString('th-TH', { dateStyle: 'medium', timeStyle: 'short' });
+                    const dt = effectiveUpdatedAt(tk).toLocaleString('th-TH', { dateStyle: 'medium', timeStyle: 'short' });
                     body += `
                         <tr class="tk-row-clickable" onclick="openTicketDetail(${tk.ticketId})">
                             <td data-label="ตั๋ว"><span class="id-chip ticket-id">${tk.externalTicketNo}</span></td>
-                            <td data-label="อะไหล่">${partsSummaryHtml(tk)}</td>
+                            <td data-label="อะไหล่">${allLinesSummaryHtml(tk)}</td>
                             <td data-label="สถานะ">${badge}</td>
                             <td data-label="วันที่/เวลา" style="font-size:12.5px;color:var(--text-secondary);">${dt}</td>
                         </tr>`;
@@ -718,7 +729,7 @@
         { value: 'Bad',       label: 'ของเสีย' },
         { value: 'Lost',      label: 'สูญหาย' },
     ];
-    function lineRowHtml(prefix, idx, partNo, qty, condition, ticketId) {
+    function lineRowHtml(prefix, idx, partNo, qty, condition) {
         const selected = cachedParts.find(p => p.partNo === partNo);
         const val = selected ? partLabel(selected) : '';
         const dataAttr = selected ? ` data-partno="${selected.partNo}"` : '';
@@ -728,12 +739,7 @@
             ? `<select class="tk-condition" id="${prefix}-cond-${idx}">${CONDITION_OPTIONS.map(o =>
                 `<option value="${o.value}" ${o.value === (condition || 'Good') ? 'selected' : ''}>${o.label}</option>`).join('')}</select>`
             : '';
-        // ticketId: which underlying Ticket this Return line belongs to — only meaningful for "rt"
-        // rows when the tech is returning several ใบเบิก under the same Case No. in one form (see
-        // openReturnModal). collectReturnLinesGrouped() reads it back to split the combined form
-        // into one submitReturn call per original Ticket.
-        const ticketAttr = prefix === 'rt' ? ` data-ticketid="${ticketId || ''}"` : '';
-        return `<div class="tk-line-row" id="${prefix}-row-${idx}"${ticketAttr}>
+        return `<div class="tk-line-row" id="${prefix}-row-${idx}">
             <div class="tk-part-picker">
                 <input type="text" id="${prefix}-part-${idx}"${dataAttr}
                     placeholder="พิมพ์ชื่ออะไหล่เพื่อค้นหา..." autocomplete="off" value="${val}"
@@ -782,11 +788,6 @@
         if (!e.target.closest('.tk-part-picker')) closeAllPartDropdowns(null);
     });
 
-    // When the Return form is combining several ใบเบิก (see openReturnModal), a manually-added
-    // "+ เพิ่มอะไหล่" row has no natural Ticket of its own — default it to the last ticket in the
-    // group so it still submits somewhere sensible.
-    let activeReturnTicketIds = [];
-
     function addLine(kind) {
         if (kind === 'withdraw') {
             wdLineCount++;
@@ -796,8 +797,7 @@
             document.getElementById('nrLines').insertAdjacentHTML('beforeend', lineRowHtml('nr', nrLineCount));
         } else {
             rtLineCount++;
-            const defaultTicketId = activeReturnTicketIds[activeReturnTicketIds.length - 1];
-            document.getElementById('rtLinesExtra').insertAdjacentHTML('beforeend', lineRowHtml('rt', rtLineCount, null, null, null, defaultTicketId));
+            document.getElementById('rtLinesExtra').insertAdjacentHTML('beforeend', lineRowHtml('rt', rtLineCount));
         }
     }
     function removeLine(prefix, idx) {
@@ -820,26 +820,6 @@
             lines.push(line);
         }
         return lines;
-    }
-
-    // Return-only: same as collectLines('rt', ...) but split by which original Ticket each row
-    // belongs to, so a combined "คืนรวม" submission still records against the right ใบเบิก.
-    function collectReturnLinesGrouped() {
-        const grouped = {};
-        for (let i = 1; i <= rtLineCount; i++) {
-            const row = document.getElementById(`rt-row-${i}`);
-            if (!row) continue;
-            const partInp = document.getElementById(`rt-part-${i}`);
-            const qtyInp  = document.getElementById(`rt-qty-${i}`);
-            const condInp = document.getElementById(`rt-cond-${i}`);
-            const partNo = partInp?.dataset.partno || null;
-            const quantity = parseInt(qtyInp?.value, 10) || 0;
-            if (!partNo || quantity <= 0) continue;
-            const ticketId = parseInt(row.dataset.ticketid, 10) || activeReturnTicketIds[0];
-            if (!grouped[ticketId]) grouped[ticketId] = [];
-            grouped[ticketId].push({ partNo, quantity, condition: condInp?.value || 'Good' });
-        }
-        return grouped;
     }
 
     /* ── Photo attachments (withdraw + return share this) ──
@@ -876,36 +856,6 @@
         return attachments;
     }
 
-    // Start another independent ใบเบิก under the same Aservice Ticket number as an existing row
-    // (e.g. the job needs more parts while the first request is still open). No Ticket row is
-    // created here — only the form opens; the row is created at Submit time (see submitWithdraw)
-    // so closing/cancelling the form without submitting leaves no orphan behind.
-    function requestAdditionalWithdraw(fromTicketId) {
-        const src = cachedTickets.find(t => t.ticketId === fromTicketId);
-        if (!src) return;
-        pendingAdditionalSrc = src;
-        activeTicketId = null;
-        document.getElementById('wdTicketNo').textContent = src.externalTicketNo;
-        document.getElementById('wdSlipNo').textContent = 'จะออกให้หลังส่งคำขอ';
-        document.getElementById('wdTechName').textContent = src.techName;
-        document.getElementById('wdTechDept').textContent = src.techDept;
-        document.getElementById('wdCreatedAt').textContent = new Date().toLocaleString('th-TH');
-        document.getElementById('wdRejectBox').style.display = 'none';
-        document.getElementById('wdWithdrawDate').value = todayIso();
-        document.getElementById('wdEmployeeCode').value = '';
-        document.getElementById('wdCaseNo').value = src.externalTicketNo;
-        document.getElementById('wdUsageStatus').value = 'Repair';
-        document.getElementById('wdTechSupport').value = '';
-        document.getElementById('wdAddress').value = '';
-        document.getElementById('wdDescription').value = '';
-        document.getElementById('wdLines').innerHTML = '';
-        wdLineCount = 0;
-        addLine('withdraw');
-        photoFiles.wd = [];
-        renderPhotoPreview('wd');
-        document.getElementById('withdrawOverlay').classList.add('open');
-    }
-
     function todayIso() { return new Date().toISOString().slice(0, 10); }
 
     // "Repair" ties this withdraw to a specific Case No.; "Keep" is buffer stock the tech just
@@ -918,36 +868,41 @@
         document.getElementById('nrCaseNoRequired').style.display = required ? 'inline' : 'none';
     }
 
-    /* ── Withdraw form (also handles resubmit-after-Reject) ── */
-    function openWithdrawModal(id) {
-        const tk = cachedTickets.find(t => t.ticketId === id);
+    /* ── Withdraw form ── batchId omitted = a brand new ใบเบิก under this Ticket (covers both the
+       Ticket's first-ever withdraw and any "เบิกเพิ่ม" after — same call either way now that a
+       Ticket can carry several independent WithdrawBatches). batchId given = editing/resubmitting
+       that specific batch, only reachable while it's at Reject. */
+    function openWithdrawModal(ticketId, batchId) {
+        const tk = cachedTickets.find(t => t.ticketId === ticketId);
         if (!tk) return;
-        activeTicketId = id;
-        pendingAdditionalSrc = null;
+        activeTicketId = ticketId;
+        activeBatchId = batchId || null;
+        const batch = batchId ? (tk.withdrawBatches || []).find(b => b.withdrawBatchId === batchId) : null;
+
         document.getElementById('wdTicketNo').textContent = tk.externalTicketNo;
-        document.getElementById('wdSlipNo').textContent = tk.withdrawSlipNo || 'จะออกให้หลังส่งคำขอ';
+        document.getElementById('wdSlipNo').textContent = batch?.withdrawSlipNo || 'จะออกให้หลังส่งคำขอ';
         document.getElementById('wdTechName').textContent = tk.techName;
         document.getElementById('wdTechDept').textContent = tk.techDept;
         document.getElementById('wdCreatedAt').textContent = new Date(tk.createdAt).toLocaleString('th-TH');
-        document.getElementById('wdWithdrawDate').value = (tk.withdrawDate || '').slice(0, 10) || todayIso();
-        document.getElementById('wdEmployeeCode').value = tk.employeeCode || '';
+        document.getElementById('wdWithdrawDate').value = (batch?.withdrawDate || '').slice(0, 10) || todayIso();
+        document.getElementById('wdEmployeeCode').value = batch?.employeeCode || '';
         document.getElementById('wdCaseNo').value = tk.externalTicketNo;
-        document.getElementById('wdUsageStatus').value = tk.usageStatus || 'Repair';
-        document.getElementById('wdTechSupport').value = tk.techSupportName || '';
+        document.getElementById('wdUsageStatus').value = batch?.usageStatus || 'Repair';
+        document.getElementById('wdTechSupport').value = batch?.techSupportName || '';
 
         const rejectBox = document.getElementById('wdRejectBox');
-        if (tk.status === 'Reject' && tk.rejectReason) {
-            document.getElementById('wdRejectReason').textContent = tk.rejectReason;
+        if (batch?.status === 'Reject' && batch.rejectReason) {
+            document.getElementById('wdRejectReason').textContent = batch.rejectReason;
             rejectBox.style.display = 'block';
         } else {
             rejectBox.style.display = 'none';
         }
 
-        document.getElementById('wdAddress').value = tk.status === 'Reject' ? (tk.withdrawAddress || '') : '';
-        document.getElementById('wdDescription').value = tk.status === 'Reject' ? (tk.withdrawDescription || '') : '';
+        document.getElementById('wdAddress').value = batch?.status === 'Reject' ? (batch.withdrawAddress || '') : '';
+        document.getElementById('wdDescription').value = batch?.status === 'Reject' ? (batch.withdrawDescription || '') : '';
         document.getElementById('wdLines').innerHTML = '';
         wdLineCount = 0;
-        const priorLines = tk.status === 'Reject' ? tk.lines.filter(l => l.lineType === 'Withdraw') : [];
+        const priorLines = batch?.status === 'Reject' ? (batch.lines || []) : [];
         if (priorLines.length) {
             priorLines.forEach(l => {
                 wdLineCount++;
@@ -963,7 +918,7 @@
     function closeWithdrawModal() {
         document.getElementById('withdrawOverlay').classList.remove('open');
         activeTicketId = null;
-        pendingAdditionalSrc = null;
+        activeBatchId = null;
     }
     async function submitWithdraw() {
         const lines = collectLines('wd', wdLineCount);
@@ -976,44 +931,29 @@
         if (!lines.length) { showToast?.('เลือกอะไหล่อย่างน้อย 1 รายการ', 'error'); return; }
         if (!address) { showToast?.('กรุณากรอกที่อยู่จัดส่ง', 'error'); return; }
 
-        // "เบิกเพิ่ม" flow — the Ticket row doesn't exist yet, create it now (Submit is the point
-        // of no return). If a later step fails, clean it back up so retrying doesn't pile up
-        // empty rows — same pattern as submitNewRequest.
-        let createdTicketId = null;
-        let ticketId = activeTicketId;
-        if (pendingAdditionalSrc) {
-            try {
-                const res = await api.tickets.createAdditionalWithdraw({
-                    externalTicketNo: pendingAdditionalSrc.externalTicketNo,
-                    techName: pendingAdditionalSrc.techName,
-                    techEmail: currentEmail,
-                    techDept: pendingAdditionalSrc.techDept
-                });
-                ticketId = createdTicketId = res.ticket.ticketId;
-            } catch (e) { showToast?.(e.message || t('toast.error'), 'error'); return; }
-        }
-
         try {
             const attachments = await uploadPendingPhotos('wd');
-            const res = await api.tickets.submitWithdraw(ticketId, { lines, address, description, attachments, withdrawDate, employeeCode, usageStatus, techSupportName });
+            const dto = { lines, address, description, attachments, withdrawDate, employeeCode, usageStatus, techSupportName };
+            const res = activeBatchId
+                ? await api.tickets.resubmitWithdraw(activeTicketId, activeBatchId, dto)
+                : await api.tickets.submitWithdraw(activeTicketId, dto);
             photoFiles.wd = [];
             closeWithdrawModal();
             await fetchTickets();
-            const slipNo = res?.ticket?.withdrawSlipNo;
+            const slipNo = res?.batch?.withdrawSlipNo;
             showToast?.(slipNo ? `ส่งคำขอเบิกแล้ว เลขที่ใบเบิก ${slipNo} — รอ Admin อนุมัติ` : 'ส่งคำขอเบิกแล้ว รอ Admin อนุมัติ', 'success');
         } catch (e) {
-            if (createdTicketId) { try { await api.tickets.remove(createdTicketId); } catch {} }
             showToast?.(e.message || t('toast.error'), 'error');
         }
     }
 
     // Tech can only pull back their own request before Admin has acted on it — once approved
-    // (เดินทาง) stock has already left the warehouse for this ticket, so cancelling from there is
+    // (เดินทาง) stock has already left the warehouse for this batch, so cancelling from there is
     // an Admin-side decision (existing Cancel button on admin-tickets.html), not the tech's.
-    async function cancelWithdraw(id) {
+    async function cancelWithdrawBatch(ticketId, batchId) {
         if (!confirm('ยกเลิกคำขอเบิกนี้?')) return;
         try {
-            await api.tickets.cancel(id);
+            await api.tickets.cancelBatch(ticketId, batchId);
             await fetchTickets();
             showToast?.('ยกเลิกคำขอเบิกแล้ว', 'success');
         } catch (e) { showToast?.(e.message || t('toast.error'), 'error'); }
@@ -1035,54 +975,53 @@
     function renderOverdueReceiveBanner() {
         const banner = document.getElementById('overdue-receive-banner');
         const oneDayMs = 24 * 60 * 60 * 1000;
-        const overdue = cachedTickets.filter(tk => {
-            if (tk.status !== 'เดินทาง' || tk.phase !== 'withdraw' || !tk.emailSentAt) return false;
-            return (Date.now() - new Date(tk.emailSentAt).getTime()) > oneDayMs;
+        const overdue = [];
+        cachedTickets.forEach(tk => {
+            (tk.withdrawBatches || []).forEach(batch => {
+                if (batch.status === 'เดินทาง' && batch.emailSentAt && (Date.now() - new Date(batch.emailSentAt).getTime()) > oneDayMs) {
+                    overdue.push({ tk, batch });
+                }
+            });
         });
         if (!overdue.length) { banner.style.display = 'none'; banner.innerHTML = ''; return; }
 
         banner.innerHTML = `
             <div class="overdue-banner">
                 <div class="overdue-banner-title">🔔 มีอะไหล่ที่คาดว่าถึงแล้ว — กรุณายืนยันรับของ (${overdue.length} รายการ)</div>
-                ${overdue.map(tk => `
+                ${overdue.map(({ tk, batch }) => `
                     <div class="overdue-item">
-                        <span><span class="id-chip ticket-id">${tk.externalTicketNo}</span> — ${partsSummaryHtml(tk).replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim()}</span>
-                        <button class="btn-receive-now" onclick="confirmReceive(${tk.ticketId})">✅ ยืนยันรับของ</button>
+                        <span><span class="id-chip ticket-id">${tk.externalTicketNo}</span> — ${linesSummaryHtml(batch.lines).replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim()}</span>
+                        <button class="btn-receive-now" onclick="confirmReceiveBatch(${tk.ticketId}, ${batch.withdrawBatchId})">✅ ยืนยันรับของ</button>
                     </div>`).join('')}
             </div>`;
         banner.style.display = 'block';
     }
 
-    async function confirmReceive(id) {
+    async function confirmReceiveBatch(ticketId, batchId) {
         if (!confirm('ยืนยันว่าได้รับอะไหล่แล้ว?')) return;
         try {
-            await api.tickets.receive(id);
+            await api.tickets.receiveBatch(ticketId, batchId);
             await fetchTickets();
         } catch (e) { showToast?.(e.message || t('toast.error'), 'error'); }
     }
 
-    /* ── Return form ──
-       ids: array of ticketId. Normally just one ใบเบิก, but when several ใบเบิก under the same
-       Case No. are all sitting at "เบิก" (received) at once, renderTicketsTable groups them so
-       the tech fills one form and this opens with all of their ticketIds — collectReturnLinesGrouped()
-       splits the rows back apart by ticket at Submit time (see below). */
-    function openReturnModal(ids) {
-        const group = ids.map(id => cachedTickets.find(t => t.ticketId === id)).filter(Boolean);
-        if (!group.length) return;
-        activeReturnTicketIds = group.map(t => t.ticketId);
-        const combined = group.length > 1;
-        document.getElementById('rtTicketNo').textContent = combined
-            ? `${group[0].externalTicketNo} (รวม ${group.length} ใบเบิก)`
-            : group[0].externalTicketNo;
-        document.getElementById('rtTechName').textContent = group[0].techName;
+    /* ── Return form — one Ticket at a time now (no more combining sibling Tickets). Pre-fills
+       from every WithdrawBatch currently at เบิก under this Ticket. ── */
+    function openReturnModal(ticketId) {
+        const tk = cachedTickets.find(t => t.ticketId === ticketId);
+        if (!tk) return;
+        activeReturnTicketId = ticketId;
+        document.getElementById('rtTicketNo').textContent = tk.externalTicketNo;
+        document.getElementById('rtTechName').textContent = tk.techName;
 
-        const historyHtml = group.map(tk => {
-            const withdrawn = tk.lines.filter(l => l.lineType === 'Withdraw');
-            const lines = withdrawn.length
-                ? withdrawn.map(l => `<div class="tk-history-line"><span>${l.partName}</span><span class="fw-600">×${l.quantity}</span></div>`).join('')
+        const receivedBatches = (tk.withdrawBatches || []).filter(b => b.status === 'เบิก');
+        const combined = receivedBatches.length > 1;
+        const historyHtml = receivedBatches.map(batch => {
+            const lines = batch.lines.length
+                ? batch.lines.map(l => `<div class="tk-history-line"><span>${l.partName}</span><span class="fw-600">×${l.quantity}</span></div>`).join('')
                 : `<span class="text-muted">—</span>`;
             return combined
-                ? `<div style="margin-bottom:8px;"><div class="text-muted" style="font-size:10.5px;font-weight:700;text-transform:uppercase;margin-bottom:2px;">${tk.withdrawSlipNo || tk.externalTicketNo}</div>${lines}</div>`
+                ? `<div style="margin-bottom:8px;"><div class="text-muted" style="font-size:10.5px;font-weight:700;text-transform:uppercase;margin-bottom:2px;">${batch.withdrawSlipNo || ''}</div>${lines}</div>`
                 : lines;
         }).join('');
         document.getElementById('rtHistory').innerHTML = historyHtml || `<span class="text-muted">—</span>`;
@@ -1091,14 +1030,14 @@
         document.getElementById('rtLinesMatched').innerHTML = '';
         document.getElementById('rtLinesExtra').innerHTML = '';
         rtLineCount = 0;
-        // pre-fill one row per withdrawn part per ticket, defaulting qty to what was withdrawn
-        // (partial return allowed), tagged with its own ticketId so Submit knows where it belongs.
-        // These go in the "ตรงกับใบเบิก" group — anything the tech adds manually via "+ เพิ่มอะไหล่
-        // นอกเหนือใบเบิก" lands in the separate extra group instead (see addLine()).
-        group.forEach(tk => {
-            tk.lines.filter(l => l.lineType === 'Withdraw').forEach(l => {
+        // pre-fill one row per withdrawn part across every received batch, defaulting qty to what
+        // was withdrawn (partial return allowed). These go in the "ตรงกับใบเบิก" group — anything
+        // the tech adds manually via "+ เพิ่มอะไหล่นอกเหนือใบเบิก" lands in the separate extra
+        // group instead (see addLine()).
+        receivedBatches.forEach(batch => {
+            batch.lines.forEach(l => {
                 rtLineCount++;
-                document.getElementById('rtLinesMatched').insertAdjacentHTML('beforeend', lineRowHtml('rt', rtLineCount, l.partNo, l.quantity, null, tk.ticketId));
+                document.getElementById('rtLinesMatched').insertAdjacentHTML('beforeend', lineRowHtml('rt', rtLineCount, l.partNo, l.quantity));
             });
         });
         if (!rtLineCount) addLine('return');
@@ -1108,26 +1047,20 @@
     }
     function closeReturnModal() {
         document.getElementById('returnOverlay').classList.remove('open');
-        activeReturnTicketIds = [];
+        activeReturnTicketId = null;
     }
     async function submitReturn() {
-        const grouped = collectReturnLinesGrouped();
-        const ticketIds = Object.keys(grouped).map(Number);
+        const lines = collectLines('rt', rtLineCount);
         const address = document.getElementById('rtAddress').value.trim();
-        if (!ticketIds.length) { showToast?.('เลือกอะไหล่อย่างน้อย 1 รายการ', 'error'); return; }
+        if (!lines.length) { showToast?.('เลือกอะไหล่อย่างน้อย 1 รายการ', 'error'); return; }
         if (!address) { showToast?.('กรุณากรอกที่อยู่', 'error'); return; }
         try {
             const attachments = await uploadPendingPhotos('rt');
-            // Sequential on purpose: each call is its own Ticket's Return submission — if one
-            // fails partway, the ones already submitted stay submitted (fetchTickets below shows
-            // the real state either way, nothing is silently duplicated or lost).
-            for (const tid of ticketIds) {
-                await api.tickets.submitReturn(tid, { lines: grouped[tid], address, attachments });
-            }
+            await api.tickets.submitReturn(activeReturnTicketId, { lines, address, attachments });
             photoFiles.rt = [];
             closeReturnModal();
             await fetchTickets();
-            showToast?.(ticketIds.length > 1 ? `ส่งคำขอคืนแล้ว (${ticketIds.length} ใบเบิก)` : 'ส่งคำขอคืนแล้ว', 'success');
+            showToast?.('ส่งคำขอคืนแล้ว', 'success');
         } catch (e) {
             await fetchTickets();
             showToast?.(e.message || t('toast.error'), 'error');
@@ -1196,7 +1129,7 @@
             photoFiles.nr = [];
             closeNewRequestModal();
             await fetchTickets();
-            const slipNo = res?.ticket?.withdrawSlipNo;
+            const slipNo = res?.batch?.withdrawSlipNo;
             showToast?.(slipNo ? `ส่งคำขอเบิกแล้ว เลขที่ใบเบิก ${slipNo} — รอ Admin อนุมัติ` : 'ส่งคำขอเบิกแล้ว รอ Admin อนุมัติ', 'success');
         } catch (e) {
             // If sync succeeded but a later step (photo upload, withdraw) failed, don't leave a

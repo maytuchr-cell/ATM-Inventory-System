@@ -106,13 +106,21 @@ const api = {
   tickets: {
     getAll:       ()             => apiFetch('/Ticket'),
     sync:         (data)         => apiFetch('/Ticket/sync',            { method: 'POST', body: JSON.stringify(data) }),
-    createAdditionalWithdraw: (data) => apiFetch('/Ticket/additional-withdraw', { method: 'POST', body: JSON.stringify(data) }),
-    submitWithdraw: (id, dto)    => apiFetch(`/Ticket/${id}/withdraw`,   { method: 'PUT',  body: JSON.stringify(dto) }),
-    approve:      (id)           => apiFetch(`/Ticket/${id}/approve`,   { method: 'PUT' }),
-    sendEmailConfirmed: (id)     => apiFetch(`/Ticket/${id}/send-email`, { method: 'PUT' }),
+    // Withdraw leg — batch-scoped (a Ticket can carry several independent ใบเบิก). submitWithdraw
+    // creates a NEW batch every time — works identically whether it's the ticket's first ใบเบิก
+    // or its Nth ("เบิกเพิ่ม" is just calling this again on the same ticketId).
+    submitWithdraw:   (ticketId, dto)             => apiFetch(`/Ticket/${ticketId}/withdraw-batches`, { method: 'POST', body: JSON.stringify(dto) }),
+    resubmitWithdraw: (ticketId, batchId, dto)    => apiFetch(`/Ticket/${ticketId}/withdraw-batches/${batchId}/resubmit`, { method: 'PUT', body: JSON.stringify(dto) }),
+    approveBatch:     (ticketId, batchId)         => apiFetch(`/Ticket/${ticketId}/withdraw-batches/${batchId}/approve`, { method: 'PUT' }),
+    sendEmailConfirmedBatch: (ticketId, batchId)  => apiFetch(`/Ticket/${ticketId}/withdraw-batches/${batchId}/send-email`, { method: 'PUT' }),
+    rejectBatch:      (ticketId, batchId, reason) => apiFetch(`/Ticket/${ticketId}/withdraw-batches/${batchId}/reject`, { method: 'PUT', body: JSON.stringify({ reason }) }),
+    cancelBatch:      (ticketId, batchId)         => apiFetch(`/Ticket/${ticketId}/withdraw-batches/${batchId}/cancel`, { method: 'PUT' }),
+    receiveBatch:     (ticketId, batchId)         => apiFetch(`/Ticket/${ticketId}/withdraw-batches/${batchId}/receive`, { method: 'PUT' }),
+    substitutePart:   (ticketId, batchId, lineId, partNo) => apiFetch(`/Ticket/${ticketId}/withdraw-batches/${batchId}/lines/${lineId}/substitute`, { method: 'PUT', body: JSON.stringify({ partNo }) }),
     // Binary response (an .xlsx file), not JSON — bypasses apiFetch's res.json() and hands back
     // the raw Blob + the filename the server suggested, for the caller to trigger a save with.
-    exportDhlExcel: async (ticketIds) => {
+    // Withdraw candidates are batch ids now; return candidates stay ticket ids.
+    exportDhlExcel: async (ticketIds, withdrawBatchIds) => {
       const token = localStorage.getItem('authToken');
       const res = await fetch(API_BASE + '/Ticket/export-dhl-excel', {
         method: 'POST',
@@ -120,7 +128,7 @@ const api = {
           'Content-Type': 'application/json',
           ...(token ? { 'Authorization': 'Bearer ' + token } : {}),
         },
-        body: JSON.stringify({ ticketIds }),
+        body: JSON.stringify({ ticketIds, withdrawBatchIds }),
       });
       if (!res.ok) {
         const body = await res.json().catch(() => ({}));
@@ -131,16 +139,14 @@ const api = {
       const fileName = match ? match[1] : 'DHL-Export.xlsx';
       return { blob: await res.blob(), fileName };
     },
-    reject:       (id, reason)   => apiFetch(`/Ticket/${id}/reject`,    { method: 'PUT',  body: JSON.stringify({ reason }) }),
+    // Return leg — still Ticket-scoped, unchanged.
     cancel:       (id)           => apiFetch(`/Ticket/${id}/cancel`,    { method: 'PUT' }),
-    receive:      (id)           => apiFetch(`/Ticket/${id}/receive`,   { method: 'PUT' }),
     submitReturn: (id, dto)      => apiFetch(`/Ticket/${id}/return`,    { method: 'PUT',  body: JSON.stringify(dto) }),
     approveReturn:(id)           => apiFetch(`/Ticket/${id}/approve-return`, { method: 'PUT' }),
     rejectReturn: (id, reason)   => apiFetch(`/Ticket/${id}/reject-return`, { method: 'PUT', body: JSON.stringify({ reason }) }),
     sendEmailConfirmedReturn: (id) => apiFetch(`/Ticket/${id}/send-email-return`, { method: 'PUT' }),
     ship:         (id)           => apiFetch(`/Ticket/${id}/ship`,      { method: 'PUT' }),
     confirmReturn:(id)           => apiFetch(`/Ticket/${id}/confirm-return`, { method: 'PUT' }),
-    substitutePart:(id, lineId, partNo) => apiFetch(`/Ticket/${id}/lines/${lineId}/substitute`, { method: 'PUT', body: JSON.stringify({ partNo }) }),
     uploadAttachment: (file) => { const fd = new FormData(); fd.append('file', file); return apiUpload('/Ticket/upload', fd); },
     remove: (id) => apiFetch(`/Ticket/${id}`, { method: 'DELETE' }),
   },

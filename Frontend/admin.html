@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Admin Dashboard — ATM Inventory</title>
-    <link rel="stylesheet" href="shared/styles.css?v=51">
+    <link rel="stylesheet" href="shared/styles.css?v=53">
     <style>
         /* Page-specific overrides */
         .section-head { display:flex; align-items:center; gap:10px; margin-bottom:20px; }
@@ -170,10 +170,10 @@
     </div><!-- /main-content -->
 </div><!-- /app-layout -->
 
-<script src="shared/translations.js?v=51"></script>
-<script src="shared/toast.js?v=51"></script>
-<script src="shared/api.js?v=51"></script>
-<script src="shared/layout.js?v=51"></script>
+<script src="shared/translations.js?v=53"></script>
+<script src="shared/toast.js?v=53"></script>
+<script src="shared/api.js?v=53"></script>
+<script src="shared/layout.js?v=53"></script>
 <script>
     /* ── Init ── */
     initLayout();
@@ -195,7 +195,7 @@
         'คืน': 'คืน', 'Reject': 'ปฏิเสธ', 'Cancel': 'ยกเลิก',
     };
     // Non-terminal statuses are the only ones that can go "stale" — a closed Ticket isn't stuck.
-    const NON_TERMINAL = ['รอ', 'รออะไหล่', 'รอส่งเมล DHL', 'เดินทาง', 'เบิก'];
+    const NON_TERMINAL = ['รอ', 'รออะไหล่', 'รอส่งเมล DHL', 'เดินทาง', 'เบิก', 'อนุมัติคืน', 'กำลังเดินทางรับคืน'];
     const STALE_DAYS_THRESHOLD = 3;
 
     async function fetchTicketWidgets() {
@@ -210,8 +210,11 @@
     }
 
     function renderActionCards(tickets) {
-        const pendingApproval = tickets.filter(t => (t.status === 'รอ' || t.status === 'รออะไหล่' || t.status === 'รอส่งเมล DHL') && t.phase === 'withdraw').length;
-        const pendingReturn   = tickets.filter(t => t.status === 'เดินทาง' && t.phase === 'return').length;
+        // Withdraw-side counts batches (a Ticket can carry several independent ใบเบิก, each
+        // needing its own attention); return-side stays Ticket-scoped.
+        const pendingApproval = tickets.flatMap(t => t.withdrawBatches || [])
+            .filter(b => b.status === 'รอ' || b.status === 'รออะไหล่' || b.status === 'รอส่งเมล DHL').length;
+        const pendingReturn = tickets.filter(t => t.status === 'เดินทาง').length;
         setActionCard('pendingApprovalCard', 'pendingApprovalCount', pendingApproval);
         setActionCard('pendingReturnCard', 'pendingReturnCount', pendingReturn);
     }
@@ -222,9 +225,9 @@
 
     function renderStatusBreakdown(tickets) {
         document.getElementById('statusbreakdown-count').textContent = tickets.length + ' ตั๋ว';
-        const max = Math.max(1, ...STATUS_ORDER.map(s => tickets.filter(t => t.status === s).length));
+        const max = Math.max(1, ...STATUS_ORDER.map(s => tickets.filter(t => t.displayStatus === s).length));
         document.getElementById('statusbreakdown-list').innerHTML = STATUS_ORDER.map(status => {
-            const count = tickets.filter(t => t.status === status).length;
+            const count = tickets.filter(t => t.displayStatus === status).length;
             const pct = Math.round((count / max) * 100);
             return `
                 <div class="status-bar-row">
@@ -238,7 +241,7 @@
     function renderStaleTickets(tickets) {
         const now = Date.now();
         const stale = tickets
-            .filter(t => NON_TERMINAL.includes(t.status))
+            .filter(t => NON_TERMINAL.includes(t.displayStatus))
             .map(t => ({ ...t, daysStale: Math.floor((now - new Date(t.updatedAt).getTime()) / 86400000) }))
             .filter(t => t.daysStale >= STALE_DAYS_THRESHOLD)
             .sort((a, b) => b.daysStale - a.daysStale);
@@ -251,7 +254,7 @@
         }
         el.innerHTML = stale.slice(0, 8).map(t => `
             <div class="stale-row">
-                <span>${t.externalTicketNo} — ${t.techName}<span style="color:var(--text-muted);"> (${t.status})</span></span>
+                <span>${t.externalTicketNo} — ${t.techName}<span style="color:var(--text-muted);"> (${t.displayStatus})</span></span>
                 <span class="stale-days">${t.daysStale} วัน</span>
             </div>`).join('');
     }
@@ -277,10 +280,10 @@
     }
 
     // "Eligible" = a ticket that actually took stock out at some point — either currently
-    // holding it (เบิก) or already past that on the return leg (phase === 'return', any
-    // status). Reject/Cancel on the withdraw leg never touched stock, so they don't count.
+    // holding it via some batch (เบิก) or already past that on the return leg (any non-null
+    // Ticket.status). Reject/Cancel on the withdraw leg never touched stock, so they don't count.
     function renderReturnRate(tickets) {
-        const eligible = tickets.filter(t => t.status === 'เบิก' || t.phase === 'return');
+        const eligible = tickets.filter(t => (t.withdrawBatches || []).some(b => b.status === 'เบิก') || t.status !== null);
         const completed = eligible.filter(t => t.status === 'คืน');
         const pct = eligible.length ? Math.round((completed.length / eligible.length) * 100) : 0;
 

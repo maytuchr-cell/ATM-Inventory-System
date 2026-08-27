@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Tickets — ATM Inventory</title>
-    <link rel="stylesheet" href="shared/styles.css?v=51">
+    <link rel="stylesheet" href="shared/styles.css?v=53">
     <style>
         /* Page-specific overrides */
         .section-head { display:flex; align-items:center; gap:10px; margin-bottom:20px; }
@@ -336,10 +336,10 @@
     </div>
 </div>
 
-<script src="shared/translations.js?v=51"></script>
-<script src="shared/toast.js?v=51"></script>
-<script src="shared/api.js?v=51"></script>
-<script src="shared/layout.js?v=51"></script>
+<script src="shared/translations.js?v=53"></script>
+<script src="shared/toast.js?v=53"></script>
+<script src="shared/api.js?v=53"></script>
+<script src="shared/layout.js?v=53"></script>
 <script>
     let cachedTickets = [];
     let rejectTargetId = null;
@@ -404,40 +404,46 @@
        silent poll's re-render (see fetchTickets) without the admin's ticks disappearing mid-pick. */
     let dhlExportSelected = new Set();
 
+    // Candidate rows are keyed "wd-{batchId}" for withdraw batches or "rt-{ticketId}" for
+    // returns, so the same Set can track both kinds without id collisions.
     function dhlExportCandidates() {
-        return cachedTickets.filter(tk =>
-            (tk.status === 'รอส่งเมล DHL' && tk.phase === 'withdraw') ||
-            (tk.status === 'อนุมัติคืน' && tk.phase === 'return'));
+        const withdrawRows = cachedTickets.flatMap(tk => (tk.withdrawBatches || [])
+            .filter(b => b.status === 'รอส่งเมล DHL')
+            .map(b => ({ key: `wd-${b.withdrawBatchId}`, kind: 'withdraw', ticketId: tk.ticketId, batchId: b.withdrawBatchId, tk, batch: b })));
+        const returnRows = cachedTickets
+            .filter(tk => tk.status === 'อนุมัติคืน')
+            .map(tk => ({ key: `rt-${tk.ticketId}`, kind: 'return', ticketId: tk.ticketId, tk }));
+        return [...withdrawRows, ...returnRows];
     }
     function updateDhlExportBadge() {
         document.getElementById('dhlexport-badge-count').textContent = dhlExportCandidates().length;
     }
     function renderDhlExportList() {
         const rows = dhlExportCandidates();
-        // Drop selections for tickets that left the candidate list (e.g. Admin already sent the
+        // Drop selections for rows that left the candidate list (e.g. Admin already sent the
         // email for one from a different tab/session).
-        dhlExportSelected = new Set([...dhlExportSelected].filter(id => rows.some(r => r.ticketId === id)));
+        dhlExportSelected = new Set([...dhlExportSelected].filter(key => rows.some(r => r.key === key)));
 
         document.getElementById('dhlexport-count').textContent = rows.length + ' รายการ';
         const tbody = document.getElementById('dhlexport-tbody');
         if (!rows.length) {
             tbody.innerHTML = `<tr><td colspan="6" class="empty-state">ไม่มีรายการรอส่ง DHL ในขณะนี้</td></tr>`;
         } else {
-            tbody.innerHTML = rows.map(tk => {
-                const isWithdraw = tk.phase === 'withdraw';
+            tbody.innerHTML = rows.map(row => {
+                const isWithdraw = row.kind === 'withdraw';
                 const typeLabel = isWithdraw ? '📤 เบิก' : '📥 คืน';
-                const lines = tk.lines.filter(l => l.lineType === (isWithdraw ? 'Withdraw' : 'Return'));
+                const lines = isWithdraw ? row.batch.lines : row.tk.lines.filter(l => l.lineType === 'Return');
                 const partsHtml = lines.length
                     ? lines.map(l => `${l.partName} <span style="color:var(--text-muted)">×${l.quantity}</span>`).join('<br>')
                     : `<span style="color:var(--text-muted)">—</span>`;
-                const address = isWithdraw ? tk.withdrawAddress : tk.returnAddress;
-                const checked = dhlExportSelected.has(tk.ticketId) ? 'checked' : '';
+                const address = isWithdraw ? row.batch.withdrawAddress : row.tk.returnAddress;
+                const checked = dhlExportSelected.has(row.key) ? 'checked' : '';
                 return `
                     <tr>
-                        <td><input type="checkbox" ${checked} onchange="toggleDhlExportCheckbox(${tk.ticketId}, this.checked)"></td>
+                        <td><input type="checkbox" ${checked} onchange="toggleDhlExportCheckbox('${row.key}', this.checked)"></td>
                         <td>${typeLabel}</td>
-                        <td><span class="id-chip ticket-id">${tk.externalTicketNo}</span></td>
-                        <td class="fw-600">${tk.techName}</td>
+                        <td><span class="id-chip ticket-id">${row.tk.externalTicketNo}</span></td>
+                        <td class="fw-600">${row.tk.techName}</td>
                         <td>${partsHtml}</td>
                         <td style="font-size:12.5px;color:var(--text-secondary);">${address || '—'}</td>
                     </tr>`;
@@ -446,14 +452,14 @@
         document.getElementById('dhlexport-select-all').checked = rows.length > 0 && dhlExportSelected.size === rows.length;
         updateDhlExportSelectionUi();
     }
-    function toggleDhlExportCheckbox(ticketId, checked) {
-        if (checked) dhlExportSelected.add(ticketId); else dhlExportSelected.delete(ticketId);
+    function toggleDhlExportCheckbox(key, checked) {
+        if (checked) dhlExportSelected.add(key); else dhlExportSelected.delete(key);
         document.getElementById('dhlexport-select-all').checked =
             dhlExportCandidates().length > 0 && dhlExportSelected.size === dhlExportCandidates().length;
         updateDhlExportSelectionUi();
     }
     function toggleSelectAllDhlExport(checked) {
-        dhlExportSelected = checked ? new Set(dhlExportCandidates().map(t => t.ticketId)) : new Set();
+        dhlExportSelected = checked ? new Set(dhlExportCandidates().map(r => r.key)) : new Set();
         renderDhlExportList();
     }
     function updateDhlExportSelectionUi() {
@@ -463,7 +469,9 @@
     async function downloadDhlExcel() {
         if (!dhlExportSelected.size) return;
         try {
-            const { blob, fileName } = await api.tickets.exportDhlExcel([...dhlExportSelected]);
+            const withdrawBatchIds = [...dhlExportSelected].filter(k => k.startsWith('wd-')).map(k => parseInt(k.slice(3), 10));
+            const ticketIds = [...dhlExportSelected].filter(k => k.startsWith('rt-')).map(k => parseInt(k.slice(3), 10));
+            const { blob, fileName } = await api.tickets.exportDhlExcel(ticketIds, withdrawBatchIds);
             const url = URL.createObjectURL(blob);
             const a = document.createElement('a');
             a.href = url; a.download = fileName;
@@ -482,7 +490,7 @@
     }
 
     function renderReturnsInProgress() {
-        const rows = cachedTickets.filter(tk => tk.phase === 'return' && ['รอ', 'อนุมัติคืน', 'กำลังเดินทางรับคืน', 'เดินทาง'].includes(tk.status));
+        const rows = cachedTickets.filter(tk => ['รอ', 'อนุมัติคืน', 'กำลังเดินทางรับคืน', 'เดินทาง'].includes(tk.status));
         const countLabel = rows.length + ' ' + (getLang() === 'th' ? 'รายการ' : 'items');
         document.getElementById('returns-onhand-count').textContent = countLabel;
         document.getElementById('returns-badge-count').textContent = rows.length;
@@ -532,12 +540,9 @@
             } else {
                 action = `<span style="color:var(--text-muted);font-size:12px;">—</span>`;
             }
-            const ticketLabel = tk.siblingCount > 1
-                ? `<span class="id-chip ticket-id">${tk.externalTicketNo}</span><div style="font-size:11px;color:var(--text-muted);margin-top:2px;">ใบที่ ${tk.siblingIndex} จาก ${tk.siblingCount}</div>`
-                : `<span class="id-chip ticket-id">${tk.externalTicketNo}</span>`;
             return `
                 <tr>
-                    <td>${ticketLabel}</td>
+                    <td><span class="id-chip ticket-id">${tk.externalTicketNo}</span></td>
                     <td class="fw-600">${tk.techName}</td>
                     <td>${returnLinesHtml(tk)}</td>
                     <td>${tk.returnAddress || '—'}</td>
@@ -614,12 +619,23 @@
         "Cancel":    { cls: "badge-muted",    label: "ยกเลิก" },
     };
 
+    // Which of this Ticket's WithdrawBatches most needs Admin's attention right now — the main
+    // table row's Approve/Reject/Cancel buttons act on this one; a Ticket with more than one
+    // batch needing action still shows the rest via the detail modal.
+    function findActionableBatch(tk) {
+        for (const st of ['รอ', 'รออะไหล่', 'รอส่งเมล DHL']) {
+            const b = (tk.withdrawBatches || []).find(b => b.status === st);
+            if (b) return b;
+        }
+        return null;
+    }
+
     function renderTicketsTable() {
         const search = (document.getElementById('tkt-search')?.value || '').trim().toLowerCase();
         const statusF = document.getElementById('tkt-status-filter')?.value || '';
 
         const rows = cachedTickets.filter(tk => {
-            if (statusF && tk.status !== statusF) return false;
+            if (statusF && tk.displayStatus !== statusF) return false;
             if (search) {
                 const hay = `${tk.externalTicketNo} ${tk.techName} ${tk.techDept}`.toLowerCase();
                 if (!hay.includes(search)) return false;
@@ -639,22 +655,19 @@
             return;
         }
         rows.forEach(tk => {
-            const b = STATUS_BADGE[tk.status] || STATUS_BADGE["รอ"];
-            // "เดินทาง" is shared with the return leg (ทั้งขาเบิก/ขาคืนใช้ค่าเดียวกันในฐานข้อมูล)
-            // — only the withdraw leg's label reads "กำลังเดินทาง" here; the value itself stays
-            // "เดินทาง" so the return leg's own logic elsewhere is untouched.
-            const badgeLabel = (tk.status === "เดินทาง" && tk.phase === "withdraw") ? "กำลังเดินทาง" : b.label;
-            const badge = `<span class="badge ${b.cls}"><span class="badge-dot"></span>${badgeLabel}</span>`;
+            const b = STATUS_BADGE[tk.displayStatus] || STATUS_BADGE["รอ"];
+            const badge = `<span class="badge ${b.cls}"><span class="badge-dot"></span>${b.label}</span>`;
 
             // Whether the central warehouse can actually fulfill every Withdraw line right now —
             // gates the Approve button below so Admin can't approve a request stock can't cover.
-            const withdrawLines = tk.lines.filter(l => l.lineType === 'Withdraw');
+            // Aggregated across every batch (a Ticket can carry several independent ใบเบิก).
+            const withdrawLines = (tk.withdrawBatches || []).flatMap(bt => bt.lines);
             const shortLines = withdrawLines.filter(l => (l.availableStock ?? 0) < l.quantity);
             const hasShortage = shortLines.length > 0;
 
-            // The full per-line list (with condition, qty, substitute button) only shows in the
-            // detail modal now — this column is a quick readiness flag so Admin doesn't have to
-            // open every ticket to see whether stock is a problem.
+            // The full per-batch line list (with condition, qty, substitute button) only shows in
+            // the detail modal now — this column is a quick readiness flag so Admin doesn't have
+            // to open every ticket to see whether stock is a problem.
             let partsSummary;
             if (!withdrawLines.length) {
                 partsSummary = `<span style="color:var(--text-muted);font-size:12px;">—</span>`;
@@ -679,63 +692,61 @@
                 partsSummary += `<div style="font-size:11px;color:var(--orange);margin-top:3px;">🔄 เปลี่ยนอะไหล่เทียบเคียง ${substitutedLines.length} รายการ</div>`;
             }
 
-            const phaseLabel = tk.phase === 'withdraw'
-                ? `<span style="font-size:11px;color:var(--text-secondary);">ขาเบิก</span>`
-                : `<span style="font-size:11px;color:var(--text-secondary);">ขาคืน</span>`;
+            const batchCount = (tk.withdrawBatches || []).length;
+            const batchCountLabel = `<span style="font-size:11px;color:var(--text-secondary);">${batchCount ? `×${batchCount} ใบเบิก` : '—'}</span>`;
 
-            // Admin approve/reject/cancel only applies on the withdraw leg while waiting — "รอ"
-            // in practice barely happens any more since submit auto-approves right away, but
-            // "รออะไหล่" (auto-approve couldn't find enough stock) needs the same actions: a
-            // manual recheck (Approve doubles as "ลองอีกครั้ง"), Reject, or Cancel.
+            // The most-actionable batch drives the action column's primary buttons; the return
+            // leg's own Cancel is a separate, Ticket-scoped fallback once no batch needs action.
+            const actionableBatch = findActionableBatch(tk);
             let action;
-            if ((tk.status === "รอ" || tk.status === "รออะไหล่") && tk.phase === "withdraw") {
-                action = `
-                    <div class="ticket-action-row">
-                        <button class="btn-approve" onclick="approveTicket(${tk.ticketId})" ${hasShortage ? 'disabled title="สต็อกในคลังไม่พอสำหรับอะไหล่บางรายการ"' : ''} style="${hasShortage ? 'opacity:.45;cursor:not-allowed;' : ''}">
-                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
-                            ${tk.status === "รออะไหล่" ? "เช็คสต็อกอีกครั้ง" : "อนุมัติ"}
-                        </button>
-                        <button class="btn-reject" onclick="openRejectModal(${tk.ticketId})">
-                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
-                            ปฏิเสธ
-                        </button>
-                        <button class="btn-cancel" onclick="cancelTicket(${tk.ticketId})">ยกเลิก</button>
-                    </div>`;
-            } else if (tk.status === "รอส่งเมล DHL" && tk.phase === "withdraw") {
-                // Auto-approved, stock already cut — Admin's only jobs left before it's locked in
-                // are: confirm the DHL email actually went out, or back out (Reject/Cancel), which
-                // still hands the stock back since it was committed at auto-approve time.
-                action = `
-                    <div class="ticket-action-row">
-                        <button class="btn-approve" onclick="sendEmailConfirmed(${tk.ticketId})">
-                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
-                            ส่งเมลสำเร็จ
-                        </button>
-                        <button class="btn-reject" onclick="openRejectModal(${tk.ticketId})">
-                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
-                            ปฏิเสธ
-                        </button>
-                        <button class="btn-cancel" onclick="cancelTicket(${tk.ticketId})">ยกเลิก</button>
-                    </div>`;
+            if (actionableBatch) {
+                const batchHasShortage = actionableBatch.lines.some(l => (l.availableStock ?? 0) < l.quantity);
+                if (actionableBatch.status === "รอ" || actionableBatch.status === "รออะไหล่") {
+                    action = `
+                        <div class="ticket-action-row">
+                            <button class="btn-approve" onclick="approveBatch(${tk.ticketId},${actionableBatch.withdrawBatchId})" ${batchHasShortage ? 'disabled title="สต็อกในคลังไม่พอสำหรับอะไหล่บางรายการ"' : ''} style="${batchHasShortage ? 'opacity:.45;cursor:not-allowed;' : ''}">
+                                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+                                ${actionableBatch.status === "รออะไหล่" ? "เช็คสต็อกอีกครั้ง" : "อนุมัติ"}
+                            </button>
+                            <button class="btn-reject" onclick="openRejectModal(${tk.ticketId}, 'withdraw', ${actionableBatch.withdrawBatchId})">
+                                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                                ปฏิเสธ
+                            </button>
+                            <button class="btn-cancel" onclick="cancelBatch(${tk.ticketId},${actionableBatch.withdrawBatchId})">ยกเลิก</button>
+                        </div>`;
+                } else {
+                    // "รอส่งเมล DHL" — auto-approved, stock already cut — Admin's only jobs left
+                    // before it's locked in are: confirm the DHL email actually went out, or back
+                    // out (Reject/Cancel), which still hands the stock back.
+                    action = `
+                        <div class="ticket-action-row">
+                            <button class="btn-approve" onclick="sendEmailConfirmedBatch(${tk.ticketId},${actionableBatch.withdrawBatchId})">
+                                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+                                ส่งเมลสำเร็จ
+                            </button>
+                            <button class="btn-reject" onclick="openRejectModal(${tk.ticketId}, 'withdraw', ${actionableBatch.withdrawBatchId})">
+                                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                                ปฏิเสธ
+                            </button>
+                            <button class="btn-cancel" onclick="cancelBatch(${tk.ticketId},${actionableBatch.withdrawBatchId})">ยกเลิก</button>
+                        </div>`;
+                }
             } else if (tk.status === "เดินทาง" || tk.status === "กำลังเดินทางรับคืน") {
-                // Locked — Admin already told DHL about this one, no self-service undo any more.
+                // Locked — Admin already told DHL about this return, no self-service undo any more.
                 action = `<span style="color:var(--text-muted);font-size:12px;" title="Admin ส่งเมลแจ้ง DHL ไปแล้ว">🔒 ส่งเมลแล้ว</span>`;
-            } else if (!["Reject", "Cancel", "คืน"].includes(tk.status)) {
-                // Still open (return leg in progress) — Admin can only Cancel outright.
+            } else if (tk.status && !["Reject", "Cancel", "คืน"].includes(tk.status)) {
+                // Return leg in progress, no batch needs action right now — Admin can only Cancel
+                // the return outright.
                 action = `<button class="btn-cancel" onclick="cancelTicket(${tk.ticketId})">ยกเลิกตั๋ว</button>`;
             } else {
                 action = `<span style="color:var(--text-muted)">—</span>`;
             }
 
-            const ticketLabel = tk.siblingCount > 1
-                ? `<span class="id-chip ticket-id">${tk.externalTicketNo}</span><div style="font-size:11px;color:var(--text-muted);margin-top:2px;">ใบที่ ${tk.siblingIndex} จาก ${tk.siblingCount}</div>`
-                : `<span class="id-chip ticket-id">${tk.externalTicketNo}</span>`;
-
             tbody.innerHTML += `
                 <tr>
-                    <td>${ticketLabel}</td>
+                    <td><span class="id-chip ticket-id">${tk.externalTicketNo}</span></td>
                     <td class="fw-600">${tk.techName}<div class="fs-13" style="color:var(--text-secondary);font-weight:400;">${tk.techDept}</div></td>
-                    <td>${phaseLabel}</td>
+                    <td>${batchCountLabel}</td>
                     <td>${partsSummary}</td>
                     <td>${badge}</td>
                     <td>${action}</td>
@@ -744,21 +755,21 @@
         });
     }
 
-    async function approveTicket(id) {
-        if (!confirm('อนุมัติ Ticket นี้? สถานะจะเปลี่ยนเป็น "เดินทาง"')) return;
+    async function approveBatch(ticketId, batchId) {
+        if (!confirm('อนุมัติใบเบิกนี้? สถานะจะเปลี่ยนเป็น "เดินทาง"')) return;
         try {
-            await api.tickets.approve(id);
+            await api.tickets.approveBatch(ticketId, batchId);
             await fetchTickets();
-            showToast?.('อนุมัติตั๋วแล้ว', 'success');
+            showToast?.('อนุมัติใบเบิกแล้ว', 'success');
         } catch (e) { showToast?.(e.message || 'เกิดข้อผิดพลาด กรุณาลองใหม่', 'error'); }
     }
 
     // Admin confirms the DHL email actually went out — "รอส่งเมล DHL" → "เดินทาง". From here the
-    // ticket is locked against Cancel (see CancelTicket on the backend).
-    async function sendEmailConfirmed(id) {
-        if (!confirm('ยืนยันว่าส่งเมลแจ้ง DHL สำเร็จแล้ว? หลังจากนี้จะยกเลิกตั๋วนี้ไม่ได้อีก')) return;
+    // batch is locked against Cancel (see CancelBatch on the backend).
+    async function sendEmailConfirmedBatch(ticketId, batchId) {
+        if (!confirm('ยืนยันว่าส่งเมลแจ้ง DHL สำเร็จแล้ว? หลังจากนี้จะยกเลิกใบเบิกนี้ไม่ได้อีก')) return;
         try {
-            await api.tickets.sendEmailConfirmed(id);
+            await api.tickets.sendEmailConfirmedBatch(ticketId, batchId);
             await fetchTickets();
             showToast?.('บันทึกว่าส่งเมลแล้ว', 'success');
         } catch (e) { showToast?.(e.message || 'เกิดข้อผิดพลาด กรุณาลองใหม่', 'error'); }
@@ -793,9 +804,9 @@
     }
 
     /* ── Substitute equivalent part ── */
-    let subTarget = null; // { ticketId, lineId, partNo }
-    async function openSubstituteModal(ticketId, lineId, partNo, partName) {
-        subTarget = { ticketId, lineId, partNo };
+    let subTarget = null; // { ticketId, batchId, lineId, partNo }
+    async function openSubstituteModal(ticketId, batchId, lineId, partNo, partName) {
+        subTarget = { ticketId, batchId, lineId, partNo };
         document.getElementById('subOriginalPart').textContent = `${partName} (${partNo})`;
         const list = document.getElementById('subOptionsList');
         list.innerHTML = `<div style="text-align:center;color:var(--text-muted);padding:10px;font-size:12.5px;">กำลังโหลด...</div>`;
@@ -823,18 +834,21 @@
         if (!subTarget) return;
         if (!confirm(`เปลี่ยนอะไหล่เป็น ${newPartNo}?`)) return;
         try {
-            await api.tickets.substitutePart(subTarget.ticketId, subTarget.lineId, newPartNo);
+            await api.tickets.substitutePart(subTarget.ticketId, subTarget.batchId, subTarget.lineId, newPartNo);
             closeSubstituteModal();
             await fetchTickets();
             showToast?.('เปลี่ยนอะไหล่แล้ว', 'success');
         } catch (e) { showToast?.(e.message || 'เกิดข้อผิดพลาด กรุณาลองใหม่', 'error'); }
     }
 
-    // kind: 'withdraw' (default) or 'return' — decides which endpoint confirmReject calls.
+    // kind: 'withdraw' (default, needs batchId) or 'return' (Ticket-scoped) — decides which
+    // endpoint confirmReject calls.
     let rejectTargetKind = 'withdraw';
-    function openRejectModal(id, kind) {
+    let rejectTargetBatchId = null;
+    function openRejectModal(id, kind, batchId) {
         rejectTargetId = id;
         rejectTargetKind = kind || 'withdraw';
+        rejectTargetBatchId = batchId || null;
         document.getElementById('reasonInput').value = '';
         document.getElementById('reasonOverlay').classList.add('open');
     }
@@ -842,22 +856,32 @@
         document.getElementById('reasonOverlay').classList.remove('open');
         rejectTargetId = null;
         rejectTargetKind = 'withdraw';
+        rejectTargetBatchId = null;
     }
     async function confirmReject() {
         const reason = document.getElementById('reasonInput').value.trim();
         if (!reason) { showToast?.('กรุณาระบุเหตุผล (บังคับ)', 'error'); return; }
         try {
             if (rejectTargetKind === 'return') await api.tickets.rejectReturn(rejectTargetId, reason);
-            else await api.tickets.reject(rejectTargetId, reason);
+            else await api.tickets.rejectBatch(rejectTargetId, rejectTargetBatchId, reason);
             await fetchTickets();
         } catch (e) { showToast?.(e.message || 'เกิดข้อผิดพลาด กรุณาลองใหม่', 'error'); }
         closeReasonModal();
     }
 
+    // Cancels the RETURN leg (Ticket-scoped). Cancelling an individual withdraw batch is
+    // cancelBatch below.
     async function cancelTicket(id) {
-        if (!confirm('ยกเลิก Ticket นี้ทั้งใบ? การกระทำนี้ย้อนกลับไม่ได้')) return;
+        if (!confirm('ยกเลิกคำขอคืนนี้? การกระทำนี้ย้อนกลับไม่ได้')) return;
         try {
             await api.tickets.cancel(id);
+            await fetchTickets();
+        } catch (e) { showToast?.(e.message || 'เกิดข้อผิดพลาด กรุณาลองใหม่', 'error'); }
+    }
+    async function cancelBatch(ticketId, batchId) {
+        if (!confirm('ยกเลิกใบเบิกนี้? การกระทำนี้ย้อนกลับไม่ได้')) return;
+        try {
+            await api.tickets.cancelBatch(ticketId, batchId);
             await fetchTickets();
         } catch (e) { showToast?.(e.message || 'เกิดข้อผิดพลาด กรุณาลองใหม่', 'error'); }
     }
@@ -879,28 +903,50 @@
         const none = `<span class="detail-empty">ไม่ระบุ</span>`;
         const fmt  = d => d ? new Date(d).toLocaleString('th-TH') : '—';
 
-        const withdrawLines = tk.lines.filter(l => l.lineType === 'Withdraw');
-        const returnLines   = tk.lines.filter(l => l.lineType === 'Return');
-        const canSubstitute = (tk.status === "รอ" || tk.status === "รออะไหล่") && tk.phase === "withdraw";
+        const returnLines = tk.lines; // Return-phase lines only, per API shape
         const lineListHtml = list => list.length
-            ? list.map(l => `<div style="display:flex;justify-content:space-between;padding:4px 0;border-bottom:1px solid var(--border);"><span>${l.partName}${l.condition ? ` <span style="color:var(--text-muted);font-size:11px;">(${CONDITION_LABEL[l.condition]})</span>` : ''}</span><span class="fw-600">×${l.quantity}</span></div>`).join('')
+            ? list.map(l => `<div style="display:flex;justify-content:space-between;padding:4px 0;border-bottom:1px solid var(--border);"><span>${l.partName}${l.condition ? ` <span style="color:var(--text-muted);font-size:11px;">(${CONDITION_LABEL[l.condition]})</span>` : ''}${l.isOffTicket ? ' <span style="font-size:10px;color:var(--orange);">🆕 นอกใบเบิก</span>' : ''}</span><span class="fw-600">×${l.quantity}</span></div>`).join('')
             : `<span class="detail-empty">—</span>`;
-        const withdrawListHtml = list => list.length
-            ? list.map(l => {
-                const short = (l.availableStock ?? 0) < l.quantity;
-                return `<div style="padding:8px 0;border-bottom:1px solid var(--border);">
-                    <div style="display:flex;justify-content:space-between;align-items:center;gap:6px;">
-                        <span>${l.partName}</span>
-                        <span style="display:flex;align-items:center;gap:6px;">
-                            <span style="font-size:11px;font-weight:600;color:${short ? 'var(--red)' : 'var(--text-muted)'};">${short ? `⚠ คงเหลือ ${l.availableStock ?? 0}` : `คงเหลือ ${l.availableStock ?? 0}`}</span>
-                            <span class="fw-600">×${l.quantity}</span>
-                        </span>
+        // One card per WithdrawBatch — each carries its own status/slip no./lines/substitute
+        // window, independent of every other batch under this Ticket.
+        const batchCardHtml = batch => {
+            const canSubstitute = batch.status === "รอ" || batch.status === "รออะไหล่";
+            const bBadge = STATUS_BADGE[batch.status] || STATUS_BADGE["รอ"];
+            const linesHtml = batch.lines.length
+                ? batch.lines.map(l => {
+                    const short = (l.availableStock ?? 0) < l.quantity;
+                    return `<div style="padding:8px 0;border-bottom:1px solid var(--border);">
+                        <div style="display:flex;justify-content:space-between;align-items:center;gap:6px;">
+                            <span>${l.partName}</span>
+                            <span style="display:flex;align-items:center;gap:6px;">
+                                <span style="font-size:11px;font-weight:600;color:${short ? 'var(--red)' : 'var(--text-muted)'};">${short ? `⚠ คงเหลือ ${l.availableStock ?? 0}` : `คงเหลือ ${l.availableStock ?? 0}`}</span>
+                                <span class="fw-600">×${l.quantity}</span>
+                            </span>
+                        </div>
+                        ${l.originalPartName ? `<div style="margin-top:4px;font-size:11px;color:var(--orange);background:var(--orange-light);border-radius:6px;padding:4px 8px;display:inline-block;">🔄 ช่างขอ <strong>${l.originalPartName}</strong> — เปลี่ยนเป็นอะไหล่เทียบเคียงนี้แทน</div>` : ''}
+                        ${canSubstitute ? `<button class="btn-substitute-full" onclick="closeDetailModal();openSubstituteModal(${tk.ticketId}, ${batch.withdrawBatchId}, ${l.ticketPartLineId}, '${l.partNo}', '${(l.partName || '').replace(/'/g, "\\'")}')">🔄 เปลี่ยนเป็นอะไหล่เทียบเคียง</button>` : ''}
+                    </div>`;
+                }).join('')
+                : `<span class="detail-empty">—</span>`;
+            return `
+                <div class="detail-section" style="background:var(--bg-subtle);border:1px solid var(--border);border-radius:10px;padding:14px;">
+                    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
+                        <span class="badge ${bBadge.cls}"><span class="badge-dot"></span>${bBadge.label}</span>
+                        <span style="font-size:11px;color:var(--text-muted);">${batch.withdrawSlipNo || 'ยังไม่ออกเลข'}</span>
                     </div>
-                    ${l.originalPartName ? `<div style="margin-top:4px;font-size:11px;color:var(--orange);background:var(--orange-light);border-radius:6px;padding:4px 8px;display:inline-block;">🔄 ช่างขอ <strong>${l.originalPartName}</strong> — เปลี่ยนเป็นอะไหล่เทียบเคียงนี้แทน</div>` : ''}
-                    ${canSubstitute ? `<button class="btn-substitute-full" onclick="closeDetailModal();openSubstituteModal(${tk.ticketId}, ${l.ticketPartLineId}, '${l.partNo}', '${(l.partName || '').replace(/'/g, "\\'")}')">🔄 เปลี่ยนเป็นอะไหล่เทียบเคียง</button>` : ''}
+                    <div class="detail-grid" style="margin-bottom:10px;">
+                        <div class="detail-field"><label>วันที่เบิกอะไหล่</label><span>${batch.withdrawDate ? new Date(batch.withdrawDate).toLocaleDateString('th-TH') : none}</span></div>
+                        <div class="detail-field"><label>รหัสพนักงาน</label><span>${batch.employeeCode || none}</span></div>
+                        <div class="detail-field"><label>Status การใช้งาน</label><span>${batch.usageStatus === 'Keep' ? 'เก็บ (สต็อกสำรอง)' : batch.usageStatus === 'Repair' ? 'เบิกไปซ่อม' : none}</span></div>
+                        <div class="detail-field"><label>Tech Support ที่ปรึกษา</label><span>${batch.techSupportName || 'ไม่มี'}</span></div>
+                        <div class="detail-field full"><label>ที่อยู่จัดส่ง</label><span>${batch.withdrawAddress || none}</span></div>
+                    </div>
+                    ${linesHtml}
+                    ${batch.withdrawDescription ? `<div style="margin-top:8px;font-size:13px;color:var(--text-primary);background:var(--bg-card);border:1px solid var(--border);border-radius:8px;padding:8px 10px;white-space:pre-wrap;">${batch.withdrawDescription}</div>` : ''}
+                    ${(batch.attachments || []).length ? `<div style="margin-top:8px;">${attachmentGalleryHtml(batch.attachments)}</div>` : ''}
+                    ${batch.rejectReason ? `<div class="detail-desc" style="margin-top:8px;">เหตุผลที่ Reject: ${batch.rejectReason}</div>` : ''}
                 </div>`;
-            }).join('')
-            : `<span class="detail-empty">—</span>`;
+        };
 
         document.getElementById('detailTitle').textContent =
             `${tk.externalTicketNo} — ${tk.techName}`;
@@ -916,7 +962,7 @@
                         <label>แผนก / โซน</label><span>${tk.techDept || none}</span>
                     </div>
                     <div class="detail-field">
-                        <label>สถานะ</label><span>${(tk.status === 'เดินทาง' && tk.phase === 'withdraw') ? 'กำลังเดินทาง' : (STATUS_BADGE[tk.status]?.label || tk.status)} (${tk.phase === 'withdraw' ? 'ขาเบิก' : 'ขาคืน'})</span>
+                        <label>สถานะ</label><span>${STATUS_BADGE[tk.displayStatus]?.label || tk.displayStatus || none}</span>
                     </div>
                     <div class="detail-field">
                         <label>วันที่แจ้ง</label><span>${fmt(tk.createdAt)}</span>
@@ -924,79 +970,26 @@
                 </div>
             </div>
 
-            ${tk.withdrawSlipNo ? `
-            <hr class="detail-divider">
-            <div class="detail-section">
-                <div class="detail-section-title">📋 ข้อมูลใบเบิก</div>
-                <div class="detail-grid">
-                    <div class="detail-field">
-                        <label>เลขที่ใบเบิก</label><span>${tk.withdrawSlipNo}</span>
-                    </div>
-                    <div class="detail-field">
-                        <label>วันที่เบิกอะไหล่</label><span>${tk.withdrawDate ? new Date(tk.withdrawDate).toLocaleDateString('th-TH') : none}</span>
-                    </div>
-                    <div class="detail-field">
-                        <label>รหัสพนักงาน</label><span>${tk.employeeCode || none}</span>
-                    </div>
-                    <div class="detail-field">
-                        <label>Status การใช้งาน</label><span>${tk.usageStatus === 'Keep' ? 'เก็บ (สต็อกสำรอง)' : tk.usageStatus === 'Repair' ? 'เบิกไปซ่อม' : none}</span>
-                    </div>
-                    <div class="detail-field">
-                        <label>Tech Support ที่ปรึกษา</label><span>${tk.techSupportName || 'ไม่มี'}</span>
-                    </div>
-                </div>
-            </div>` : ''}
-
             <hr class="detail-divider">
 
             <div class="detail-section">
-                <div class="detail-section-title">รายการอะไหล่ — เบิก</div>
-                ${withdrawListHtml(withdrawLines)}
+                <div class="detail-section-title">📋 ใบเบิก (${(tk.withdrawBatches || []).length})</div>
+                ${(tk.withdrawBatches || []).length ? (tk.withdrawBatches.map(batchCardHtml).join('<div style="height:10px;"></div>')) : `<span class="detail-empty">ยังไม่ได้ส่งคำขอเบิก</span>`}
             </div>
+
+            <hr class="detail-divider">
 
             <div class="detail-section">
                 <div class="detail-section-title">รายการอะไหล่ — คืน</div>
+                ${tk.returnAddress ? `
+                <div class="detail-grid" style="margin-bottom:10px;">
+                    <div class="detail-field"><label>สถานะฝั่งคืน</label><span>${STATUS_BADGE[tk.status]?.label || tk.status || none}</span></div>
+                    <div class="detail-field"><label>ที่อยู่จัดส่งคืน</label><span>${tk.returnAddress}</span></div>
+                </div>` : ''}
                 ${lineListHtml(returnLines)}
+                ${(tk.attachments || []).length ? `<div style="margin-top:8px;">${attachmentGalleryHtml(tk.attachments)}</div>` : ''}
+                ${tk.rejectReason ? `<div class="detail-desc" style="margin-top:8px;">เหตุผลที่ Reject: ${tk.rejectReason}</div>` : ''}
             </div>
-
-            ${(tk.attachments || []).length ? `
-            <hr class="detail-divider">
-            <div class="detail-section">
-                <div class="detail-section-title">รูปภาพแนบ — เบิก</div>
-                ${attachmentGalleryHtml(tk.attachments.filter(a => a.phase === 'Withdraw'))}
-            </div>
-            <div class="detail-section">
-                <div class="detail-section-title">รูปภาพแนบ — คืน</div>
-                ${attachmentGalleryHtml(tk.attachments.filter(a => a.phase === 'Return'))}
-            </div>` : ''}
-
-            ${tk.withdrawDescription ? `
-            <hr class="detail-divider">
-            <div class="detail-section">
-                <div class="detail-section-title">หมายเหตุ / อาการเสีย</div>
-                <div style="font-size:13px;color:var(--text-primary);background:var(--bg-subtle);border:1px solid var(--border);border-radius:8px;padding:10px 12px;white-space:pre-wrap;">${tk.withdrawDescription}</div>
-            </div>` : ''}
-
-            <hr class="detail-divider">
-
-            <div class="detail-section">
-                <div class="detail-section-title">ที่อยู่จัดส่ง</div>
-                <div class="detail-grid">
-                    <div class="detail-field">
-                        <label>ที่อยู่จัดส่งเบิก</label><span>${tk.withdrawAddress || none}</span>
-                    </div>
-                    <div class="detail-field">
-                        <label>ที่อยู่จัดส่งคืน</label><span>${tk.returnAddress || none}</span>
-                    </div>
-                </div>
-            </div>
-
-            ${tk.rejectReason ? `
-            <hr class="detail-divider">
-            <div class="detail-section">
-                <div class="detail-section-title">เหตุผลที่ Reject</div>
-                <div class="detail-desc">${tk.rejectReason}</div>
-            </div>` : ''}
         `;
 
         document.getElementById('detailOverlay').classList.add('open');
