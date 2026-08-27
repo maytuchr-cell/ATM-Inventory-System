@@ -65,12 +65,18 @@ public class TicketController : ControllerBase
         {
             var tLines = lines.Where(l => l.TicketId == t.TicketId).ToList();
             var siblings = siblingGroups[t.ExternalTicketNo];
+            // A Return line is "off-ticket" (คืนเพิ่มเติมนอกเหนือใบเบิก) when its PartNo was never
+            // actually withdrawn on this same Ticket — accounting for substitution (OriginalPartNo)
+            // so a swapped-then-returned part still counts as "matches the withdraw". Derived here
+            // rather than stored, since it's fully determined by the ticket's own Withdraw lines.
+            var withdrawnPartNos = tLines.Where(l => l.LineType == "Withdraw")
+                .SelectMany(l => new[] { l.PartNo, l.OriginalPartNo }).Where(p => p != null).ToHashSet();
             return new
             {
                 t.TicketId, t.ExternalTicketNo, t.TechEmail, t.TechName, t.TechDept,
                 t.Status, t.RejectReason, t.ApproverName, t.ApprovedAt,
                 t.WithdrawAddress, t.ReturnAddress, t.WithdrawDescription, t.CreatedAt, t.UpdatedAt,
-                t.WithdrawSlipNo, t.WithdrawDate, t.EmployeeCode, t.UsageStatus, t.TechSupportName, t.EmailSentAt,
+                t.WithdrawSlipNo, t.WithdrawDate, t.EmployeeCode, t.UsageStatus, t.TechSupportName, t.EmailSentAt, t.ReturnEmailSentAt,
                 phase = Phase(t.ReturnAddress, tLines),
                 siblingIndex = siblings.IndexOf(t.TicketId) + 1,
                 siblingCount = siblings.Count,
@@ -80,7 +86,8 @@ public class TicketController : ControllerBase
                     partName = partMap.GetValueOrDefault(l.PartId, l.PartNo),
                     availableStock = l.LineType == "Withdraw" ? stockByPartId.GetValueOrDefault(l.PartId, 0) : (int?)null,
                     l.OriginalPartNo,
-                    originalPartName = l.OriginalPartNo == null ? null : partNameByNo.GetValueOrDefault(l.OriginalPartNo, l.OriginalPartNo)
+                    originalPartName = l.OriginalPartNo == null ? null : partNameByNo.GetValueOrDefault(l.OriginalPartNo, l.OriginalPartNo),
+                    isOffTicket = l.LineType == "Return" && !withdrawnPartNos.Contains(l.PartNo)
                 }),
                 attachments = attachments.Where(a => a.TicketId == t.TicketId).Select(a => new
                 {
@@ -434,18 +441,17 @@ public class TicketController : ControllerBase
         var lines = _context.TicketPartLines.Where(l => l.TicketId == id).ToList();
         var phase = Phase(ticket.ReturnAddress, lines);
 
-        // Once Admin has actually told DHL about this withdraw (เดินทาง on the withdraw leg),
-        // it's no longer a self-service undo — DHL is already acting on it. Cancel earlier
-        // (รอส่งเมล DHL, still just an internal commitment) is still fine. The return leg's own
-        // เดินทาง (tech shipped back to DHL) is a different thing and isn't locked by this.
-        if (ticket.Status == "เดินทาง" && phase == "withdraw")
+        // Once Admin has actually told DHL something (withdraw: เดินทาง; return: กำลังเดินทางรับคืน
+        // or later — เดินทาง on the return leg only happens after that point, once the tech has
+        // shipped), it's no longer a self-service undo — DHL is already acting on it. Cancel
+        // earlier (รอส่งเมล DHL / อนุมัติคืน, still just an internal commitment) is still fine.
+        if (ticket.Status == "เดินทาง" || ticket.Status == "กำลังเดินทางรับคืน")
             return BadRequest(new { message = "ยกเลิกไม่ได้แล้ว — Admin ส่งเมลแจ้ง DHL ไปแล้ว" });
 
-        // Stock left WH-RAT the moment auto-approve ran (รอส่งเมล DHL) or a manual approve did
-        // (เดินทาง — return leg only reaches here, withdraw leg is blocked above), so cancelling
-        // from either has stock sitting in limbo — put it back. Cancelling at รอ/รออะไหล่ never
-        // touched stock, nothing to undo.
-        if (ticket.Status == "รอส่งเมล DHL" || ticket.Status == "เดินทาง")
+        // Stock left WH-RAT the moment auto-approve ran (รอส่งเมล DHL) — cancelling from there has
+        // stock sitting in limbo, put it back. Cancelling at รอ/รออะไหล่ never touched stock,
+        // nothing to undo. (เดินทาง is excluded — it's always locked above by this point.)
+        if (ticket.Status == "รอส่งเมล DHL")
         {
             var mainWh = _context.Locations.FirstOrDefault(l => l.Code == "WH-RAT");
             var withdrawLines = lines.Where(l => l.LineType == "Withdraw").ToList();
@@ -526,13 +532,15 @@ public class TicketController : ControllerBase
 
         ticket.Status = "รอ";
         ticket.ReturnAddress = dto.Address;
+        ticket.RejectReason = null; // clear any reason left over from a previous rejected return
         ticket.UpdatedAt = DateTime.Now;
         _context.SaveChanges();
         return Ok(new { message = "Return request submitted.", ticket });
     }
 
     // PUT /api/Ticket/{id}/approve-return — Admin reviews a submitted return request (parts,
-    // conditions, attached photos) and confirms it before the tech is allowed to ship it out.
+    // conditions, attached photos — both the lines that match the original withdraw and any
+    // extra "off-ticket" ones the tech added, see isOffTicket on GetAllTickets) and confirms it.
     [HttpPut("{id}/approve-return")]
     public IActionResult ApproveReturn(int id)
     {
@@ -548,15 +556,60 @@ public class TicketController : ControllerBase
         return Ok(new { message = "Return approved.", ticket });
     }
 
-    // PUT /api/Ticket/{id}/ship — technician marks the return parcel as shipped → เดินทาง.
-    // Only reachable after Admin has approved the return (อนุมัติคืน) — see ApproveReturn above.
+    // PUT /api/Ticket/{id}/reject-return — Admin sends a submitted return back for the tech to
+    // fix and resubmit (mirrors RejectTicket on the withdraw leg). Clears the Return lines/reason
+    // so SubmitReturn starts clean next time, and reverts the ticket to เบิก — the tech still has
+    // the part in hand, nothing here should look like the whole withdraw got undone.
+    [HttpPut("{id}/reject-return")]
+    public IActionResult RejectReturn(int id, [FromBody] RejectDto dto)
+    {
+        var ticket = _context.Tickets.FirstOrDefault(t => t.TicketId == id);
+        if (ticket == null) return NotFound(new { message = "Ticket not found." });
+        if (ticket.Status != "รอ" || ticket.ReturnAddress == null)
+            return BadRequest(new { message = "Only a submitted return awaiting approval can be rejected." });
+        if (string.IsNullOrWhiteSpace(dto.Reason)) return BadRequest(new { message = "Reject reason is required." });
+
+        var returnLines = _context.TicketPartLines.Where(l => l.TicketId == id && l.LineType == "Return");
+        _context.TicketPartLines.RemoveRange(returnLines);
+
+        ticket.Status = "เบิก";
+        ticket.ReturnAddress = null;
+        ticket.RejectReason = dto.Reason;
+        ticket.UpdatedAt = DateTime.Now;
+        _context.SaveChanges();
+        _audit.Log(User, "Ticket", id.ToString(), "REJECT_RETURN", null, new { ticket.TicketId, ticket.Status, dto.Reason });
+        return Ok(new { message = "Return rejected.", ticket });
+    }
+
+    // PUT /api/Ticket/{id}/send-email-return — Admin confirms the DHL "please come collect this
+    // return" email actually went out. Return-leg counterpart of SendEmailConfirmed. From here the
+    // ticket is locked against Cancel, same reasoning as the withdraw leg (see CancelTicket).
+    [HttpPut("{id}/send-email-return")]
+    public IActionResult SendEmailConfirmedReturn(int id)
+    {
+        var ticket = _context.Tickets.FirstOrDefault(t => t.TicketId == id);
+        if (ticket == null) return NotFound(new { message = "Ticket not found." });
+        if (ticket.Status != "อนุมัติคืน")
+            return BadRequest(new { message = "Only an approved return can be marked as emailed." });
+
+        ticket.Status = "กำลังเดินทางรับคืน";
+        ticket.ReturnEmailSentAt = DateTime.Now;
+        ticket.UpdatedAt = DateTime.Now;
+        _context.SaveChanges();
+        _audit.Log(User, "Ticket", id.ToString(), "SEND_EMAIL_RETURN", null, new { ticket.TicketId, ticket.Status });
+        return Ok(new { message = "Marked as emailed to DHL.", ticket });
+    }
+
+    // PUT /api/Ticket/{id}/ship — technician marks the return parcel as shipped → เดินทาง, once
+    // DHL has actually come to collect it. Only reachable after Admin has confirmed the pickup
+    // email went out (กำลังเดินทางรับคืน) — see SendEmailConfirmedReturn above.
     [HttpPut("{id}/ship")]
     public IActionResult MarkShipped(int id)
     {
         var ticket = _context.Tickets.FirstOrDefault(t => t.TicketId == id);
         if (ticket == null) return NotFound(new { message = "Ticket not found." });
-        if (ticket.Status != "อนุมัติคืน" || ticket.ReturnAddress == null)
-            return BadRequest(new { message = "Only an Admin-approved return can be marked as shipped." });
+        if (ticket.Status != "กำลังเดินทางรับคืน" || ticket.ReturnAddress == null)
+            return BadRequest(new { message = "Only a return DHL has been told to collect can be marked as shipped." });
 
         ticket.Status = "เดินทาง";
         ticket.UpdatedAt = DateTime.Now;

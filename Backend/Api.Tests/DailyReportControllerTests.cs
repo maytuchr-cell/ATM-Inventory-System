@@ -59,6 +59,7 @@ public class DailyReportControllerTests
         tickets.ReceiveTicket(ticket.TicketId);
         tickets.SubmitReturn(ticket.TicketId, new SubmitLinesDto { Lines = new() { new LineDto { PartNo = PartNo, Quantity = qty, Condition = "Good" } }, Address = "Return Addr" });
         tickets.ApproveReturn(ticket.TicketId);
+        tickets.SendEmailConfirmedReturn(ticket.TicketId);
         tickets.MarkShipped(ticket.TicketId);
         return context.Tickets.First(t => t.TicketId == ticket.TicketId);
     }

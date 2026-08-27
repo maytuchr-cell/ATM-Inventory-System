@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Tickets — ATM Inventory</title>
-    <link rel="stylesheet" href="shared/styles.css?v=47">
+    <link rel="stylesheet" href="shared/styles.css?v=48">
     <style>
         /* Page-specific overrides */
         .section-head { display:flex; align-items:center; gap:10px; margin-bottom:20px; }
@@ -336,10 +336,10 @@
     </div>
 </div>
 
-<script src="shared/translations.js?v=47"></script>
-<script src="shared/toast.js?v=47"></script>
-<script src="shared/api.js?v=47"></script>
-<script src="shared/layout.js?v=47"></script>
+<script src="shared/translations.js?v=48"></script>
+<script src="shared/toast.js?v=48"></script>
+<script src="shared/api.js?v=48"></script>
+<script src="shared/layout.js?v=48"></script>
 <script>
     let cachedTickets = [];
     let rejectTargetId = null;
@@ -477,12 +477,12 @@
     function returnLinesHtml(tk) {
         const lines = tk.lines.filter(l => l.lineType === 'Return');
         return lines.length
-            ? lines.map(l => `${l.partName} <span style="color:var(--text-muted)">×${l.quantity}</span>${l.condition ? ` <span style="color:${CONDITION_COLOR[l.condition]};font-size:11px;font-weight:600;">${CONDITION_LABEL[l.condition]}</span>` : ''}`).join('<br>')
+            ? lines.map(l => `${l.partName} <span style="color:var(--text-muted)">×${l.quantity}</span>${l.condition ? ` <span style="color:${CONDITION_COLOR[l.condition]};font-size:11px;font-weight:600;">${CONDITION_LABEL[l.condition]}</span>` : ''}${l.isOffTicket ? ' <span style="font-size:10px;color:var(--orange);">🆕 นอกใบเบิก</span>' : ''}`).join('<br>')
             : `<span style="color:var(--text-muted)">—</span>`;
     }
 
     function renderReturnsInProgress() {
-        const rows = cachedTickets.filter(tk => tk.phase === 'return' && ['รอ', 'อนุมัติคืน', 'เดินทาง'].includes(tk.status));
+        const rows = cachedTickets.filter(tk => tk.phase === 'return' && ['รอ', 'อนุมัติคืน', 'กำลังเดินทางรับคืน', 'เดินทาง'].includes(tk.status));
         const countLabel = rows.length + ' ' + (getLang() === 'th' ? 'รายการ' : 'items');
         document.getElementById('returns-onhand-count').textContent = countLabel;
         document.getElementById('returns-badge-count').textContent = rows.length;
@@ -491,29 +491,46 @@
             tbody.innerHTML = `<tr><td colspan="7" class="empty-state">🎉 ไม่มีรายการคืนที่ค้างอยู่</td></tr>`;
             return;
         }
-        // 3 steps: รอ (tech submitted, awaiting Admin review) → อนุมัติคืน (Admin confirmed, tech
-        // can now ship) → เดินทาง (tech shipped, waiting to reach DHL — Admin closes it out here).
+        // 4 steps: รอ (tech submitted, awaiting Admin review) → อนุมัติคืน (Admin confirmed, needs
+        // to email DHL) → กำลังเดินทางรับคืน (Admin emailed DHL, waiting for pickup — locked
+        // against Cancel from here) → เดินทาง (tech shipped, waiting to reach DHL — Admin closes
+        // it out here).
         const STEP = {
-            'รอ':        { badge: 'badge-pending',  badgeLabel: 'รอ Admin ยืนยัน' },
-            'อนุมัติคืน': { badge: 'badge-approved', badgeLabel: 'รอช่างจัดส่ง' },
-            'เดินทาง':   { badge: 'badge-approved', badgeLabel: 'รอถึง DHL' },
+            'รอ':               { badge: 'badge-pending',  badgeLabel: 'รอ Admin ยืนยัน' },
+            'อนุมัติคืน':        { badge: 'badge-approved', badgeLabel: 'รอส่งเมล DHL' },
+            'กำลังเดินทางรับคืน': { badge: 'badge-approved', badgeLabel: 'รอ DHL มารับ' },
+            'เดินทาง':          { badge: 'badge-approved', badgeLabel: 'รอถึง DHL' },
         };
         tbody.innerHTML = rows.map(tk => {
             const s = STEP[tk.status];
             const badge = `<span class="badge ${s.badge}"><span class="badge-dot"></span>${s.badgeLabel}</span>`;
             let action;
             if (tk.status === 'รอ') {
-                action = `<button class="btn-confirm" onclick="approveReturn(${tk.ticketId})">
+                action = `
+                    <div class="ticket-action-row">
+                        <button class="btn-approve" onclick="approveReturn(${tk.ticketId})">
+                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+                            ยืนยัน
+                        </button>
+                        <button class="btn-reject" onclick="openRejectModal(${tk.ticketId}, 'return')">
+                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                            ปฏิเสธ
+                        </button>
+                    </div>`;
+            } else if (tk.status === 'อนุมัติคืน') {
+                action = `<button class="btn-approve" onclick="sendEmailConfirmedReturn(${tk.ticketId})">
                              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
-                             ยืนยัน
+                             ส่งเมลสำเร็จ
                            </button>`;
+            } else if (tk.status === 'กำลังเดินทางรับคืน') {
+                action = `<span style="color:var(--text-muted);font-size:12px;" title="Admin ส่งเมลแจ้ง DHL ไปแล้ว">🔒 รอ DHL มารับ / ช่างจัดส่ง</span>`;
             } else if (tk.status === 'เดินทาง') {
                 action = `<button class="btn-confirm" onclick="confirmReturn(${tk.ticketId})">
                              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
                              คืนสำเร็จ
                            </button>`;
             } else {
-                action = `<span style="color:var(--text-muted);font-size:12px;">รอช่างจัดส่ง</span>`;
+                action = `<span style="color:var(--text-muted);font-size:12px;">—</span>`;
             }
             const ticketLabel = tk.siblingCount > 1
                 ? `<span class="id-chip ticket-id">${tk.externalTicketNo}</span><div style="font-size:11px;color:var(--text-muted);margin-top:2px;">ใบที่ ${tk.siblingIndex} จาก ${tk.siblingCount}</div>`
@@ -537,6 +554,17 @@
             await api.tickets.approveReturn(id);
             await fetchTickets();
             showToast?.('ยืนยันคำขอคืนแล้ว', 'success');
+        } catch (e) {
+            showToast?.(e.message || 'เกิดข้อผิดพลาด กรุณาลองใหม่', 'error');
+        }
+    }
+
+    async function sendEmailConfirmedReturn(id) {
+        if (!confirm('ยืนยันว่าส่งเมลแจ้ง DHL มารับของคืนแล้ว? หลังจากนี้จะยกเลิกใบนี้ไม่ได้')) return;
+        try {
+            await api.tickets.sendEmailConfirmedReturn(id);
+            await fetchTickets();
+            showToast?.('บันทึกส่งเมลสำเร็จแล้ว', 'success');
         } catch (e) {
             showToast?.(e.message || 'เกิดข้อผิดพลาด กรุณาลองใหม่', 'error');
         }
@@ -578,6 +606,7 @@
         "รออะไหล่":  { cls: "badge-danger",   label: "รออะไหล่" },
         "รอส่งเมล DHL": { cls: "badge-pending", label: "รอส่งเมล DHL" },
         "อนุมัติคืน": { cls: "badge-approved", label: "อนุมัติคืน" },
+        "กำลังเดินทางรับคืน": { cls: "badge-approved", label: "กำลังเดินทางรับคืน" },
         "เดินทาง":   { cls: "badge-approved", label: "เดินทาง" },
         "เบิก":      { cls: "badge-teal",     label: "เบิก" },
         "คืน":       { cls: "badge-success",  label: "คืน" },
@@ -688,7 +717,7 @@
                         </button>
                         <button class="btn-cancel" onclick="cancelTicket(${tk.ticketId})">ยกเลิก</button>
                     </div>`;
-            } else if (tk.status === "เดินทาง" && tk.phase === "withdraw") {
+            } else if (tk.status === "เดินทาง" || tk.status === "กำลังเดินทางรับคืน") {
                 // Locked — Admin already told DHL about this one, no self-service undo any more.
                 action = `<span style="color:var(--text-muted);font-size:12px;" title="Admin ส่งเมลแจ้ง DHL ไปแล้ว">🔒 ส่งเมลแล้ว</span>`;
             } else if (!["Reject", "Cancel", "คืน"].includes(tk.status)) {
@@ -801,20 +830,25 @@
         } catch (e) { showToast?.(e.message || 'เกิดข้อผิดพลาด กรุณาลองใหม่', 'error'); }
     }
 
-    function openRejectModal(id) {
+    // kind: 'withdraw' (default) or 'return' — decides which endpoint confirmReject calls.
+    let rejectTargetKind = 'withdraw';
+    function openRejectModal(id, kind) {
         rejectTargetId = id;
+        rejectTargetKind = kind || 'withdraw';
         document.getElementById('reasonInput').value = '';
         document.getElementById('reasonOverlay').classList.add('open');
     }
     function closeReasonModal() {
         document.getElementById('reasonOverlay').classList.remove('open');
         rejectTargetId = null;
+        rejectTargetKind = 'withdraw';
     }
     async function confirmReject() {
         const reason = document.getElementById('reasonInput').value.trim();
         if (!reason) { showToast?.('กรุณาระบุเหตุผล (บังคับ)', 'error'); return; }
         try {
-            await api.tickets.reject(rejectTargetId, reason);
+            if (rejectTargetKind === 'return') await api.tickets.rejectReturn(rejectTargetId, reason);
+            else await api.tickets.reject(rejectTargetId, reason);
             await fetchTickets();
         } catch (e) { showToast?.(e.message || 'เกิดข้อผิดพลาด กรุณาลองใหม่', 'error'); }
         closeReasonModal();

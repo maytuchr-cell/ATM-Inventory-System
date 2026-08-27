@@ -166,6 +166,13 @@ public class TicketWorkflowTests
         controller.ApproveReturn(ticket.TicketId);
         Assert.Equal("อนุมัติคืน", context.Tickets.First(t => t.TicketId == ticket.TicketId).Status);
 
+        // Tech still can't ship until Admin confirms the DHL pickup email actually went out.
+        var shipBeforeEmail = controller.MarkShipped(ticket.TicketId);
+        Assert.IsType<BadRequestObjectResult>(shipBeforeEmail);
+
+        controller.SendEmailConfirmedReturn(ticket.TicketId);
+        Assert.Equal("กำลังเดินทางรับคืน", context.Tickets.First(t => t.TicketId == ticket.TicketId).Status);
+
         var shipAfterApproval = controller.MarkShipped(ticket.TicketId);
         Assert.IsType<OkObjectResult>(shipAfterApproval);
         Assert.Equal("เดินทาง", context.Tickets.First(t => t.TicketId == ticket.TicketId).Status);
@@ -192,6 +199,7 @@ public class TicketWorkflowTests
             Address = "Return Addr"
         });
         controller.ApproveReturn(ticket.TicketId);
+        controller.SendEmailConfirmedReturn(ticket.TicketId);
         controller.MarkShipped(ticket.TicketId);
         controller.ConfirmReturnArrived(ticket.TicketId);
 
@@ -219,6 +227,7 @@ public class TicketWorkflowTests
             Address = "Return Addr"
         });
         controller.ApproveReturn(ticket.TicketId);
+        controller.SendEmailConfirmedReturn(ticket.TicketId);
         controller.MarkShipped(ticket.TicketId);
         controller.ConfirmReturnArrived(ticket.TicketId);
 
@@ -396,6 +405,7 @@ public class TicketWorkflowTests
             Address = "Return Addr"
         });
         controller.ApproveReturn(ticket.TicketId);
+        controller.SendEmailConfirmedReturn(ticket.TicketId);
         controller.MarkShipped(ticket.TicketId);
         controller.ConfirmReturnArrived(ticket.TicketId);
 
@@ -431,6 +441,7 @@ public class TicketWorkflowTests
             Address = "Return Addr"
         });
         controller.ApproveReturn(ticket.TicketId);
+        controller.SendEmailConfirmedReturn(ticket.TicketId);
         controller.MarkShipped(ticket.TicketId);
 
         var secondShip = controller.MarkShipped(ticket.TicketId);
@@ -505,6 +516,7 @@ public class TicketWorkflowTests
             Address = "Return Addr"
         });
         controller.ApproveReturn(ticket.TicketId);
+        controller.SendEmailConfirmedReturn(ticket.TicketId);
         controller.MarkShipped(ticket.TicketId);
         controller.ConfirmReturnArrived(ticket.TicketId);
 
@@ -568,6 +580,163 @@ public class TicketWorkflowTests
         Assert.Equal("เบิก", firstAfter.Status);
         var secondAfter = context.Tickets.First(t => t.TicketId == second.TicketId);
         Assert.Equal("รอส่งเมล DHL", secondAfter.Status);
+    }
+
+    // ── Return leg: Reject/Cancel, DHL email confirmation, off-ticket lines ─────
+
+    [Fact]
+    public void RejectReturn_ClearsReturnLinesAndReasonRevertsToเบิก_ForResubmit()
+    {
+        var (controller, context) = TicketControllerFixture.Create();
+        var ticket = TicketControllerFixture.CreateReceivedTicket(controller, context, "RT-REJ-1", qty: 1);
+        controller.SubmitReturn(ticket.TicketId, new SubmitLinesDto
+        {
+            Lines = new() { new LineDto { PartNo = TicketControllerFixture.PartNo, Quantity = 1, Condition = "Good" } },
+            Address = "Return Addr"
+        });
+
+        var result = controller.RejectReturn(ticket.TicketId, new RejectDto { Reason = "Wrong condition noted" });
+
+        Assert.IsType<OkObjectResult>(result);
+        var updated = context.Tickets.First(t => t.TicketId == ticket.TicketId);
+        Assert.Equal("เบิก", updated.Status); // reverted — tech still has the part, can resubmit
+        Assert.Equal("Wrong condition noted", updated.RejectReason);
+        Assert.Null(updated.ReturnAddress);
+        Assert.Empty(context.TicketPartLines.Where(l => l.TicketId == ticket.TicketId && l.LineType == "Return"));
+    }
+
+    [Fact]
+    public void SubmitReturn_AfterRejection_ClearsThePriorReason()
+    {
+        var (controller, context) = TicketControllerFixture.Create();
+        var ticket = TicketControllerFixture.CreateReceivedTicket(controller, context, "RT-REJ-2", qty: 1);
+        controller.SubmitReturn(ticket.TicketId, new SubmitLinesDto
+        {
+            Lines = new() { new LineDto { PartNo = TicketControllerFixture.PartNo, Quantity = 1, Condition = "Good" } },
+            Address = "Return Addr"
+        });
+        controller.RejectReturn(ticket.TicketId, new RejectDto { Reason = "Fix this" });
+
+        controller.SubmitReturn(ticket.TicketId, new SubmitLinesDto
+        {
+            Lines = new() { new LineDto { PartNo = TicketControllerFixture.PartNo, Quantity = 1, Condition = "Good" } },
+            Address = "Return Addr v2"
+        });
+
+        var updated = context.Tickets.First(t => t.TicketId == ticket.TicketId);
+        Assert.Equal("รอ", updated.Status);
+        Assert.Null(updated.RejectReason);
+    }
+
+    [Fact]
+    public void SendEmailConfirmedReturn_MovesApprovedReturnToTransitToCollect()
+    {
+        var (controller, context) = TicketControllerFixture.Create();
+        var ticket = TicketControllerFixture.CreateReceivedTicket(controller, context, "RT-EMAIL-1", qty: 1);
+        controller.SubmitReturn(ticket.TicketId, new SubmitLinesDto
+        {
+            Lines = new() { new LineDto { PartNo = TicketControllerFixture.PartNo, Quantity = 1, Condition = "Good" } },
+            Address = "Return Addr"
+        });
+        controller.ApproveReturn(ticket.TicketId);
+
+        var result = controller.SendEmailConfirmedReturn(ticket.TicketId);
+
+        Assert.IsType<OkObjectResult>(result);
+        var updated = context.Tickets.First(t => t.TicketId == ticket.TicketId);
+        Assert.Equal("กำลังเดินทางรับคืน", updated.Status);
+        Assert.NotNull(updated.ReturnEmailSentAt);
+    }
+
+    [Fact]
+    public void CancelTicket_OnceReturnEmailedToDhl_IsLocked()
+    {
+        var (controller, context) = TicketControllerFixture.Create();
+        var ticket = TicketControllerFixture.CreateReceivedTicket(controller, context, "RT-EMAIL-2", qty: 1);
+        controller.SubmitReturn(ticket.TicketId, new SubmitLinesDto
+        {
+            Lines = new() { new LineDto { PartNo = TicketControllerFixture.PartNo, Quantity = 1, Condition = "Good" } },
+            Address = "Return Addr"
+        });
+        controller.ApproveReturn(ticket.TicketId);
+        controller.SendEmailConfirmedReturn(ticket.TicketId);
+
+        var result = controller.CancelTicket(ticket.TicketId);
+
+        Assert.IsType<BadRequestObjectResult>(result);
+        Assert.Equal("กำลังเดินทางรับคืน", context.Tickets.First(t => t.TicketId == ticket.TicketId).Status);
+    }
+
+    [Fact]
+    public void CancelTicket_OnceReturnShipped_IsStillLocked()
+    {
+        // Regression: เดินทาง on the return leg only happens after กำลังเดินทางรับคืน (the DHL-email
+        // lock point), so it must stay locked — cancelling here must not be allowed to undo stock
+        // that was never touched by return-side actions in the first place.
+        var (controller, context) = TicketControllerFixture.Create();
+        var ticket = TicketControllerFixture.CreateReceivedTicket(controller, context, "RT-EMAIL-4", qty: 1);
+        controller.SubmitReturn(ticket.TicketId, new SubmitLinesDto
+        {
+            Lines = new() { new LineDto { PartNo = TicketControllerFixture.PartNo, Quantity = 1, Condition = "Good" } },
+            Address = "Return Addr"
+        });
+        controller.ApproveReturn(ticket.TicketId);
+        controller.SendEmailConfirmedReturn(ticket.TicketId);
+        controller.MarkShipped(ticket.TicketId);
+
+        var result = controller.CancelTicket(ticket.TicketId);
+
+        Assert.IsType<BadRequestObjectResult>(result);
+        Assert.Equal("เดินทาง", context.Tickets.First(t => t.TicketId == ticket.TicketId).Status);
+    }
+
+    [Fact]
+    public void CancelTicket_OnApprovedReturnBeforeEmail_IsStillAllowed()
+    {
+        // Not locked yet — Admin approved internally but hasn't told DHL anything.
+        var (controller, context) = TicketControllerFixture.Create();
+        var ticket = TicketControllerFixture.CreateReceivedTicket(controller, context, "RT-EMAIL-3", qty: 1);
+        controller.SubmitReturn(ticket.TicketId, new SubmitLinesDto
+        {
+            Lines = new() { new LineDto { PartNo = TicketControllerFixture.PartNo, Quantity = 1, Condition = "Good" } },
+            Address = "Return Addr"
+        });
+        controller.ApproveReturn(ticket.TicketId);
+
+        var result = controller.CancelTicket(ticket.TicketId);
+
+        Assert.IsType<OkObjectResult>(result);
+        Assert.Equal("Cancel", context.Tickets.First(t => t.TicketId == ticket.TicketId).Status);
+    }
+
+    [Fact]
+    public void GetAllTickets_FlagsReturnLineNotOnOriginalWithdrawAsOffTicket()
+    {
+        var (controller, context) = TicketControllerFixture.Create();
+        var ticket = TicketControllerFixture.CreateReceivedTicket(controller, context, "RT-OFF-1", qty: 1);
+        TicketControllerFixture.SeedEquivalentPart(context); // gives us a second real Part to use as the "extra" one
+
+        controller.SubmitReturn(ticket.TicketId, new SubmitLinesDto
+        {
+            Lines = new()
+            {
+                new LineDto { PartNo = TicketControllerFixture.PartNo, Quantity = 1, Condition = "Good" },              // matches the withdraw
+                new LineDto { PartNo = TicketControllerFixture.EquivalentPartNo, Quantity = 1, Condition = "Good" },    // never withdrawn on this ticket
+            },
+            Address = "Return Addr"
+        });
+
+        var ok = Assert.IsType<OkObjectResult>(controller.GetAllTickets());
+        var json = System.Text.Json.JsonSerializer.Serialize(ok.Value);
+        using var doc = System.Text.Json.JsonDocument.Parse(json);
+        var ticketJson = doc.RootElement.EnumerateArray().First(t => t.GetProperty("TicketId").GetInt32() == ticket.TicketId);
+        var returnLines = ticketJson.GetProperty("lines").EnumerateArray()
+            .Where(l => l.GetProperty("LineType").GetString() == "Return").ToList();
+
+        var matching = returnLines.First(l => l.GetProperty("PartNo").GetString() == TicketControllerFixture.PartNo);
+        var offTicket = returnLines.First(l => l.GetProperty("PartNo").GetString() == TicketControllerFixture.EquivalentPartNo);
+        Assert.False(matching.GetProperty("isOffTicket").GetBoolean());
+        Assert.True(offTicket.GetProperty("isOffTicket").GetBoolean());
     }
 
     // ── Substitute — show the tech's original request after Admin swaps it ────

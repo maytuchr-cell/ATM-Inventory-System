@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Tech Workspace — ATM Inventory</title>
-    <link rel="stylesheet" href="shared/styles.css?v=47">
+    <link rel="stylesheet" href="shared/styles.css?v=48">
     <style>
         .section-head { display:flex; align-items:center; gap:10px; margin-bottom:20px; }
         .section-accent { width:4px; height:22px; background:var(--orange); border-radius:2px; }
@@ -354,10 +354,10 @@
     </div>
 </div>
 
-<script src="shared/translations.js?v=47"></script>
-<script src="shared/toast.js?v=47"></script>
-<script src="shared/api.js?v=47"></script>
-<script src="shared/layout.js?v=47"></script>
+<script src="shared/translations.js?v=48"></script>
+<script src="shared/toast.js?v=48"></script>
+<script src="shared/api.js?v=48"></script>
+<script src="shared/layout.js?v=48"></script>
 <script>
     /* Status: รอ / เดินทาง / เบิก / คืน / Reject / Cancel   (null = ยังไม่เริ่มเบิก) */
     const currentEmail = localStorage.getItem('userEmail') || 'tech@atm.com';
@@ -421,6 +421,7 @@
         'รออะไหล่':  { cls: 'badge-danger',  label: 'รออะไหล่' },
         'รอส่งเมล DHL': { cls: 'badge-pending', label: 'รอส่งเมล DHL' },
         'อนุมัติคืน': { cls: 'badge-transit', label: 'Admin อนุมัติแล้ว' },
+        'กำลังเดินทางรับคืน': { cls: 'badge-transit', label: 'รอ DHL มารับ' },
         'เดินทาง':   { cls: 'badge-transit', label: 'เดินทาง' },
         'เบิก':      { cls: 'badge-success', label: 'เบิก' },
         'คืน':       { cls: 'badge-success', label: 'คืน' },
@@ -445,7 +446,7 @@
     const CONDITION_LABEL = { Good: 'ของดี', Bad: 'ของเสีย', Lost: 'สูญหาย' };
     function partsSummaryHtml(tk) {
         return tk.lines.length
-            ? tk.lines.map(l => `<div style="font-size:12px;">${l.partName} <span class="text-muted">×${l.quantity}</span> <span style="font-size:10px;color:var(--text-muted)">(${l.lineType === 'Withdraw' ? 'เบิก' : 'คืน'}${l.condition ? ' — ' + CONDITION_LABEL[l.condition] : ''})</span>
+            ? tk.lines.map(l => `<div style="font-size:12px;">${l.partName} <span class="text-muted">×${l.quantity}</span> <span style="font-size:10px;color:var(--text-muted)">(${l.lineType === 'Withdraw' ? 'เบิก' : 'คืน'}${l.condition ? ' — ' + CONDITION_LABEL[l.condition] : ''})</span>${l.isOffTicket ? ' <span style="font-size:10px;color:var(--orange);">🆕 นอกใบเบิก</span>' : ''}
                 ${l.originalPartName ? `<div style="font-size:10px;color:var(--orange);margin-top:1px;">🔄 ขอไป: ${l.originalPartName} — Admin เปลี่ยนเป็นอะไหล่เทียบเคียงนี้แทน</div>` : ''}</div>`).join('')
             : `<span class="text-muted">—</span>`;
     }
@@ -487,6 +488,8 @@
                             action = `<button class="btn-return" onclick="openReturnModal([${tk.ticketId}])">📥 คืน</button>`;
                         }
                     } else if (tk.status === 'อนุมัติคืน' && tk.phase === 'return') {
+                        action = `<span class="text-muted" style="font-size:12px;">Admin อนุมัติแล้ว — รอ Admin ส่งเมล DHL</span>`;
+                    } else if (tk.status === 'กำลังเดินทางรับคืน' && tk.phase === 'return') {
                         action = `<button class="btn-ship" onclick="markShipped(${tk.ticketId})">🚚 จัดส่งแล้ว</button>`;
                     } else if (tk.status === 'รอ' && tk.phase === 'return') {
                         action = `<span class="text-muted" style="font-size:12px;">รอ Admin ยืนยัน</span>`;

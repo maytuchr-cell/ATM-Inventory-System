@@ -26,6 +26,10 @@ public class Ticket
     // happen well before Admin gets around to emailing DHL).
     public DateTime? EmailSentAt { get; set; }
 
+    // Return-leg counterpart of EmailSentAt — set when Admin confirms the DHL email asking them
+    // to come collect the return went out (อนุมัติคืน → กำลังเดินทางรับคืน).
+    public DateTime? ReturnEmailSentAt { get; set; }
+
     public string? WithdrawAddress { get; set; }
     public string? ReturnAddress  { get; set; }
 
