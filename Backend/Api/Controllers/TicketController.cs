@@ -645,6 +645,80 @@ public class TicketController : ControllerBase
 
         return Ok(new { filePath = $"/assets/tickets/{fileName}", fileName = file.FileName });
     }
+
+    // POST /api/Ticket/export-dhl-excel — Admin selects several tickets ready to notify DHL about
+    // (withdraw side: "รอส่งเมล DHL"; return side: "อนุมัติคืน") and downloads one Excel file
+    // covering all of them, instead of composing a separate email per ticket. Doesn't change any
+    // ticket state — purely a read/export; Admin still clicks "ส่งเมลสำเร็จ" / ships separately
+    // per ticket afterward.
+    [HttpPost("export-dhl-excel")]
+    public IActionResult ExportDhlExcel([FromBody] ExportDhlExcelDto dto)
+    {
+        if (dto.TicketIds == null || dto.TicketIds.Count == 0)
+            return BadRequest(new { message = "Select at least one ticket to export." });
+
+        var tickets = _context.Tickets.Where(t => dto.TicketIds.Contains(t.TicketId)).ToList();
+        if (!tickets.Any()) return NotFound(new { message = "No matching tickets found." });
+
+        var lines = _context.TicketPartLines
+            .Where(l => dto.TicketIds.Contains(l.TicketId))
+            .ToList();
+        var partNameByNo = _context.Parts.ToDictionary(p => p.PartNo, p => p.PartName);
+
+        using var wb = new ClosedXML.Excel.XLWorkbook();
+        var ws = wb.Worksheets.Add("DHL Export");
+        var headers = new[] { "ประเภท", "Case No.", "เลขใบเบิก", "ชื่อช่าง", "แผนก", "รหัสอะไหล่", "ชื่ออะไหล่", "จำนวน", "สภาพ", "ที่อยู่" };
+        for (int c = 0; c < headers.Length; c++) ws.Cell(1, c + 1).Value = headers[c];
+        ws.Row(1).Style.Font.Bold = true;
+
+        int row = 2;
+        foreach (var t in tickets)
+        {
+            var isWithdraw = t.Status == "รอส่งเมล DHL";
+            var lineType = isWithdraw ? "Withdraw" : "Return";
+            var ticketLines = lines.Where(l => l.TicketId == t.TicketId && l.LineType == lineType).ToList();
+            var address = isWithdraw ? t.WithdrawAddress : t.ReturnAddress;
+            var typeLabel = isWithdraw ? "เบิก" : "คืน";
+
+            if (!ticketLines.Any())
+            {
+                ws.Cell(row, 1).Value = typeLabel;
+                ws.Cell(row, 2).Value = t.ExternalTicketNo;
+                ws.Cell(row, 3).Value = t.WithdrawSlipNo ?? "";
+                ws.Cell(row, 4).Value = t.TechName;
+                ws.Cell(row, 5).Value = t.TechDept;
+                ws.Cell(row, 10).Value = address ?? "";
+                row++;
+                continue;
+            }
+
+            foreach (var l in ticketLines)
+            {
+                ws.Cell(row, 1).Value = typeLabel;
+                ws.Cell(row, 2).Value = t.ExternalTicketNo;
+                ws.Cell(row, 3).Value = t.WithdrawSlipNo ?? "";
+                ws.Cell(row, 4).Value = t.TechName;
+                ws.Cell(row, 5).Value = t.TechDept;
+                ws.Cell(row, 6).Value = l.PartNo;
+                ws.Cell(row, 7).Value = partNameByNo.GetValueOrDefault(l.PartNo, l.PartNo);
+                ws.Cell(row, 8).Value = l.Quantity;
+                ws.Cell(row, 9).Value = l.Condition ?? "";
+                ws.Cell(row, 10).Value = address ?? "";
+                row++;
+            }
+        }
+        ws.Columns().AdjustToContents();
+
+        using var stream = new MemoryStream();
+        wb.SaveAs(stream);
+        var fileName = $"DHL-Export-{DateTime.Now:yyyyMMdd-HHmmss}.xlsx";
+        return File(stream.ToArray(), "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", fileName);
+    }
+}
+
+public class ExportDhlExcelDto
+{
+    public List<int> TicketIds { get; set; } = new();
 }
 
 public class SubstituteDto

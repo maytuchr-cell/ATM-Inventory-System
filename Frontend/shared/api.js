@@ -110,6 +110,27 @@ const api = {
     submitWithdraw: (id, dto)    => apiFetch(`/Ticket/${id}/withdraw`,   { method: 'PUT',  body: JSON.stringify(dto) }),
     approve:      (id)           => apiFetch(`/Ticket/${id}/approve`,   { method: 'PUT' }),
     sendEmailConfirmed: (id)     => apiFetch(`/Ticket/${id}/send-email`, { method: 'PUT' }),
+    // Binary response (an .xlsx file), not JSON — bypasses apiFetch's res.json() and hands back
+    // the raw Blob + the filename the server suggested, for the caller to trigger a save with.
+    exportDhlExcel: async (ticketIds) => {
+      const token = localStorage.getItem('authToken');
+      const res = await fetch(API_BASE + '/Ticket/export-dhl-excel', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { 'Authorization': 'Bearer ' + token } : {}),
+        },
+        body: JSON.stringify({ ticketIds }),
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body.message || `HTTP ${res.status}`);
+      }
+      const disposition = res.headers.get('Content-Disposition') || '';
+      const match = disposition.match(/filename="?([^"]+)"?/);
+      const fileName = match ? match[1] : 'DHL-Export.xlsx';
+      return { blob: await res.blob(), fileName };
+    },
     reject:       (id, reason)   => apiFetch(`/Ticket/${id}/reject`,    { method: 'PUT',  body: JSON.stringify({ reason }) }),
     cancel:       (id)           => apiFetch(`/Ticket/${id}/cancel`,    { method: 'PUT' }),
     receive:      (id)           => apiFetch(`/Ticket/${id}/receive`,   { method: 'PUT' }),

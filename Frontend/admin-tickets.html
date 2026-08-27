@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Tickets — ATM Inventory</title>
-    <link rel="stylesheet" href="shared/styles.css?v=45">
+    <link rel="stylesheet" href="shared/styles.css?v=46">
     <style>
         /* Page-specific overrides */
         .section-head { display:flex; align-items:center; gap:10px; margin-bottom:20px; }
@@ -129,6 +129,7 @@
             <div class="page-tabs">
                 <button class="page-tab active" id="tabBtnAll" onclick="switchTab('all')">ทุก Ticket</button>
                 <button class="page-tab" id="tabBtnReturns" onclick="switchTab('returns')">คืนอะไหล่ <span class="section-count" id="returns-badge-count" style="margin-left:4px;">—</span></button>
+                <button class="page-tab" id="tabBtnDhlExport" onclick="switchTab('dhlexport')">ส่งออก DHL <span class="section-count" id="dhlexport-badge-count" style="margin-left:4px;">—</span></button>
             </div>
 
             <!-- Tab: Tickets — เบิก / คืน (all) -->
@@ -236,6 +237,45 @@
             </div>
             </div><!-- /tabPanelReturns -->
 
+            <!-- Tab: ส่งออก DHL — multi-select tickets ready to notify DHL about (withdraw:
+                 รอส่งเมล DHL, return: อนุมัติคืน) and download one combined Excel file. -->
+            <div class="tab-panel" id="tabPanelDhlExport">
+            <div class="card">
+                <div class="section-head" style="flex-wrap:wrap;gap:8px;">
+                    <div class="section-accent"></div>
+                    <span class="section-title">รายการรอส่ง DHL</span>
+                    <span class="section-count" id="dhlexport-count">—</span>
+                    <div style="margin-left:auto;display:flex;gap:8px;align-items:center;">
+                        <label style="font-size:12px;color:var(--text-secondary);display:flex;align-items:center;gap:5px;cursor:pointer;">
+                            <input type="checkbox" id="dhlexport-select-all" onchange="toggleSelectAllDhlExport(this.checked)">
+                            เลือกทั้งหมด
+                        </label>
+                        <button class="btn-refresh" id="dhlexport-download-btn" onclick="downloadDhlExcel()" disabled>
+                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                            ดาวน์โหลด Excel (<span id="dhlexport-selected-count">0</span>)
+                        </button>
+                    </div>
+                </div>
+                <div class="tbl-wrap">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th style="width:5%"></th>
+                                <th style="width:12%">ประเภท</th>
+                                <th style="width:15%">Ticket</th>
+                                <th style="width:16%">ช่าง</th>
+                                <th style="width:32%">อะไหล่</th>
+                                <th style="width:20%">ที่อยู่</th>
+                            </tr>
+                        </thead>
+                        <tbody id="dhlexport-tbody">
+                            <tr><td colspan="6" class="empty-state">กำลังเชื่อมต่อเซิร์ฟเวอร์…</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+            </div><!-- /tabPanelDhlExport -->
+
         </div><!-- /page-body -->
     </div><!-- /main-content -->
 </div><!-- /app-layout -->
@@ -296,10 +336,10 @@
     </div>
 </div>
 
-<script src="shared/translations.js?v=45"></script>
-<script src="shared/toast.js?v=45"></script>
-<script src="shared/api.js?v=45"></script>
-<script src="shared/layout.js?v=45"></script>
+<script src="shared/translations.js?v=46"></script>
+<script src="shared/toast.js?v=46"></script>
+<script src="shared/api.js?v=46"></script>
+<script src="shared/layout.js?v=46"></script>
 <script>
     let cachedTickets = [];
     let rejectTargetId = null;
@@ -327,8 +367,11 @@
     function switchTab(tab) {
         document.getElementById('tabBtnAll').classList.toggle('active', tab === 'all');
         document.getElementById('tabBtnReturns').classList.toggle('active', tab === 'returns');
+        document.getElementById('tabBtnDhlExport').classList.toggle('active', tab === 'dhlexport');
         document.getElementById('tabPanelAll').classList.toggle('active', tab === 'all');
         document.getElementById('tabPanelReturns').classList.toggle('active', tab === 'returns');
+        document.getElementById('tabPanelDhlExport').classList.toggle('active', tab === 'dhlexport');
+        if (tab === 'dhlexport') renderDhlExportList();
     }
 
     async function fetchTickets(silent) {
@@ -339,6 +382,8 @@
             renderTicketsTable();
             renderReturnsInProgress();
             renderReturnsHistory();
+            updateDhlExportBadge();
+            if (document.getElementById('tabPanelDhlExport')?.classList.contains('active')) renderDhlExportList();
         } catch (e) {
             // A silent poll's failure (transient network blip) shouldn't blank out a table
             // the admin is actively looking at — only the explicit/first load shows the error.
@@ -352,6 +397,80 @@
         } finally {
             if (!silent) btn?.classList.remove('spinning');
         }
+    }
+
+    /* ── ส่งออก DHL tab — multi-select tickets ready to notify DHL about, one combined Excel ──
+       Selection is tracked in a Set (not read off checkbox DOM state) so it survives the 15s
+       silent poll's re-render (see fetchTickets) without the admin's ticks disappearing mid-pick. */
+    let dhlExportSelected = new Set();
+
+    function dhlExportCandidates() {
+        return cachedTickets.filter(tk =>
+            (tk.status === 'รอส่งเมล DHL' && tk.phase === 'withdraw') ||
+            (tk.status === 'อนุมัติคืน' && tk.phase === 'return'));
+    }
+    function updateDhlExportBadge() {
+        document.getElementById('dhlexport-badge-count').textContent = dhlExportCandidates().length;
+    }
+    function renderDhlExportList() {
+        const rows = dhlExportCandidates();
+        // Drop selections for tickets that left the candidate list (e.g. Admin already sent the
+        // email for one from a different tab/session).
+        dhlExportSelected = new Set([...dhlExportSelected].filter(id => rows.some(r => r.ticketId === id)));
+
+        document.getElementById('dhlexport-count').textContent = rows.length + ' รายการ';
+        const tbody = document.getElementById('dhlexport-tbody');
+        if (!rows.length) {
+            tbody.innerHTML = `<tr><td colspan="6" class="empty-state">ไม่มีรายการรอส่ง DHL ในขณะนี้</td></tr>`;
+        } else {
+            tbody.innerHTML = rows.map(tk => {
+                const isWithdraw = tk.phase === 'withdraw';
+                const typeLabel = isWithdraw ? '📤 เบิก' : '📥 คืน';
+                const lines = tk.lines.filter(l => l.lineType === (isWithdraw ? 'Withdraw' : 'Return'));
+                const partsHtml = lines.length
+                    ? lines.map(l => `${l.partName} <span style="color:var(--text-muted)">×${l.quantity}</span>`).join('<br>')
+                    : `<span style="color:var(--text-muted)">—</span>`;
+                const address = isWithdraw ? tk.withdrawAddress : tk.returnAddress;
+                const checked = dhlExportSelected.has(tk.ticketId) ? 'checked' : '';
+                return `
+                    <tr>
+                        <td><input type="checkbox" ${checked} onchange="toggleDhlExportCheckbox(${tk.ticketId}, this.checked)"></td>
+                        <td>${typeLabel}</td>
+                        <td><span class="id-chip ticket-id">${tk.externalTicketNo}</span></td>
+                        <td class="fw-600">${tk.techName}</td>
+                        <td>${partsHtml}</td>
+                        <td style="font-size:12.5px;color:var(--text-secondary);">${address || '—'}</td>
+                    </tr>`;
+            }).join('');
+        }
+        document.getElementById('dhlexport-select-all').checked = rows.length > 0 && dhlExportSelected.size === rows.length;
+        updateDhlExportSelectionUi();
+    }
+    function toggleDhlExportCheckbox(ticketId, checked) {
+        if (checked) dhlExportSelected.add(ticketId); else dhlExportSelected.delete(ticketId);
+        document.getElementById('dhlexport-select-all').checked =
+            dhlExportCandidates().length > 0 && dhlExportSelected.size === dhlExportCandidates().length;
+        updateDhlExportSelectionUi();
+    }
+    function toggleSelectAllDhlExport(checked) {
+        dhlExportSelected = checked ? new Set(dhlExportCandidates().map(t => t.ticketId)) : new Set();
+        renderDhlExportList();
+    }
+    function updateDhlExportSelectionUi() {
+        document.getElementById('dhlexport-selected-count').textContent = dhlExportSelected.size;
+        document.getElementById('dhlexport-download-btn').disabled = dhlExportSelected.size === 0;
+    }
+    async function downloadDhlExcel() {
+        if (!dhlExportSelected.size) return;
+        try {
+            const { blob, fileName } = await api.tickets.exportDhlExcel([...dhlExportSelected]);
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url; a.download = fileName;
+            document.body.appendChild(a); a.click(); a.remove();
+            URL.revokeObjectURL(url);
+            showToast?.(`ดาวน์โหลด Excel แล้ว (${dhlExportSelected.size} รายการ)`, 'success');
+        } catch (e) { showToast?.(e.message || 'เกิดข้อผิดพลาด กรุณาลองใหม่', 'error'); }
     }
 
     /* ── Returns tab (moved in from the old admin-returns.html/js) ── */
