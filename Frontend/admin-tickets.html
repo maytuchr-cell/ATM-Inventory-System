@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Tickets — ATM Inventory</title>
-    <link rel="stylesheet" href="shared/styles.css?v=54">
+    <link rel="stylesheet" href="shared/styles.css?v=55">
     <style>
         /* Page-specific overrides */
         .section-head { display:flex; align-items:center; gap:10px; margin-bottom:20px; }
@@ -336,10 +336,10 @@
     </div>
 </div>
 
-<script src="shared/translations.js?v=54"></script>
-<script src="shared/toast.js?v=54"></script>
-<script src="shared/api.js?v=54"></script>
-<script src="shared/layout.js?v=54"></script>
+<script src="shared/translations.js?v=55"></script>
+<script src="shared/toast.js?v=55"></script>
+<script src="shared/api.js?v=55"></script>
+<script src="shared/layout.js?v=55"></script>
 <script>
     let cachedTickets = [];
     let rejectTargetId = null;
@@ -630,6 +630,31 @@
         return null;
     }
 
+    // A Ticket can carry several independent ใบเบิก at different stages — a single "most advanced
+    // status" badge hides that (e.g. 3 batches, only 1 actually still needs attention). This
+    // instead shows one small badge per distinct status with a count, e.g. [เบิก ×2] [กำลังเดินทาง
+    // ×1], plus the return leg's own badge (suffixed "(คืน)" so it's not confused with a
+    // same-named withdraw status like "เดินทาง") if a return is in flight.
+    function statusBreakdownHtml(tk) {
+        const counts = {};
+        (tk.withdrawBatches || []).forEach(b => {
+            if (!b.status) return;
+            counts[b.status] = (counts[b.status] || 0) + 1;
+        });
+        const badges = Object.entries(counts).map(([status, count]) => {
+            const b = STATUS_BADGE[status] || STATUS_BADGE["รอ"];
+            return `<span class="badge ${b.cls}"><span class="badge-dot"></span>${b.label}${count > 1 ? ` ×${count}` : ''}</span>`;
+        });
+        if (tk.status) {
+            const rb = STATUS_BADGE[tk.status] || STATUS_BADGE["รอ"];
+            badges.push(`<span class="badge ${rb.cls}"><span class="badge-dot"></span>${rb.label} (คืน)</span>`);
+        }
+        if (!badges.length) {
+            badges.push(`<span class="badge badge-muted"><span class="badge-dot"></span>ยังไม่เบิก</span>`);
+        }
+        return `<div style="display:flex;flex-wrap:wrap;gap:5px;">${badges.join('')}</div>`;
+    }
+
     function renderTicketsTable() {
         const search = (document.getElementById('tkt-search')?.value || '').trim().toLowerCase();
         const statusF = document.getElementById('tkt-status-filter')?.value || '';
@@ -655,8 +680,7 @@
             return;
         }
         rows.forEach(tk => {
-            const b = STATUS_BADGE[tk.displayStatus] || STATUS_BADGE["รอ"];
-            const badge = `<span class="badge ${b.cls}"><span class="badge-dot"></span>${b.label}</span>`;
+            const badge = statusBreakdownHtml(tk);
 
             // Whether the central warehouse can actually fulfill every Withdraw line right now —
             // gates the Approve button below so Admin can't approve a request stock can't cover.
