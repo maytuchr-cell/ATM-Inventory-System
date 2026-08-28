@@ -140,10 +140,12 @@
 
   // ── Sign out ───────────────────────────────────────────────────────────────
   function signOut() {
+    const role = (localStorage.getItem('userRole') || '').toLowerCase();
+    const isAdminSide = ['systemadmin', 'staff', 'auditor', 'admin'].includes(role);
     localStorage.removeItem('authToken');
     localStorage.removeItem('userRole');
     localStorage.removeItem('userEmail');
-    window.location.href = 'login.html';
+    window.location.href = isAdminSide ? 'login.html' : 'login-tech.html';
   }
 
   // ── Build sidebar ──────────────────────────────────────────────────────────

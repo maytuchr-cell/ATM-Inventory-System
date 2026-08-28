@@ -1,0 +1,249 @@
+<!DOCTYPE html>
+<html lang="th" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>เข้าสู่ระบบช่าง — ATM Inventory</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Sarabun:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+        :root {
+            --bg:           #f5f5f5;
+            --bg-card:      #ffffff;
+            --bg-subtle:    #f3f4f6;
+            --bg-input:     #ffffff;
+            --text-primary: #111827;
+            --text-secondary:#6b7280;
+            --text-muted:   #9ca3af;
+            --border:       #e5e7eb;
+            --orange:       #f97316;
+            --orange-hover: #ea6c00;
+            --orange-light: #fff7ed;
+            --orange-ring:  rgba(249,115,22,0.18);
+            --red:          #dc2626;
+            --red-light:    #fef2f2;
+            --shadow-card:  0 4px 24px rgba(0,0,0,0.07);
+            --shadow-btn:   0 4px 14px rgba(249,115,22,0.28);
+        }
+        [data-theme="dark"] {
+            --bg:           #111827;
+            --bg-card:      #1f2937;
+            --bg-subtle:    #374151;
+            --bg-input:     #111827;
+            --text-primary: #f9fafb;
+            --text-secondary:#9ca3af;
+            --text-muted:   #6b7280;
+            --border:       #374151;
+            --orange:       #f97316;
+            --orange-hover: #fb923c;
+            --orange-light: rgba(249,115,22,0.08);
+            --orange-ring:  rgba(249,115,22,0.2);
+            --red:          #f87171;
+            --red-light:    rgba(220,38,38,0.1);
+            --shadow-card:  0 4px 24px rgba(0,0,0,0.4);
+            --shadow-btn:   0 4px 14px rgba(249,115,22,0.22);
+        }
+
+        body {
+            font-family: 'Sarabun', 'Inter', sans-serif;
+            min-height: 100vh;
+            background: var(--bg);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: background 0.3s, color 0.3s;
+            padding: 20px;
+        }
+
+        .theme-btn {
+            position: fixed; top: 14px; right: 14px;
+            width: 40px; height: 40px;
+            border: 1.5px solid var(--border);
+            border-radius: 10px;
+            background: var(--bg-card);
+            color: var(--text-secondary);
+            cursor: pointer;
+            display: flex; align-items: center; justify-content: center;
+            box-shadow: var(--shadow-card);
+            z-index: 999;
+        }
+        .theme-btn:hover { color: var(--orange); border-color: var(--orange); }
+
+        /* Mobile-first: a single card, big touch targets, nothing that needs a mouse. */
+        .login-card {
+            background: var(--bg-card);
+            border-radius: 20px;
+            box-shadow: var(--shadow-card);
+            border: 1px solid var(--border);
+            width: 100%; max-width: 400px;
+            padding: 36px 28px;
+        }
+
+        .logo-wrap { display: flex; align-items: center; gap: 14px; margin-bottom: 24px; }
+        .logo-icon { width: 56px; height: 56px; border-radius: 14px; background: var(--orange-light); display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+        .logo-icon img { width: 34px; height: 34px; object-fit: contain; }
+        .logo-text h1 { font-size: 18px; font-weight: 700; color: var(--text-primary); line-height: 1.25; }
+        .logo-text p  { font-size: 12.5px; color: var(--text-muted); margin-top: 2px; }
+
+        .section-title { font-size: 21px; font-weight: 700; color: var(--text-primary); margin-bottom: 6px; }
+        .section-sub   { font-size: 13.5px; color: var(--text-secondary); margin-bottom: 26px; }
+
+        .form-label {
+            display: block; font-size: 12px; font-weight: 600;
+            color: var(--text-secondary); margin-bottom: 8px;
+        }
+        .form-group { margin-bottom: 18px; }
+        .input-wrap { position: relative; }
+        .input-icon {
+            position: absolute; left: 14px; top: 50%;
+            transform: translateY(-50%);
+            color: var(--text-muted); pointer-events: none;
+        }
+        .form-input {
+            width: 100%; padding: 15px 14px 15px 42px;
+            border: 1.5px solid var(--border); border-radius: 12px;
+            background: var(--bg-input); color: var(--text-primary);
+            font-family: 'Sarabun', 'Inter', sans-serif; font-size: 16px;
+            transition: border-color 0.2s, box-shadow 0.2s;
+        }
+        .form-input:focus { outline: none; border-color: var(--orange); box-shadow: 0 0 0 4px var(--orange-ring); }
+        .form-input::placeholder { color: var(--text-muted); }
+
+        .error-box {
+            display: none; margin-bottom: 18px; padding: 12px 14px;
+            background: var(--red-light); border: 1px solid var(--red);
+            border-radius: 10px; font-size: 13px; color: var(--red); font-weight: 500;
+        }
+        .error-box.show { display: block; }
+
+        .btn-signin {
+            width: 100%; padding: 16px;
+            background: var(--orange); color: #fff;
+            border: none; border-radius: 12px;
+            font-family: 'Sarabun', 'Inter', sans-serif; font-size: 16px; font-weight: 600;
+            cursor: pointer; transition: all 0.2s;
+            display: flex; align-items: center; justify-content: center; gap: 8px;
+            box-shadow: var(--shadow-btn);
+            margin-top: 6px;
+        }
+        .btn-signin:hover { background: var(--orange-hover); }
+        .btn-signin:disabled { opacity: .6; cursor: default; }
+
+        .admin-link { text-align: center; margin-top: 22px; font-size: 12.5px; color: var(--text-muted); }
+        .admin-link a { color: var(--orange); font-weight: 600; text-decoration: none; }
+        .admin-link a:hover { text-decoration: underline; }
+    </style>
+</head>
+<body>
+
+    <button class="theme-btn" onclick="toggleTheme()" id="theme-btn" aria-label="สลับธีม">
+        <svg id="theme-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"/>
+        </svg>
+    </button>
+
+    <div class="login-card">
+        <div class="logo-wrap">
+            <div class="logo-icon"><img src="assets/logo.png" alt="Logo"></div>
+            <div class="logo-text">
+                <h1>ATM Inventory</h1>
+                <p>สำหรับช่างเทคนิค</p>
+            </div>
+        </div>
+
+        <p class="section-title">เข้าสู่ระบบ</p>
+        <p class="section-sub">ล็อกอินเพื่อเบิก/คืนอะไหล่</p>
+
+        <div class="error-box" id="errorBox"></div>
+
+        <form onsubmit="handleLogin(event)">
+            <div class="form-group">
+                <label class="form-label" for="emailInput">อีเมล</label>
+                <div class="input-wrap">
+                    <svg class="input-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"/></svg>
+                    <input type="email" id="emailInput" class="form-input" required
+                        placeholder="tech@atm.com" autocomplete="username" autofocus>
+                </div>
+            </div>
+            <div class="form-group">
+                <label class="form-label" for="passwordInput">รหัสผ่าน</label>
+                <div class="input-wrap">
+                    <svg class="input-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+                    <input type="password" id="passwordInput" class="form-input" required
+                        placeholder="••••••••" autocomplete="current-password">
+                </div>
+            </div>
+            <button type="submit" class="btn-signin" id="submitBtn">
+                <span>เข้าสู่ระบบ</span>
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></svg>
+            </button>
+        </form>
+
+        <div class="admin-link">เป็นแอดมิน? <a href="login.html">เข้าสู่ระบบที่นี่</a></div>
+    </div>
+
+    <script>
+        const MOON = `<path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9z"/>`;
+        const SUN  = `<circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"/>`;
+        function applyTheme(th) {
+            document.documentElement.setAttribute('data-theme', th);
+            document.getElementById('theme-icon').innerHTML = th === 'dark' ? MOON : SUN;
+            localStorage.setItem('theme', th);
+        }
+        function toggleTheme() { applyTheme(document.documentElement.getAttribute('data-theme') === 'dark' ? 'light' : 'dark'); }
+        applyTheme(localStorage.getItem('theme') || 'light');
+
+        // See Frontend/shared/api.js for why dev/prod compute this differently (IIS PathBase).
+        const API_BASE = (location.port === '3000')
+          ? `http://${location.hostname || 'localhost'}:5128`
+          : location.origin + '/api';
+        const LOGIN_API = API_BASE + '/Auth/login';
+        const ADMIN_ROLES = ["systemadmin", "staff", "auditor", "admin"];
+
+        function showError(msg) {
+            const box = document.getElementById('errorBox');
+            box.textContent = msg;
+            box.classList.add('show');
+        }
+        function hideError() {
+            document.getElementById('errorBox').classList.remove('show');
+        }
+
+        async function handleLogin(event) {
+            event.preventDefault();
+            hideError();
+            const email = document.getElementById("emailInput").value.trim().toLowerCase();
+            const password = document.getElementById("passwordInput").value;
+            const btn = document.getElementById('submitBtn');
+            btn.disabled = true;
+            try {
+                const res = await fetch(LOGIN_API, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ email, password })
+                });
+                const data = await res.json().catch(() => ({}));
+                if (!res.ok) { showError(data.message || 'เข้าสู่ระบบไม่สำเร็จ กรุณาลองใหม่'); return; }
+
+                // This page is for technicians only — an Admin-side account gets a clear message
+                // pointing at the right login page instead of silently landing here.
+                if (ADMIN_ROLES.includes((data.role || "").toLowerCase())) {
+                    showError('บัญชีนี้เป็นบัญชีแอดมิน กรุณาเข้าสู่ระบบที่หน้า Admin แทน');
+                    return;
+                }
+
+                localStorage.setItem("authToken", data.token);
+                localStorage.setItem("userRole", data.role);
+                localStorage.setItem("userEmail", data.email);
+                window.location.href = "tech.html";
+            } catch (err) {
+                showError('เชื่อมต่อเซิร์ฟเวอร์ไม่ได้ กรุณาลองใหม่');
+            } finally {
+                btn.disabled = false;
+            }
+        }
+    </script>
+</body>
+</html>
