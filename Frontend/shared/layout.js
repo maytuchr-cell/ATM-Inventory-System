@@ -1,6 +1,11 @@
 /* ── Dynamic sidebar injector ── */
 (function() {
 
+  // Shown at the bottom of every page's sidebar — bump this by hand on a real release, it's not
+  // tied to the ?v=N cache-bust query string (that's about busting browser caches, not telling
+  // the user what version they're on).
+  const APP_VERSION = 'v1.0.0';
+
   // ── Inject Iconify once ───────────────────────────────────────────────────
   if (!document.querySelector('script[src*="iconify-icon"]')) {
     const s = document.createElement('script');
@@ -259,6 +264,7 @@
             </button>
             <button class="ctrl-btn btn-danger btn-sm" style="padding:0 10px;" onclick="signOut()" title="ออกจากระบบ">⏏</button>
           </div>
+          <div class="sidebar-version">ATM Inventory ${APP_VERSION}</div>
         </div>
 
       </aside>`;
