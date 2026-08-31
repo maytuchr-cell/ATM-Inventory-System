@@ -1,10 +1,24 @@
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Data.Sqlite;
 
 namespace Api.Models;
 
 public class AppDbContext : DbContext
 {
     public AppDbContext(DbContextOptions<AppDbContext> options) : base(options) { }
+
+    // SQLite allows only one writer at a time — under concurrent usage (many techs saving within
+    // the same instant) a second writer can hit SQLITE_BUSY/SQLITE_LOCKED even within the
+    // busy_timeout window in rare races. Retrying a few times with a short backoff absorbs that
+    // instead of surfacing a raw "database is locked" error to the user for what's really just a
+    // few-millisecond queueing delay. Not a fix for sustained write contention — if this starts
+    // firing often, that's a signal to move off SQLite, not a reason to add more retries.
+    private static readonly int[] RetryDelaysMs = { 50, 150, 400 };
+
+    private static bool IsTransientSqliteLock(Exception ex) =>
+        ex is SqliteException { SqliteErrorCode: 5 or 6 } // 5 = SQLITE_BUSY, 6 = SQLITE_LOCKED
+        || ex.InnerException is SqliteException { SqliteErrorCode: 5 or 6 };
+
 
     public DbSet<Part> Parts { get; set; }
     public DbSet<PartImage> PartImages { get; set; }
@@ -51,13 +65,27 @@ public class AppDbContext : DbContext
     public override int SaveChanges()
     {
         BumpConcurrencyTokens();
-        return base.SaveChanges();
+        for (var attempt = 0; ; attempt++)
+        {
+            try { return base.SaveChanges(); }
+            catch (Exception ex) when (attempt < RetryDelaysMs.Length && IsTransientSqliteLock(ex))
+            {
+                Thread.Sleep(RetryDelaysMs[attempt]);
+            }
+        }
     }
 
-    public override Task<int> SaveChangesAsync(bool acceptAllChangesOnSuccess, CancellationToken cancellationToken = default)
+    public override async Task<int> SaveChangesAsync(bool acceptAllChangesOnSuccess, CancellationToken cancellationToken = default)
     {
         BumpConcurrencyTokens();
-        return base.SaveChangesAsync(acceptAllChangesOnSuccess, cancellationToken);
+        for (var attempt = 0; ; attempt++)
+        {
+            try { return await base.SaveChangesAsync(acceptAllChangesOnSuccess, cancellationToken); }
+            catch (Exception ex) when (attempt < RetryDelaysMs.Length && IsTransientSqliteLock(ex))
+            {
+                await Task.Delay(RetryDelaysMs[attempt], cancellationToken);
+            }
+        }
     }
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
