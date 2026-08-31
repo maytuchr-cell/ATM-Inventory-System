@@ -47,6 +47,7 @@
       items: [
         { key: 'nav.history',  href: 'admin-history.html',  icon: 'ic:outline-history',         adminOnly: true },
         { key: 'nav.tracking', href: 'admin-tracking.html', icon: 'mdi:magnify',                adminOnly: true },
+        { key: 'nav.auditlog', href: 'admin-audit-log.html', icon: 'mdi:clipboard-text-clock-outline', adminOnly: true },
       ]
     },
     {

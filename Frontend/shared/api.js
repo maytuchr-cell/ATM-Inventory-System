@@ -233,4 +233,8 @@ const api = {
     addPart:       (id, partNo)  => apiFetch(`/AtmModel/${id}/parts`, { method: 'POST', body: JSON.stringify({ partNo }) }),
     removePart:    (id, partId)  => apiFetch(`/AtmModel/${id}/parts/${partId}`, { method: 'DELETE' }),
   },
+  auditLog: {
+    getAll:        ()  => apiFetch('/AuditLog'),
+    entityTypes:   ()  => apiFetch('/AuditLog/entity-types'),
+  },
 };

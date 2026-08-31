@@ -1,0 +1,290 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Audit Log — ATM Inventory</title>
+  <link rel="stylesheet" href="shared/styles.css?v=59">
+  <style>
+    .filter-grid { display:grid; grid-template-columns:1fr 1fr 1fr auto; gap:16px; align-items:end; margin-bottom:20px; padding:20px; background:var(--bg-subtle); border-radius:10px; border:1px solid var(--border); }
+    .filter-group { display:flex; flex-direction:column; }
+    .filter-label { font-size:11px; font-weight:600; color:var(--text-muted); letter-spacing:.5px; text-transform:uppercase; margin-bottom:8px; }
+    .filter-input, .filter-select { padding:10px 14px; border:1.5px solid var(--border); border-radius:9px; background:var(--bg-input); color:var(--text-primary); font-family:inherit; font-size:13px; transition:.2s; outline:none; }
+    .filter-input:focus, .filter-select:focus { border-color:var(--orange); box-shadow:0 0 0 3px var(--orange-ring); }
+    .filter-input::placeholder { color:var(--text-muted); }
+
+    .result-bar { display:flex; align-items:center; justify-content:space-between; margin-bottom:12px; }
+    .result-count { font-size:13px; color:var(--text-secondary); }
+    .result-count strong { color:var(--text-primary); }
+
+    .id-chip   { font-size:12px; font-weight:600; color:var(--text-muted); background:var(--bg-subtle); padding:3px 8px; border-radius:5px; font-family:monospace; border:1px solid var(--border); }
+    .date-chip { font-size:12px; font-weight:500; color:var(--text-secondary); background:var(--bg-subtle); padding:4px 10px; border-radius:6px; border:1px solid var(--border); display:inline-block; white-space:nowrap; }
+    .sub-text  { font-size:12px; color:var(--text-muted); margin-top:3px; display:block; }
+    .fw-600    { font-weight:600; }
+
+    .badge { display:inline-flex; align-items:center; gap:5px; padding:4px 10px; border-radius:6px; font-size:12px; font-weight:600; white-space:nowrap; }
+    .badge-dot { width:6px; height:6px; border-radius:50%; flex-shrink:0; }
+    .badge-pending  { background:var(--yellow-light); color:var(--yellow); }
+    .badge-pending  .badge-dot { background:var(--yellow); }
+    .badge-approved { background:var(--orange-light); color:var(--orange); }
+    .badge-approved .badge-dot { background:var(--orange); }
+    .badge-success  { background:var(--green-light);  color:var(--green); }
+    .badge-success  .badge-dot { background:var(--green); }
+    .badge-danger   { background:var(--red-light);    color:var(--red);   }
+    .badge-danger   .badge-dot { background:var(--red); }
+    .badge-muted    { background:var(--bg-subtle); color:var(--text-secondary); }
+    .badge-muted    .badge-dot { background:var(--text-secondary); }
+
+    .btn-detail { background:var(--bg-subtle); color:var(--text-secondary); border:1.5px solid var(--border); padding:6px 12px; border-radius:7px; font-size:12px; font-weight:600; cursor:pointer; font-family:inherit; transition:all .15s; display:inline-flex; align-items:center; gap:4px; }
+    .btn-detail:hover { background:var(--orange-light); color:var(--orange); border-color:var(--orange); }
+
+    .detail-overlay { display:none; position:fixed; inset:0; background:rgba(0,0,0,.45); z-index:900; align-items:center; justify-content:center; padding:20px; }
+    .detail-overlay.open { display:flex; }
+    .detail-modal  { background:var(--bg-card); border-radius:18px; border:1px solid var(--border); width:100%; max-width:640px; max-height:90vh; overflow-y:auto; box-shadow:0 20px 60px rgba(0,0,0,.25); }
+    .detail-header { display:flex; align-items:center; justify-content:space-between; padding:20px 24px 16px; border-bottom:1px solid var(--border); position:sticky; top:0; background:var(--bg-card); z-index:1; border-radius:18px 18px 0 0; }
+    .detail-title  { font-size:16px; font-weight:700; color:var(--text-primary); }
+    .detail-close  { background:none; border:none; cursor:pointer; color:var(--text-muted); padding:4px; border-radius:6px; display:flex; align-items:center; }
+    .detail-close:hover { color:var(--text-primary); background:var(--bg-subtle); }
+    .detail-body   { padding:24px; }
+    .detail-section { margin-bottom:20px; }
+    .detail-section-title { font-size:10px; font-weight:700; letter-spacing:.8px; text-transform:uppercase; color:var(--orange); margin-bottom:12px; }
+    .detail-grid   { display:grid; grid-template-columns:1fr 1fr; gap:12px; }
+    .detail-field label { font-size:11px; font-weight:600; color:var(--text-muted); letter-spacing:.4px; text-transform:uppercase; display:block; margin-bottom:3px; }
+    .detail-field span  { font-size:14px; color:var(--text-primary); font-weight:500; }
+    .detail-divider { border:none; border-top:1px solid var(--border); margin:16px 0; }
+    .detail-empty  { color:var(--text-muted); font-style:italic; font-size:13px; }
+    .json-box { background:var(--bg-subtle); border:1px solid var(--border); border-radius:8px; padding:10px 12px; font-family:monospace; font-size:12px; white-space:pre-wrap; word-break:break-all; color:var(--text-primary); max-height:260px; overflow-y:auto; }
+
+    @media(max-width:768px) { .filter-grid { grid-template-columns:1fr; } .detail-grid { grid-template-columns:1fr; } }
+  </style>
+</head>
+<body>
+<div class="app-layout">
+  <div id="sidebar-root"></div>
+  <div class="main-content">
+
+    <div class="topbar">
+      <div>
+        <div class="topbar-title">Audit Log</div>
+        <div class="topbar-sub">ประวัติการเปลี่ยนแปลงข้อมูลทุกอย่างในระบบ — ใครทำอะไร เมื่อไหร่</div>
+      </div>
+    </div>
+
+    <div class="page-body">
+      <div class="card">
+        <div class="card-body">
+
+          <div class="filter-grid">
+            <div class="filter-group">
+              <span class="filter-label">ค้นหา</span>
+              <input type="text" id="searchInput" class="filter-input"
+                     placeholder="ผู้ทำ, รหัสอ้างอิง, การกระทำ…"
+                     oninput="applyFilters()">
+            </div>
+            <div class="filter-group">
+              <span class="filter-label">ประเภทข้อมูล</span>
+              <select id="entityTypeFilter" class="filter-select" onchange="applyFilters()">
+                <option value="">— ทุกประเภท —</option>
+              </select>
+            </div>
+            <div class="filter-group">
+              <span class="filter-label">การกระทำ</span>
+              <select id="actionFilter" class="filter-select" onchange="applyFilters()">
+                <option value="">— ทุกการกระทำ —</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="result-bar">
+            <span class="result-count">แสดง <strong id="result-count">—</strong> รายการ</span>
+            <button class="btn-detail" onclick="fetchLogs()">🔄 รีเฟรช</button>
+          </div>
+
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th style="width:14%">วันที่/เวลา</th>
+                  <th style="width:14%">ประเภท</th>
+                  <th style="width:10%">รหัส</th>
+                  <th style="width:16%">การกระทำ</th>
+                  <th style="width:16%">ผู้ทำ</th>
+                  <th style="width:20%">สรุป</th>
+                  <th style="width:10%">รายละเอียด</th>
+                </tr>
+              </thead>
+              <tbody id="logTableBody">
+                <tr><td colspan="7" class="empty-state">กำลังเชื่อมต่อเซิร์ฟเวอร์…</td></tr>
+              </tbody>
+            </table>
+          </div>
+
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Detail Modal -->
+<div class="detail-overlay" id="detailOverlay" onclick="closeDetail(event)">
+  <div class="detail-modal">
+    <div class="detail-header">
+      <span class="detail-title" id="detailTitle">รายละเอียด Log</span>
+      <button class="detail-close" onclick="closeDetailModal()">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+      </button>
+    </div>
+    <div class="detail-body" id="detailBody"></div>
+  </div>
+</div>
+
+<script src="shared/translations.js?v=59"></script>
+<script src="shared/toast.js?v=59"></script>
+<script src="shared/api.js?v=59"></script>
+<script src="shared/layout.js?v=59"></script>
+<script>
+  let allLogs = [];
+
+  initLayout();
+  window.addEventListener('DOMContentLoaded', fetchLogs);
+
+  // Color-coding by the *shape* of the action name rather than an exhaustive per-action map —
+  // new action strings any controller adds later still land in a sensible bucket automatically.
+  function actionBadgeClass(action) {
+    const a = action.toUpperCase();
+    if (a.includes('DELETE') || a.includes('REJECT') || a.includes('CANCEL')) return 'badge-danger';
+    if (a.includes('CREATE') || a.includes('APPROVE') || a === 'IMPORT') return 'badge-success';
+    if (a.includes('UPDATE') || a.includes('SUBSTITUTE')) return 'badge-approved';
+    if (a.includes('UNDO')) return 'badge-muted';
+    return 'badge-pending';
+  }
+
+  async function fetchLogs() {
+    document.getElementById('logTableBody').innerHTML = `<tr><td colspan="7" class="empty-state">กำลังเชื่อมต่อเซิร์ฟเวอร์…</td></tr>`;
+    try {
+      allLogs = await api.auditLog.getAll();
+      populateFilterOptions();
+      renderTable(allLogs);
+    } catch {
+      document.getElementById('logTableBody').innerHTML =
+        `<tr><td colspan="7" class="empty-state" style="color:var(--red)">⚠ ไม่สามารถเชื่อมต่อเซิร์ฟเวอร์ได้</td></tr>`;
+    }
+  }
+
+  function populateFilterOptions() {
+    const entityTypes = [...new Set(allLogs.map(l => l.entityType))].sort();
+    const actions = [...new Set(allLogs.map(l => l.action))].sort();
+
+    const entitySel = document.getElementById('entityTypeFilter');
+    const keepEntity = entitySel.value;
+    entitySel.innerHTML = `<option value="">— ทุกประเภท —</option>` + entityTypes.map(t => `<option value="${t}">${t}</option>`).join('');
+    entitySel.value = keepEntity;
+
+    const actionSel = document.getElementById('actionFilter');
+    const keepAction = actionSel.value;
+    actionSel.innerHTML = `<option value="">— ทุกการกระทำ —</option>` + actions.map(a => `<option value="${a}">${a}</option>`).join('');
+    actionSel.value = keepAction;
+  }
+
+  // Best-effort one-line summary from NewValues — falls back to the raw string if it isn't the
+  // small flat object most _audit.Log(...) calls pass (e.g. { Status, Reason }).
+  function summarize(log) {
+    if (!log.newValues) return `<span class="sub-text">—</span>`;
+    try {
+      const obj = JSON.parse(log.newValues);
+      const parts = Object.entries(obj).slice(0, 3).map(([k, v]) => `${k}: ${v}`);
+      return `<span style="font-size:12px;color:var(--text-secondary);">${parts.join(', ')}</span>`;
+    } catch {
+      return `<span style="font-size:12px;color:var(--text-secondary);">${String(log.newValues).slice(0, 60)}</span>`;
+    }
+  }
+
+  function renderTable(data) {
+    const tbody = document.getElementById('logTableBody');
+    document.getElementById('result-count').textContent = data.length;
+    tbody.innerHTML = '';
+
+    if (!data.length) {
+      tbody.innerHTML = `<tr><td colspan="7" class="empty-state">🗂 ไม่พบข้อมูล</td></tr>`;
+      return;
+    }
+
+    data.forEach(log => {
+      const dt = new Date(log.timestamp).toLocaleString('th-TH', { dateStyle: 'medium', timeStyle: 'short' });
+      tbody.innerHTML += `
+        <tr>
+          <td><span class="date-chip">${dt}</span></td>
+          <td><span class="fw-600">${log.entityType}</span></td>
+          <td><span class="id-chip">${log.entityId}</span></td>
+          <td><span class="badge ${actionBadgeClass(log.action)}"><span class="badge-dot"></span>${log.action}</span></td>
+          <td><span style="font-size:13px;">${log.userName}</span></td>
+          <td>${summarize(log)}</td>
+          <td><button class="btn-detail" onclick="showDetail(${log.id})">🔍 ดู</button></td>
+        </tr>`;
+    });
+  }
+
+  function prettyJson(str) {
+    if (!str) return null;
+    try { return JSON.stringify(JSON.parse(str), null, 2); }
+    catch { return str; }
+  }
+
+  function showDetail(id) {
+    const log = allLogs.find(l => l.id === id);
+    if (!log) return;
+
+    const none = `<span class="detail-empty">ไม่มี</span>`;
+    const dt = new Date(log.timestamp).toLocaleString('th-TH');
+    const oldPretty = prettyJson(log.oldValues);
+    const newPretty = prettyJson(log.newValues);
+
+    document.getElementById('detailTitle').textContent = `${log.entityType} #${log.entityId} — ${log.action}`;
+    document.getElementById('detailBody').innerHTML = `
+      <div class="detail-section">
+        <div class="detail-grid">
+          <div class="detail-field"><label>ผู้ทำ</label><span>${log.userName}</span></div>
+          <div class="detail-field"><label>วันที่/เวลา</label><span>${dt}</span></div>
+          <div class="detail-field"><label>ประเภทข้อมูล</label><span>${log.entityType}</span></div>
+          <div class="detail-field"><label>รหัสอ้างอิง</label><span>${log.entityId}</span></div>
+        </div>
+      </div>
+
+      <hr class="detail-divider">
+
+      <div class="detail-section">
+        <div class="detail-section-title">ค่าก่อนหน้า (Old Values)</div>
+        ${oldPretty ? `<div class="json-box">${oldPretty}</div>` : none}
+      </div>
+
+      <div class="detail-section">
+        <div class="detail-section-title">ค่าใหม่ (New Values)</div>
+        ${newPretty ? `<div class="json-box">${newPretty}</div>` : none}
+      </div>
+    `;
+
+    document.getElementById('detailOverlay').classList.add('open');
+  }
+
+  function closeDetailModal() { document.getElementById('detailOverlay').classList.remove('open'); }
+  function closeDetail(e) { if (e.target === document.getElementById('detailOverlay')) closeDetailModal(); }
+  document.addEventListener('keydown', e => { if (e.key === 'Escape') closeDetailModal(); });
+
+  function applyFilters() {
+    const search = document.getElementById('searchInput').value.toLowerCase();
+    const entityType = document.getElementById('entityTypeFilter').value;
+    const action = document.getElementById('actionFilter').value;
+
+    const filtered = allLogs.filter(l => {
+      const hay = `${l.userName} ${l.entityId} ${l.action} ${l.entityType}`.toLowerCase();
+      const matchSearch = !search || hay.includes(search);
+      const matchEntity = !entityType || l.entityType === entityType;
+      const matchAction = !action || l.action === action;
+      return matchSearch && matchEntity && matchAction;
+    });
+
+    renderTable(filtered);
+  }
+</script>
+</body>
+</html>
