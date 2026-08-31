@@ -21,6 +21,17 @@
     <None Remove="Api.deps.json;Api.runtimeconfig.json;Api.staticwebassets.endpoints.json;dotnet-tools.json" />
   </ItemGroup>
 
+  <!--
+    Static DHL reference sheets (contact lists / part catalogue) bundled into the DHL export —
+    see TicketController.ExportDhlExcel. Embedded (not Content) so they ship inside the DLL and
+    need no deployment path handling.
+  -->
+  <ItemGroup>
+    <EmbeddedResource Include="Data\dhl_contact_fe.csv" />
+    <EmbeddedResource Include="Data\dhl_contact_bank.csv" />
+    <EmbeddedResource Include="Data\dhl_parts.csv" />
+  </ItemGroup>
+
   <ItemGroup>
     <PackageReference Include="ClosedXML" Version="0.105.1" />
     <PackageReference Include="Microsoft.AspNetCore.OpenApi" Version="8.0.11" />

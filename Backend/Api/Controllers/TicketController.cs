@@ -865,6 +865,13 @@ public class TicketController : ControllerBase
                 }
             }
             ws.Columns().AdjustToContents();
+
+            // DHL's own template ships these 3 reference sheets alongside the request form
+            // (FE contact list, bank site contact list, part catalogue) — bundled as a static
+            // snapshot so recipients have them without a separate file.
+            AddCsvResourceSheet(wb, "Data.dhl_contact_fe.csv", "Contact list DataOne FE");
+            AddCsvResourceSheet(wb, "Data.dhl_contact_bank.csv", "Contact list ธนาคาร");
+            AddCsvResourceSheet(wb, "Data.dhl_parts.csv", "Part");
         }
 
         // Return sheet — separate, simpler layout (not part of DHL's inbound request form).
@@ -910,6 +917,57 @@ public class TicketController : ControllerBase
         wb.SaveAs(stream);
         var fileName = $"DHL-Export-{DateTime.Now:yyyyMMdd-HHmmss}.xlsx";
         return File(stream.ToArray(), "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", fileName);
+    }
+
+    // Reads an embedded CSV resource (see Api.csproj's EmbeddedResource entries) and writes it
+    // verbatim as a new worksheet — used to bundle DHL's static reference sheets into the export.
+    private static void AddCsvResourceSheet(ClosedXML.Excel.XLWorkbook wb, string resourceSuffix, string sheetName)
+    {
+        var assembly = typeof(TicketController).Assembly;
+        var resourceName = $"{assembly.GetName().Name}.{resourceSuffix}";
+        using var resStream = assembly.GetManifestResourceStream(resourceName);
+        if (resStream == null) return;
+        using var reader = new StreamReader(resStream, System.Text.Encoding.UTF8);
+
+        var ws = wb.Worksheets.Add(sheetName);
+        int row = 1;
+        string? line;
+        while ((line = reader.ReadLine()) != null)
+        {
+            var cells = ParseCsvLine(line);
+            for (int c = 0; c < cells.Count; c++) ws.Cell(row, c + 1).Value = cells[c];
+            row++;
+        }
+        if (row > 1) ws.Row(1).Style.Font.Bold = true;
+        ws.Columns().AdjustToContents();
+    }
+
+    private static List<string> ParseCsvLine(string line)
+    {
+        var result = new List<string>();
+        var current = new System.Text.StringBuilder();
+        bool inQuotes = false;
+        for (int i = 0; i < line.Length; i++)
+        {
+            char ch = line[i];
+            if (inQuotes)
+            {
+                if (ch == '"')
+                {
+                    if (i + 1 < line.Length && line[i + 1] == '"') { current.Append('"'); i++; }
+                    else inQuotes = false;
+                }
+                else current.Append(ch);
+            }
+            else
+            {
+                if (ch == '"') inQuotes = true;
+                else if (ch == ',') { result.Add(current.ToString()); current.Clear(); }
+                else current.Append(ch);
+            }
+        }
+        result.Add(current.ToString());
+        return result;
     }
 }
 
