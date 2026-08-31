@@ -834,8 +834,8 @@ public class TicketController : ControllerBase
                 void WriteRowHeader()
                 {
                     ws.Cell(row, 1).Value = SlipRef(b);
-                    ws.Cell(row, 2).Value = b.WithdrawDate?.ToString("yyyy-MM-dd HH:mm") ?? "";
-                    ws.Cell(row, 3).Value = b.NeededByDate?.ToString("yyyy-MM-dd HH:mm") ?? "";
+                    ws.Cell(row, 2).Value = b.WithdrawDate?.ToString("yyyy-MM-dd HH:mm", System.Globalization.CultureInfo.InvariantCulture) ?? "";
+                    ws.Cell(row, 3).Value = b.NeededByDate?.ToString("yyyy-MM-dd HH:mm", System.Globalization.CultureInfo.InvariantCulture) ?? "";
                     ws.Cell(row, 7).Value = b.EmployeeCode ?? "";
                     ws.Cell(row, 8).Value = b.Ticket?.TechName ?? "";
                     ws.Cell(row, 9).Value = b.Ticket?.ExternalTicketNo ?? "";
@@ -843,7 +843,7 @@ public class TicketController : ControllerBase
                     ws.Cell(row, 11).Value = UsageLabel(b.UsageStatus);
                     ws.Cell(row, 12).Value = "อนุมัติ"; // only batches already at รอส่งเมล DHL reach this export
                     ws.Cell(row, 13).Value = b.ApproverName ?? "";
-                    ws.Cell(row, 14).Value = b.ApprovedAt?.ToString("yyyy-MM-dd") ?? "";
+                    ws.Cell(row, 14).Value = b.ApprovedAt?.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture) ?? "";
                     ws.Cell(row, 15).Value = b.FeId ?? "";
                     ws.Cell(row, 16).Value = b.Sla ?? "";
                     ws.Cell(row, 17).Value = b.WithdrawAddress ?? "";
