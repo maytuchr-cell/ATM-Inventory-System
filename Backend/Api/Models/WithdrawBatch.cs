@@ -48,6 +48,13 @@ public class WithdrawBatch
     // "ไม่มี" (didn't consult anyone).
     public string? TechSupportName { get; set; }
 
+    // Logistics fields DHL's own Delivery Request Form needs (see ExportDhlExcel) — the tech
+    // fills these in on the withdraw form since they're the one who knows the site/urgency.
+    public DateTime? NeededByDate { get; set; }  // "วันที่ต้องการอะไหล่" — deadline the part must arrive by
+    public string? FeId { get; set; }            // Field-engineer zone/route code, e.g. "Center 04"
+    public string? Sla { get; set; }             // Delivery urgency tier, e.g. "Urgent 4 Hr (Cut-off 13:30)"
+    public string? AtmCode { get; set; }         // Site/ATM machine code, e.g. "T091B030B950G262"
+
     public DateTime CreatedAt { get; set; } = DateTime.Now;
     public DateTime UpdatedAt { get; set; } = DateTime.Now;
 

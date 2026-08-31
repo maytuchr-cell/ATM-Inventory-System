@@ -122,6 +122,7 @@ public class TicketController : ControllerBase
                     b.WithdrawBatchId, b.Status, b.RejectReason, b.ApproverName, b.ApprovedAt, b.EmailSentAt,
                     b.WithdrawAddress, b.WithdrawDescription, b.WithdrawSlipNo, b.WithdrawDate,
                     b.EmployeeCode, b.UsageStatus, b.TechSupportName, b.CreatedAt, b.UpdatedAt,
+                    b.NeededByDate, b.FeId, b.Sla, b.AtmCode,
                     lines = lines.Where(l => l.WithdrawBatchId == b.WithdrawBatchId).Select(l => LineOut(l, withdrawnPartNos)),
                     attachments = attachments.Where(a => a.WithdrawBatchId == b.WithdrawBatchId)
                         .Select(a => new { a.TicketAttachmentId, a.Phase, a.FilePath, a.FileName, a.UploadedAt })
@@ -211,6 +212,10 @@ public class TicketController : ControllerBase
             EmployeeCode = dto.EmployeeCode,
             UsageStatus = dto.UsageStatus,
             TechSupportName = string.IsNullOrWhiteSpace(dto.TechSupportName) ? null : dto.TechSupportName,
+            NeededByDate = dto.NeededByDate,
+            FeId = dto.FeId,
+            Sla = dto.Sla,
+            AtmCode = dto.AtmCode,
         };
         _context.WithdrawBatches.Add(batch);
 
@@ -278,6 +283,10 @@ public class TicketController : ControllerBase
         batch.EmployeeCode = dto.EmployeeCode;
         batch.UsageStatus = dto.UsageStatus;
         batch.TechSupportName = string.IsNullOrWhiteSpace(dto.TechSupportName) ? null : dto.TechSupportName;
+        batch.NeededByDate = dto.NeededByDate;
+        batch.FeId = dto.FeId;
+        batch.Sla = dto.Sla;
+        batch.AtmCode = dto.AtmCode;
         batch.UpdatedAt = DateTime.Now;
         _context.SaveChanges();
 
@@ -796,81 +805,106 @@ public class TicketController : ControllerBase
         var partNameByNo = _context.Parts.ToDictionary(p => p.PartNo, p => p.PartName);
 
         using var wb = new ClosedXML.Excel.XLWorkbook();
-        var ws = wb.Worksheets.Add("DHL Export");
-        var headers = new[] { "ประเภท", "Case No.", "เลขใบเบิก", "ชื่อช่าง", "แผนก", "รหัสอะไหล่", "ชื่ออะไหล่", "จำนวน", "สภาพ", "ที่อยู่" };
-        for (int c = 0; c < headers.Length; c++) ws.Cell(1, c + 1).Value = headers[c];
-        ws.Row(1).Style.Font.Bold = true;
 
-        int row = 2;
-
+        // Withdraw sheet — column-for-column match of DHL's own "Delivery Request Form" template,
+        // so this file can be handed to DHL as-is with no reformatting on their end.
         if (withdrawBatchIds.Count > 0)
         {
+            var ws = wb.Worksheets.Add("Delivery Request Form");
+            var headers = new[] {
+                "เลขที่ใบเบิก", "วันที่ขอเบิก", "วันที่ต้องการอะไหล่", "Part Number", "อะไหล่", "จำนวน",
+                "รหัสพนักงาน", "ชื่อนามสกุล", "Case No.", "", "", "", "", "", "FE ID", "SLA", "ที่อยู่"
+            };
+            for (int c = 0; c < headers.Length; c++) ws.Cell(1, c + 1).Value = headers[c];
+            ws.Row(1).Style.Font.Bold = true;
+
             var batches = _context.WithdrawBatches.Include(b => b.Ticket).Where(b => withdrawBatchIds.Contains(b.WithdrawBatchId)).ToList();
             var batchLines = _context.TicketPartLines.Where(l => l.WithdrawBatchId != null && withdrawBatchIds.Contains(l.WithdrawBatchId.Value)).ToList();
+
+            // Mimics DHL's own "{Zone}/{running no.}{TechName}" convention using our own data —
+            // we don't have their internal sequence number, so WithdrawSlipNo stands in for it.
+            string SlipRef(WithdrawBatch b) => $"{b.Ticket?.TechDept}/{b.WithdrawSlipNo}{b.Ticket?.TechName}";
+            string UsageLabel(string? usageStatus) => usageStatus switch { "Repair" => "ใช้งาน", "Keep" => "เก็บ", _ => "" };
+            string SiteRef(WithdrawBatch b) => string.IsNullOrWhiteSpace(b.AtmCode) ? (b.WithdrawAddress ?? "") : $"{b.AtmCode}/{b.WithdrawAddress}";
+
+            int row = 2;
             foreach (var b in batches)
             {
                 var bLines = batchLines.Where(l => l.WithdrawBatchId == b.WithdrawBatchId).ToList();
+                void WriteRowHeader()
+                {
+                    ws.Cell(row, 1).Value = SlipRef(b);
+                    ws.Cell(row, 2).Value = b.WithdrawDate?.ToString("yyyy-MM-dd HH:mm") ?? "";
+                    ws.Cell(row, 3).Value = b.NeededByDate?.ToString("yyyy-MM-dd HH:mm") ?? "";
+                    ws.Cell(row, 7).Value = b.EmployeeCode ?? "";
+                    ws.Cell(row, 8).Value = b.Ticket?.TechName ?? "";
+                    ws.Cell(row, 9).Value = b.Ticket?.ExternalTicketNo ?? "";
+                    ws.Cell(row, 10).Value = SiteRef(b);
+                    ws.Cell(row, 11).Value = UsageLabel(b.UsageStatus);
+                    ws.Cell(row, 12).Value = "อนุมัติ"; // only batches already at รอส่งเมล DHL reach this export
+                    ws.Cell(row, 13).Value = b.ApproverName ?? "";
+                    ws.Cell(row, 14).Value = b.ApprovedAt?.ToString("yyyy-MM-dd") ?? "";
+                    ws.Cell(row, 15).Value = b.FeId ?? "";
+                    ws.Cell(row, 16).Value = b.Sla ?? "";
+                    ws.Cell(row, 17).Value = b.WithdrawAddress ?? "";
+                }
+
                 if (!bLines.Any())
                 {
-                    ws.Cell(row, 1).Value = "เบิก";
-                    ws.Cell(row, 2).Value = b.Ticket?.ExternalTicketNo ?? "";
-                    ws.Cell(row, 3).Value = b.WithdrawSlipNo ?? "";
-                    ws.Cell(row, 4).Value = b.Ticket?.TechName ?? "";
-                    ws.Cell(row, 5).Value = b.Ticket?.TechDept ?? "";
-                    ws.Cell(row, 10).Value = b.WithdrawAddress ?? "";
+                    WriteRowHeader();
                     row++;
                     continue;
                 }
                 foreach (var l in bLines)
                 {
-                    ws.Cell(row, 1).Value = "เบิก";
-                    ws.Cell(row, 2).Value = b.Ticket?.ExternalTicketNo ?? "";
-                    ws.Cell(row, 3).Value = b.WithdrawSlipNo ?? "";
-                    ws.Cell(row, 4).Value = b.Ticket?.TechName ?? "";
-                    ws.Cell(row, 5).Value = b.Ticket?.TechDept ?? "";
-                    ws.Cell(row, 6).Value = l.PartNo;
-                    ws.Cell(row, 7).Value = partNameByNo.GetValueOrDefault(l.PartNo, l.PartNo);
-                    ws.Cell(row, 8).Value = l.Quantity;
-                    ws.Cell(row, 9).Value = l.Condition ?? "";
-                    ws.Cell(row, 10).Value = b.WithdrawAddress ?? "";
+                    WriteRowHeader();
+                    ws.Cell(row, 4).Value = l.PartNo;
+                    ws.Cell(row, 5).Value = partNameByNo.GetValueOrDefault(l.PartNo, l.PartNo);
+                    ws.Cell(row, 6).Value = l.Quantity;
                     row++;
                 }
             }
+            ws.Columns().AdjustToContents();
         }
 
+        // Return sheet — separate, simpler layout (not part of DHL's inbound request form).
         if (returnTicketIds.Count > 0)
         {
+            var ws = wb.Worksheets.Add("คืนอะไหล่");
+            var headers = new[] { "Case No.", "ชื่อช่าง", "แผนก", "รหัสอะไหล่", "ชื่ออะไหล่", "จำนวน", "สภาพ", "ที่อยู่" };
+            for (int c = 0; c < headers.Length; c++) ws.Cell(1, c + 1).Value = headers[c];
+            ws.Row(1).Style.Font.Bold = true;
+
             var tickets = _context.Tickets.Where(t => returnTicketIds.Contains(t.TicketId)).ToList();
             var tLines = _context.TicketPartLines.Where(l => returnTicketIds.Contains(l.TicketId) && l.LineType == "Return").ToList();
+            int row = 2;
             foreach (var t in tickets)
             {
                 var ticketLines = tLines.Where(l => l.TicketId == t.TicketId).ToList();
                 if (!ticketLines.Any())
                 {
-                    ws.Cell(row, 1).Value = "คืน";
-                    ws.Cell(row, 2).Value = t.ExternalTicketNo;
-                    ws.Cell(row, 4).Value = t.TechName;
-                    ws.Cell(row, 5).Value = t.TechDept;
-                    ws.Cell(row, 10).Value = t.ReturnAddress ?? "";
+                    ws.Cell(row, 1).Value = t.ExternalTicketNo;
+                    ws.Cell(row, 2).Value = t.TechName;
+                    ws.Cell(row, 3).Value = t.TechDept;
+                    ws.Cell(row, 8).Value = t.ReturnAddress ?? "";
                     row++;
                     continue;
                 }
                 foreach (var l in ticketLines)
                 {
-                    ws.Cell(row, 1).Value = "คืน";
-                    ws.Cell(row, 2).Value = t.ExternalTicketNo;
-                    ws.Cell(row, 4).Value = t.TechName;
-                    ws.Cell(row, 5).Value = t.TechDept;
-                    ws.Cell(row, 6).Value = l.PartNo;
-                    ws.Cell(row, 7).Value = partNameByNo.GetValueOrDefault(l.PartNo, l.PartNo);
-                    ws.Cell(row, 8).Value = l.Quantity;
-                    ws.Cell(row, 9).Value = l.Condition ?? "";
-                    ws.Cell(row, 10).Value = t.ReturnAddress ?? "";
+                    ws.Cell(row, 1).Value = t.ExternalTicketNo;
+                    ws.Cell(row, 2).Value = t.TechName;
+                    ws.Cell(row, 3).Value = t.TechDept;
+                    ws.Cell(row, 4).Value = l.PartNo;
+                    ws.Cell(row, 5).Value = partNameByNo.GetValueOrDefault(l.PartNo, l.PartNo);
+                    ws.Cell(row, 6).Value = l.Quantity;
+                    ws.Cell(row, 7).Value = l.Condition ?? "";
+                    ws.Cell(row, 8).Value = t.ReturnAddress ?? "";
                     row++;
                 }
             }
+            ws.Columns().AdjustToContents();
         }
-        ws.Columns().AdjustToContents();
 
         using var stream = new MemoryStream();
         wb.SaveAs(stream);
@@ -912,6 +946,11 @@ public class SubmitLinesDto
     public string? UsageStatus { get; set; } // "Repair" | "Keep"
     // Withdraw only — see WithdrawBatch.TechSupportName. Null/blank = "ไม่มี" (didn't consult anyone).
     public string? TechSupportName { get; set; }
+    // Withdraw only — DHL Delivery Request Form fields, see WithdrawBatch.cs.
+    public DateTime? NeededByDate { get; set; }
+    public string? FeId { get; set; }
+    public string? Sla { get; set; }
+    public string? AtmCode { get; set; }
 }
 
 public class AttachmentDto

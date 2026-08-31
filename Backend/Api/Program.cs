@@ -417,12 +417,35 @@ using (var scope = app.Services.CreateScope())
                     EmployeeCode TEXT NULL,
                     UsageStatus TEXT NULL,
                     TechSupportName TEXT NULL,
+                    NeededByDate TEXT NULL,
+                    FeId TEXT NULL,
+                    Sla TEXT NULL,
+                    AtmCode TEXT NULL,
                     CreatedAt TEXT NOT NULL,
                     UpdatedAt TEXT NOT NULL,
                     CONSTRAINT FK_WithdrawBatches_Tickets FOREIGN KEY (TicketId) REFERENCES Tickets (TicketId) ON DELETE CASCADE
                 );");
             context.Database.ExecuteSqlRaw(
                 "CREATE INDEX IF NOT EXISTS IX_WithdrawBatches_TicketId ON WithdrawBatches (TicketId);");
+
+            // DHL Delivery Request Form fields — added after WithdrawBatches already existed on
+            // some DBs, so also guard-add them for those.
+            var wbCols = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            using (var cmd = context.Database.GetDbConnection().CreateCommand())
+            {
+                if (cmd.Connection!.State != System.Data.ConnectionState.Open) cmd.Connection.Open();
+                cmd.CommandText = "PRAGMA table_info(WithdrawBatches);";
+                using var reader = cmd.ExecuteReader();
+                while (reader.Read()) wbCols.Add(reader.GetString(1));
+            }
+            if (!wbCols.Contains("NeededByDate"))
+            {
+                context.Database.ExecuteSqlRaw("ALTER TABLE WithdrawBatches ADD COLUMN NeededByDate TEXT NULL;");
+                context.Database.ExecuteSqlRaw("ALTER TABLE WithdrawBatches ADD COLUMN FeId TEXT NULL;");
+                context.Database.ExecuteSqlRaw("ALTER TABLE WithdrawBatches ADD COLUMN Sla TEXT NULL;");
+                context.Database.ExecuteSqlRaw("ALTER TABLE WithdrawBatches ADD COLUMN AtmCode TEXT NULL;");
+                Console.WriteLine("✅ Migration: added WithdrawBatches.NeededByDate/FeId/Sla/AtmCode");
+            }
 
             var tplCols2 = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             using (var cmd = context.Database.GetDbConnection().CreateCommand())
