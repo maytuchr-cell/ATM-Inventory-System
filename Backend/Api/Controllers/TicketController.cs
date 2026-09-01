@@ -66,6 +66,19 @@ public class TicketController : ControllerBase
     // list load rather than via a background job (matches TryAutoApprove's on-demand style, no
     // extra hosted-service infra needed for this internal, low-traffic workflow).
     private static readonly TimeSpan WaitingTimeout = TimeSpan.FromDays(1);
+    // A batch only reaches "รออะไหล่" at all when TryAutoApprove already confirmed a viable
+    // substitute exists for every short part (otherwise it's rejected immediately) — surface which
+    // part that is so Admin doesn't have to go check Equivalent Groups separately.
+    private string? FindSubstitutePartName(int partId, int neededQty, Dictionary<int, int> stockByPartId, Dictionary<int, string> partNameById)
+    {
+        var groupIds = _context.EquivalentGroupMembers.Where(m => m.PartId == partId).Select(m => m.GroupId).ToHashSet();
+        if (groupIds.Count == 0) return null;
+        var siblingIds = _context.EquivalentGroupMembers.Where(m => groupIds.Contains(m.GroupId) && m.PartId != partId)
+            .Select(m => m.PartId).Distinct().ToList();
+        var viableId = siblingIds.FirstOrDefault(pid => stockByPartId.GetValueOrDefault(pid, 0) >= neededQty);
+        return viableId == 0 ? null : partNameById.GetValueOrDefault(viableId);
+    }
+
     private void CheckAndRejectTimedOutBatches()
     {
         var cutoff = DateTime.Now - WaitingTimeout;
@@ -130,9 +143,9 @@ public class TicketController : ControllerBase
         {
             var shortages = lines.Where(l => l.WithdrawBatchId == b.WithdrawBatchId)
                 .GroupBy(l => l.PartId)
-                .Select(g => new { partName = partNameById.GetValueOrDefault(g.Key, "?"), need = g.Sum(l => l.Quantity), have = stockByPartId.GetValueOrDefault(g.Key, 0) })
+                .Select(g => new { partId = g.Key, partName = partNameById.GetValueOrDefault(g.Key, "?"), need = g.Sum(l => l.Quantity), have = stockByPartId.GetValueOrDefault(g.Key, 0) })
                 .Where(x => x.have < x.need)
-                .Select(x => new { x.partName, shortQty = x.need - x.have })
+                .Select(x => new { x.partName, shortQty = x.need - x.have, substitutePartName = FindSubstitutePartName(x.partId, x.need, stockByPartId, partNameById) })
                 .ToList();
             var deadline = b.WaitingSinceAt?.Add(WaitingTimeout);
             return new
@@ -208,7 +221,7 @@ public class TicketController : ControllerBase
 
         using var wb = new ClosedXML.Excel.XLWorkbook();
         var ws = wb.Worksheets.Add("อะไหล่ขาด");
-        var headers = new[] { "Case No.", "ช่าง", "แผนก", "อะไหล่ที่ขาด", "จำนวนที่ขาด", "รอมาแล้ว (ชม.)", "จะโดน auto-reject ใน (ชม.)" };
+        var headers = new[] { "Case No.", "ช่าง", "แผนก", "อะไหล่ที่ขาด", "จำนวนที่ขาด", "อะไหล่ทดแทนที่มีสต็อก", "รอมาแล้ว (ชม.)", "จะโดน auto-reject ใน (ชม.)" };
         for (int c = 0; c < headers.Length; c++) ws.Cell(1, c + 1).Value = headers[c];
         ws.Row(1).Style.Font.Bold = true;
 
@@ -217,7 +230,7 @@ public class TicketController : ControllerBase
         {
             var shortages = lines.Where(l => l.WithdrawBatchId == b.WithdrawBatchId)
                 .GroupBy(l => l.PartId)
-                .Select(g => new { partName = partNameById.GetValueOrDefault(g.Key, "?"), need = g.Sum(l => l.Quantity), have = stockByPartId.GetValueOrDefault(g.Key, 0) })
+                .Select(g => new { partId = g.Key, partName = partNameById.GetValueOrDefault(g.Key, "?"), need = g.Sum(l => l.Quantity), have = stockByPartId.GetValueOrDefault(g.Key, 0) })
                 .Where(x => x.have < x.need)
                 .ToList();
             var hoursWaiting = b.WaitingSinceAt.HasValue ? Math.Round((DateTime.Now - b.WaitingSinceAt.Value).TotalHours, 1) : (double?)null;
@@ -228,8 +241,8 @@ public class TicketController : ControllerBase
                 ws.Cell(row, 1).Value = b.Ticket?.ExternalTicketNo ?? "";
                 ws.Cell(row, 2).Value = b.Ticket?.TechName ?? "";
                 ws.Cell(row, 3).Value = b.Ticket?.TechDept ?? "";
-                ws.Cell(row, 6).Value = hoursWaiting ?? 0;
-                ws.Cell(row, 7).Value = hoursUntilReject ?? 0;
+                ws.Cell(row, 7).Value = hoursWaiting ?? 0;
+                ws.Cell(row, 8).Value = hoursUntilReject ?? 0;
                 row++;
                 continue;
             }
@@ -240,8 +253,9 @@ public class TicketController : ControllerBase
                 ws.Cell(row, 3).Value = b.Ticket?.TechDept ?? "";
                 ws.Cell(row, 4).Value = s.partName;
                 ws.Cell(row, 5).Value = s.need - s.have;
-                ws.Cell(row, 6).Value = hoursWaiting ?? 0;
-                ws.Cell(row, 7).Value = hoursUntilReject ?? 0;
+                ws.Cell(row, 6).Value = FindSubstitutePartName(s.partId, s.need, stockByPartId, partNameById) ?? "";
+                ws.Cell(row, 7).Value = hoursWaiting ?? 0;
+                ws.Cell(row, 8).Value = hoursUntilReject ?? 0;
                 row++;
             }
         }
@@ -546,8 +560,12 @@ public class TicketController : ControllerBase
     // the central warehouse have enough of everything on this batch's Withdraw lines" — Tech
     // Support being set or not plays no part in this decision.
     //
-    // Sets batch.Status to "รอส่งเมล DHL" (stock cut immediately) when everything's in stock, or
-    // "รออะไหล่" (nothing touched) when it isn't — never leaves it at "รอ".
+    // Sets batch.Status to "รอส่งเมล DHL" (stock cut immediately) when everything's in stock. When
+    // it isn't, checks whether a registered equivalent (see EquivalentGroups/SubstitutePart) could
+    // cover every short part: if so, lands on "รออะไหล่" for Admin to substitute; if even one short
+    // part has no viable substitute, there's nothing Admin could do about it either, so this
+    // rejects immediately instead of waiting out the 24h timeout — see CheckAndRejectTimedOutBatches
+    // for the fallback that still catches a substitutable batch nobody got around to fixing in time.
     private void TryAutoApprove(WithdrawBatch batch)
     {
         var mainWh = _context.Locations.FirstOrDefault(l => l.Code == "WH-RAT");
@@ -564,6 +582,32 @@ public class TicketController : ControllerBase
 
         if (!hasEnough)
         {
+            var mainWhId = mainWh?.Id ?? 0;
+            var shortParts = required.Where(r => available.GetValueOrDefault(r.Key, 0) < r.Value).ToList();
+            var blockedPartNames = new List<string>();
+            foreach (var sp in shortParts)
+            {
+                var groupIds = _context.EquivalentGroupMembers.Where(m => m.PartId == sp.Key).Select(m => m.GroupId).ToHashSet();
+                var siblingPartIds = groupIds.Count == 0
+                    ? new List<int>()
+                    : _context.EquivalentGroupMembers.Where(m => groupIds.Contains(m.GroupId) && m.PartId != sp.Key)
+                        .Select(m => m.PartId).Distinct().ToList();
+                var hasSubstitute = siblingPartIds.Any(pid =>
+                    _context.PartStocks.Any(s => s.LocationId == mainWhId && s.PartId == pid && s.GoodQty >= sp.Value));
+                if (!hasSubstitute)
+                    blockedPartNames.Add(_context.Parts.Where(p => p.Id == sp.Key).Select(p => p.PartName).FirstOrDefault() ?? "?");
+            }
+
+            if (blockedPartNames.Count > 0)
+            {
+                batch.Status = "Reject";
+                batch.RejectReason = $"อะไหล่หมดและไม่มีอะไหล่ทดแทน: {string.Join("; ", blockedPartNames)}";
+                batch.WaitingSinceAt = null;
+                batch.UpdatedAt = DateTime.Now;
+                _audit.Log(User, "WithdrawBatch", batch.WithdrawBatchId.ToString(), "AUTO_REJECT_NO_SUBSTITUTE", null, new { batch.WithdrawBatchId, batch.RejectReason });
+                return;
+            }
+
             batch.Status = "รออะไหล่";
             batch.WaitingSinceAt ??= DateTime.Now; // keep the original wait start across retries
             batch.UpdatedAt = DateTime.Now;

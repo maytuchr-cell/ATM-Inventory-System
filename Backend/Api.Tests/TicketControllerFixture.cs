@@ -51,7 +51,12 @@ public static class TicketControllerFixture
     /// </summary>
     public const string EquivalentPartNo = "TEST-PART-002";
 
-    public static void SeedEquivalentPart(AppDbContext context)
+    /// <param name="equivalentStock">Good stock to seed for the equivalent part at WH-RAT — 0
+    /// (default) matches the old behavior of an equivalent with nothing on hand. Since
+    /// TicketController.TryAutoApprove now immediately rejects a "รออะไหล่" batch when NO
+    /// registered equivalent has enough stock to cover the shortfall, tests that need the batch to
+    /// actually land on/stay at "รออะไหล่" (e.g. to then call SubstitutePart) must pass enough here.</param>
+    public static void SeedEquivalentPart(AppDbContext context, int equivalentStock = 0)
     {
         var original = context.Parts.First(p => p.PartNo == PartNo);
         var equivalent = new Part { PartNo = EquivalentPartNo, PartName = "Test Equivalent Part", IsActive = true };
@@ -65,6 +70,13 @@ public static class TicketControllerFixture
             new EquivalentGroupMember { GroupId = group.Id, PartId = original.Id, PartNo = PartNo },
             new EquivalentGroupMember { GroupId = group.Id, PartId = equivalent.Id, PartNo = EquivalentPartNo });
         context.SaveChanges();
+
+        if (equivalentStock > 0)
+        {
+            var mainWh = context.Locations.First(l => l.Code == "WH-RAT");
+            context.PartStocks.Add(new PartStock { PartId = equivalent.Id, LocationId = mainWh.Id, GoodQty = equivalentStock, BadQty = 0 });
+            context.SaveChanges();
+        }
     }
 
     /// <summary>Syncs a ticket, submits+receives a withdraw batch so it's ready for a return test.
