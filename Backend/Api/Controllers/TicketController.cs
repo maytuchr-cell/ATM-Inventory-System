@@ -555,15 +555,16 @@ public class TicketController : ControllerBase
         return Ok(new { message = "Substituted.", batch, line });
     }
 
-    // Auto-approve engine — runs right after a withdraw batch is submitted, and again after Admin
-    // substitutes an equivalent part while a batch sits at "รออะไหล่". The only condition is "does
-    // the central warehouse have enough of everything on this batch's Withdraw lines" — Tech
-    // Support being set or not plays no part in this decision.
+    // Stock-check engine — runs right after a withdraw batch is submitted, and again after Admin
+    // substitutes an equivalent part (or resubmits a rejected batch) while it sits at "รออะไหล่".
+    // Despite the name, this no longer auto-approves anything — Admin still has to click "อนุมัติ"
+    // (see ApproveBatch) even when stock is sufficient. What this decides is only "does the central
+    // warehouse have enough of everything on this batch's Withdraw lines right now":
     //
-    // Sets batch.Status to "รอส่งเมล DHL" (stock cut immediately) when everything's in stock. When
-    // it isn't, checks whether a registered equivalent (see EquivalentGroups/SubstitutePart) could
-    // cover every short part: if so, lands on "รออะไหล่" for Admin to substitute; if even one short
-    // part has no viable substitute, there's nothing Admin could do about it either, so this
+    // Enough → lands on "รอ", same as a fresh submit, so it shows up for Admin to approve manually.
+    // Not enough → checks whether a registered equivalent (see EquivalentGroups/SubstitutePart)
+    // could cover every short part: if so, lands on "รออะไหล่" for Admin to substitute; if even one
+    // short part has no viable substitute, there's nothing Admin could do about it either, so this
     // rejects immediately instead of waiting out the 24h timeout — see CheckAndRejectTimedOutBatches
     // for the fallback that still catches a substitutable batch nobody got around to fixing in time.
     private void TryAutoApprove(WithdrawBatch batch)
@@ -614,21 +615,8 @@ public class TicketController : ControllerBase
             return;
         }
         batch.WaitingSinceAt = null;
-
-        var externalTicketNo = _context.Tickets.Where(t => t.TicketId == batch.TicketId).Select(t => t.ExternalTicketNo).FirstOrDefault();
-        foreach (var line in withdrawLines)
-        {
-            _stock.AdjustStock(
-                partNo: line.PartNo, locationId: mainWh!.Id, qtyDelta: -line.Quantity, condition: "Good",
-                movementType: "Approve", refType: "WithdrawBatch", refId: batch.WithdrawBatchId.ToString(),
-                userName: "Auto", remarks: $"Auto-approved for ticket {externalTicketNo}");
-        }
-
-        batch.Status = "รอส่งเมล DHL";
-        batch.ApproverName = "Auto";
-        batch.ApprovedAt = DateTime.Now;
+        batch.Status = "รอ";
         batch.UpdatedAt = DateTime.Now;
-        _audit.Log(User, "WithdrawBatch", batch.WithdrawBatchId.ToString(), "AUTO_APPROVE", null, new { batch.WithdrawBatchId, batch.Status });
     }
 
     // PUT /api/Ticket/{ticketId}/withdraw-batches/{batchId}/send-email — Admin confirms the DHL
@@ -663,14 +651,17 @@ public class TicketController : ControllerBase
 
         // Manual fallback for a "รออะไหล่" batch whose stock recovered without a substitution
         // (e.g. a Goods Receipt came in) — Admin can force a recheck instead of waiting for
-        // another SubstitutePart call to trigger it.
+        // another SubstitutePart call to trigger it. This only moves it to "รอ" (ready to approve)
+        // or "Reject" (no substitute) — it does not itself approve; Admin clicks "อนุมัติ" again.
         if (batch.Status == "รออะไหล่")
         {
             TryAutoApprove(batch);
             _context.SaveChanges();
-            return batch.Status == "รอส่งเมล DHL"
-                ? Ok(new { message = "Approved.", batch })
-                : Ok(new { message = "Still not enough stock.", batch });
+            return batch.Status == "รอ"
+                ? Ok(new { message = "Stock available — ready to approve.", batch })
+                : (batch.Status == "Reject"
+                    ? Ok(new { message = "No substitute available — rejected.", batch })
+                    : Ok(new { message = "Still not enough stock.", batch }));
         }
 
         // Stock is deducted from the central warehouse right here, not at ReceiveBatch — once
@@ -695,7 +686,10 @@ public class TicketController : ControllerBase
             }
         }
 
-        batch.Status = "เดินทาง";
+        // → "รอส่งเมล DHL", not straight to "เดินทาง" — Admin still has to confirm the DHL email
+        // actually went out (SendEmailConfirmedBatch) before this counts as in transit. Stock left
+        // WH-RAT the moment this ran, same as before.
+        batch.Status = "รอส่งเมล DHL";
         batch.ApproverName = User?.Identity?.Name ?? "admin";
         batch.ApprovedAt = DateTime.Now;
         batch.UpdatedAt = DateTime.Now;
@@ -716,7 +710,7 @@ public class TicketController : ControllerBase
             return BadRequest(new { message = "Only a waiting batch can be rejected." });
         if (string.IsNullOrWhiteSpace(dto.Reason)) return BadRequest(new { message = "Reject reason is required." });
 
-        // Auto-approve already deducted WH-RAT stock for a "รอส่งเมล DHL" batch — rejecting it now
+        // ApproveBatch already deducted WH-RAT stock for a "รอส่งเมล DHL" batch — rejecting it now
         // needs to hand that back, same as CancelBatch does for the same status.
         if (batch.Status == "รอส่งเมล DHL")
         {
@@ -756,7 +750,7 @@ public class TicketController : ControllerBase
         if (batch.Status == "เดินทาง")
             return BadRequest(new { message = "ยกเลิกไม่ได้แล้ว — Admin ส่งเมลแจ้ง DHL ไปแล้ว" });
 
-        // Stock left WH-RAT the moment auto-approve ran (รอส่งเมล DHL) — cancelling from there has
+        // Stock left WH-RAT the moment ApproveBatch ran (รอส่งเมล DHL) — cancelling from there has
         // stock sitting in limbo, put it back. Cancelling at รอ/รออะไหล่ never touched stock,
         // nothing to undo.
         if (batch.Status == "รอส่งเมล DHL")

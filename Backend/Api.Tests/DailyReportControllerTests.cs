@@ -54,8 +54,10 @@ public class DailyReportControllerTests
         var ticket = context.Tickets.First(t => t.ExternalTicketNo == externalNo);
         tickets.SubmitWithdraw(ticket.TicketId, new SubmitLinesDto { Lines = new() { new LineDto { PartNo = PartNo, Quantity = qty } }, Address = "Addr" });
         var batch = context.WithdrawBatches.First(b => b.TicketId == ticket.TicketId);
-        // Sufficient stock (fixture seeds 100) auto-approves this straight to "รอส่งเมล DHL" — the
-        // real "เดินทาง" transition now only happens once Admin confirms the DHL email went out.
+        // Sufficient stock (fixture seeds 100) means Admin's approve alone gets this to
+        // "รอส่งเมล DHL" — the real "เดินทาง" transition only happens once Admin then confirms the
+        // DHL email went out.
+        tickets.ApproveBatch(ticket.TicketId, batch.WithdrawBatchId);
         tickets.SendEmailConfirmedBatch(ticket.TicketId, batch.WithdrawBatchId);
         tickets.ReceiveBatch(ticket.TicketId, batch.WithdrawBatchId);
         tickets.SubmitReturn(ticket.TicketId, new SubmitLinesDto { Lines = new() { new LineDto { PartNo = PartNo, Quantity = qty, Condition = "Good" } }, Address = "Return Addr" });

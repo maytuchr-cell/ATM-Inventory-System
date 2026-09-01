@@ -17,12 +17,11 @@ public class TicketWorkflowTests
     // ── Happy path — withdraw batch ─────────────────────────────────────────
 
     [Fact]
-    public void SubmitWithdraw_WithSufficientStock_AutoApprovesAndDeductsStockImmediately()
+    public void SubmitWithdraw_WithSufficientStock_LandsOnรอ_WaitingForManualApproval()
     {
-        // Auto-approve replaces the old manual-Approve-required flow: as long as the central
-        // warehouse (seeded with 100 by the fixture) covers what's requested, submitting a
-        // withdraw goes straight to รอส่งเมล DHL — stock cut right here — with no Admin click in
-        // between. See TicketController.TryAutoApprove.
+        // No more auto-approve: even with the central warehouse (seeded with 100 by the fixture)
+        // covering what's requested, submitting a withdraw only lands on "รอ" — Admin still has to
+        // click "อนุมัติ" (ApproveBatch) before any stock moves. See TicketController.TryAutoApprove.
         var (controller, context) = TicketControllerFixture.Create();
         controller.SyncFromAservice(new SyncTicketDto { ExternalTicketNo = "T1", TechName = "Tech" });
         var ticket = context.Tickets.First(t => t.ExternalTicketNo == "T1");
@@ -35,12 +34,38 @@ public class TicketWorkflowTests
 
         Assert.IsType<OkObjectResult>(result);
         var batch = context.WithdrawBatches.First(b => b.TicketId == ticket.TicketId);
-        Assert.Equal("รอส่งเมล DHL", batch.Status);
-        Assert.Equal("Auto", batch.ApproverName);
-        Assert.NotNull(batch.ApprovedAt);
-        Assert.Null(batch.EmailSentAt); // not "เดินทาง" yet — that's SendEmailConfirmedBatch's job
+        Assert.Equal("รอ", batch.Status);
+        Assert.Null(batch.ApproverName);
+        Assert.Null(batch.ApprovedAt);
         Assert.Equal("123 Main St", batch.WithdrawAddress);
         Assert.Single(context.TicketPartLines.Where(l => l.WithdrawBatchId == batch.WithdrawBatchId));
+
+        var mainWh = context.Locations.First(l => l.Code == "WH-RAT");
+        Assert.Equal(100, context.PartStocks.First(s => s.LocationId == mainWh.Id).GoodQty); // untouched until approved
+    }
+
+    [Fact]
+    public void ApproveBatch_OnWaitingBatch_DeductsStock_AndMovesToรอส่งเมลDHL()
+    {
+        var (controller, context) = TicketControllerFixture.Create();
+        controller.SyncFromAservice(new SyncTicketDto { ExternalTicketNo = "T1B2", TechName = "Tech" });
+        var ticket = context.Tickets.First(t => t.ExternalTicketNo == "T1B2");
+        controller.SubmitWithdraw(ticket.TicketId, new SubmitLinesDto
+        {
+            Lines = new() { new LineDto { PartNo = TicketControllerFixture.PartNo, Quantity = 2 } },
+            Address = "Addr"
+        });
+        var batch = context.WithdrawBatches.First(b => b.TicketId == ticket.TicketId);
+        Assert.Equal("รอ", batch.Status);
+
+        var result = controller.ApproveBatch(ticket.TicketId, batch.WithdrawBatchId);
+
+        Assert.IsType<OkObjectResult>(result);
+        var updated = context.WithdrawBatches.First(b => b.WithdrawBatchId == batch.WithdrawBatchId);
+        Assert.Equal("รอส่งเมล DHL", updated.Status);
+        Assert.NotNull(updated.ApproverName);
+        Assert.NotNull(updated.ApprovedAt);
+        Assert.Null(updated.EmailSentAt); // not "เดินทาง" yet — that's SendEmailConfirmedBatch's job
 
         var mainWh = context.Locations.First(l => l.Code == "WH-RAT");
         Assert.Equal(98, context.PartStocks.First(s => s.LocationId == mainWh.Id).GoodQty); // seeded 100 - 2
@@ -58,7 +83,8 @@ public class TicketWorkflowTests
             Address = "Addr"
         });
         var batch = context.WithdrawBatches.First(b => b.TicketId == ticket.TicketId);
-        Assert.Equal("รอส่งเมล DHL", batch.Status);
+        controller.ApproveBatch(ticket.TicketId, batch.WithdrawBatchId);
+        Assert.Equal("รอส่งเมล DHL", context.WithdrawBatches.First(b => b.WithdrawBatchId == batch.WithdrawBatchId).Status);
 
         var result = controller.SendEmailConfirmedBatch(ticket.TicketId, batch.WithdrawBatchId);
 
@@ -80,6 +106,7 @@ public class TicketWorkflowTests
             Address = "Addr"
         });
         var batch = context.WithdrawBatches.First(b => b.TicketId == ticket.TicketId);
+        controller.ApproveBatch(ticket.TicketId, batch.WithdrawBatchId);
         controller.SendEmailConfirmedBatch(ticket.TicketId, batch.WithdrawBatchId);
 
         var result = controller.CancelBatch(ticket.TicketId, batch.WithdrawBatchId);
@@ -91,8 +118,8 @@ public class TicketWorkflowTests
     [Fact]
     public void CancelBatch_WhileWaitingToEmailDhl_RestocksWarehouse()
     {
-        // Not locked yet — Admin hasn't actually told DHL anything, just an internal
-        // auto-approve commitment. Cancelling here should still hand the stock back.
+        // Not locked yet — Admin hasn't actually told DHL anything, just approved it. Cancelling
+        // here should still hand the stock back.
         var (controller, context) = TicketControllerFixture.Create();
         controller.SyncFromAservice(new SyncTicketDto { ExternalTicketNo = "T1E", TechName = "Tech" });
         var ticket = context.Tickets.First(t => t.ExternalTicketNo == "T1E");
@@ -102,6 +129,7 @@ public class TicketWorkflowTests
             Address = "Addr"
         });
         var batch = context.WithdrawBatches.First(b => b.TicketId == ticket.TicketId);
+        controller.ApproveBatch(ticket.TicketId, batch.WithdrawBatchId);
         var mainWh = context.Locations.First(l => l.Code == "WH-RAT");
         Assert.Equal(96, context.PartStocks.First(s => s.LocationId == mainWh.Id).GoodQty);
 
@@ -500,10 +528,9 @@ public class TicketWorkflowTests
     }
 
     [Fact]
-    public void SubmitWithdraw_DeductsFromWarehouseImmediately_ViaAutoApprove_BeforeReceive()
+    public void SubmitWithdraw_DeductsFromWarehouseAtApprove_NotAtSubmit_NorAtReceive()
     {
-        // Stock now leaves WH-RAT the moment auto-approve runs (SubmitWithdraw) — not at Receive
-        // and not at a later manual approve click.
+        // Stock leaves WH-RAT the moment ApproveBatch runs — not at SubmitWithdraw, not at Receive.
         var (controller, context) = TicketControllerFixture.Create();
         controller.SyncFromAservice(new SyncTicketDto { ExternalTicketNo = "T14", TechName = "Tech" });
         var ticket = context.Tickets.First(t => t.ExternalTicketNo == "T14");
@@ -515,7 +542,13 @@ public class TicketWorkflowTests
 
         var mainWh  = context.Locations.First(l => l.Code == "WH-RAT");
         var techLoc = context.Locations.First(l => l.LocationType == "OL_TECHNICIAN");
-        Assert.Equal(96, context.PartStocks.First(s => s.LocationId == mainWh.Id).GoodQty); // seeded 100 - 4
+        Assert.Equal(100, context.PartStocks.First(s => s.LocationId == mainWh.Id).GoodQty); // untouched by submit alone
+        Assert.Equal("รอ", context.WithdrawBatches.First(b => b.TicketId == ticket.TicketId).Status);
+
+        var batch = context.WithdrawBatches.First(b => b.TicketId == ticket.TicketId);
+        controller.ApproveBatch(ticket.TicketId, batch.WithdrawBatchId);
+
+        Assert.Equal(96, context.PartStocks.First(s => s.LocationId == mainWh.Id).GoodQty); // seeded 100 - 4, deducted at approve
         Assert.Null(context.PartStocks.FirstOrDefault(s => s.LocationId == techLoc.Id)); // not yet at the tech
         Assert.Equal("รอส่งเมล DHL", context.WithdrawBatches.First(b => b.TicketId == ticket.TicketId).Status);
     }
@@ -750,7 +783,7 @@ public class TicketWorkflowTests
     }
 
     [Fact]
-    public void SecondWithdrawBatch_SubmittedAndAutoApproved_DoesNotAffectFirstBatchsStatus()
+    public void SecondWithdrawBatch_Submitted_DoesNotAffectFirstBatchsStatus()
     {
         var (controller, context) = TicketControllerFixture.Create();
         var (ticket, firstBatch) = TicketControllerFixture.CreateReceivedTicket(controller, context, "ASV-200", qty: 1);
@@ -762,12 +795,12 @@ public class TicketWorkflowTests
             Address = "Addr 2"
         });
 
-        // First batch is already at เบิก (fully received) — submitting the second batch (which
-        // auto-approves on its own, stock permitting) must not touch it.
+        // First batch is already at เบิก (fully received) — submitting a second batch (which
+        // lands on "รอ", stock permitting) must not touch it.
         var firstAfter = context.WithdrawBatches.First(b => b.WithdrawBatchId == firstBatch.WithdrawBatchId);
         Assert.Equal("เบิก", firstAfter.Status);
         var secondBatch = context.WithdrawBatches.First(b => b.TicketId == ticket.TicketId && b.WithdrawBatchId != firstBatch.WithdrawBatchId);
-        Assert.Equal("รอส่งเมล DHL", secondBatch.Status);
+        Assert.Equal("รอ", secondBatch.Status);
     }
 
     [Fact]
@@ -784,6 +817,7 @@ public class TicketWorkflowTests
             Address = "Addr 2"
         });
         var secondBatch = context.WithdrawBatches.First(b => b.TicketId == ticket.TicketId && b.WithdrawBatchId != firstBatch.WithdrawBatchId);
+        controller.ApproveBatch(ticket.TicketId, secondBatch.WithdrawBatchId);
         controller.SendEmailConfirmedBatch(ticket.TicketId, secondBatch.WithdrawBatchId);
         controller.ReceiveBatch(ticket.TicketId, secondBatch.WithdrawBatchId);
 

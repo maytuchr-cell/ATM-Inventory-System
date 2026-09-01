@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Tickets — ATM Inventory</title>
-    <link rel="stylesheet" href="shared/styles.css?v=64">
+    <link rel="stylesheet" href="shared/styles.css?v=65">
     <style>
         /* Page-specific overrides */
         .section-head { display:flex; align-items:center; gap:10px; margin-bottom:20px; }
@@ -336,10 +336,10 @@
     </div>
 </div>
 
-<script src="shared/translations.js?v=64"></script>
-<script src="shared/toast.js?v=64"></script>
-<script src="shared/api.js?v=64"></script>
-<script src="shared/layout.js?v=64"></script>
+<script src="shared/translations.js?v=65"></script>
+<script src="shared/toast.js?v=65"></script>
+<script src="shared/api.js?v=65"></script>
+<script src="shared/layout.js?v=65"></script>
 <script>
     let cachedTickets = [];
     let rejectTargetId = null;
@@ -739,9 +739,9 @@
                             <button class="btn-cancel" onclick="cancelBatch(${tk.ticketId},${actionableBatch.withdrawBatchId})">ยกเลิก</button>
                         </div>`;
                 } else {
-                    // "รอส่งเมล DHL" — auto-approved, stock already cut — Admin's only jobs left
-                    // before it's locked in are: confirm the DHL email actually went out, or back
-                    // out (Reject/Cancel), which still hands the stock back.
+                    // "รอส่งเมล DHL" — Admin already approved this (stock cut at that click).
+                    // What's left: confirm the DHL email actually went out, or back out
+                    // (Reject/Cancel), which still hands the stock back.
                     action = `
                         <div class="ticket-action-row">
                             <button class="btn-approve" onclick="sendEmailConfirmedBatch(${tk.ticketId},${actionableBatch.withdrawBatchId})">
@@ -780,7 +780,7 @@
     }
 
     async function approveBatch(ticketId, batchId) {
-        if (!confirm('อนุมัติใบเบิกนี้? สถานะจะเปลี่ยนเป็น "เดินทาง"')) return;
+        if (!confirm('อนุมัติใบเบิกนี้? สถานะจะเปลี่ยนเป็น "รอส่งเมล DHL"')) return;
         try {
             await api.tickets.approveBatch(ticketId, batchId);
             await fetchTickets();

@@ -80,10 +80,10 @@ public static class TicketControllerFixture
     }
 
     /// <summary>Syncs a ticket, submits+receives a withdraw batch so it's ready for a return test.
-    /// SubmitWithdraw auto-approves on its own now (see TicketController.TryAutoApprove) as long
-    /// as the fixture's default 100-unit stock covers qty, landing the batch on "รอส่งเมล DHL" —
-    /// SendEmailConfirmedBatch is what actually moves it to "เดินทาง" (Admin confirming the DHL
-    /// email went out) so ReceiveBatch has something to receive.</summary>
+    /// SubmitWithdraw lands the batch on "รอ" (as long as the fixture's default 100-unit stock
+    /// covers qty — see TicketController.TryAutoApprove); Admin still has to approve it manually
+    /// (ApproveBatch → "รอส่งเมล DHL"), then confirm the DHL email went out
+    /// (SendEmailConfirmedBatch → "เดินทาง") before ReceiveBatch has anything to receive.</summary>
     public static (Ticket Ticket, WithdrawBatch Batch) CreateReceivedTicket(TicketController controller, AppDbContext context, string externalNo, int qty = 1)
     {
         controller.SyncFromAservice(new SyncTicketDto { ExternalTicketNo = externalNo, TechName = "Tech" });
@@ -95,6 +95,7 @@ public static class TicketControllerFixture
             Address = "Withdraw Addr"
         });
         var batch = context.WithdrawBatches.First(b => b.TicketId == ticket.TicketId);
+        controller.ApproveBatch(ticket.TicketId, batch.WithdrawBatchId);
         controller.SendEmailConfirmedBatch(ticket.TicketId, batch.WithdrawBatchId);
         controller.ReceiveBatch(ticket.TicketId, batch.WithdrawBatchId);
 
