@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Tech Workspace — ATM Inventory</title>
-    <link rel="stylesheet" href="shared/styles.css?v=62">
+    <link rel="stylesheet" href="shared/styles.css?v=63">
     <style>
         .section-head { display:flex; align-items:center; gap:10px; margin-bottom:20px; }
         .section-accent { width:4px; height:22px; background:var(--orange); border-radius:2px; }
@@ -112,11 +112,77 @@
         .tk-detail-tab.active { color:var(--orange); border-bottom-color:var(--orange); }
         .tk-detail-section-label { font-size:11px; font-weight:700; letter-spacing:.4px; text-transform:uppercase; color:var(--text-muted); display:block; margin:14px 0 6px; }
 
+        /* ── Mobile top bar (phones only — see the HTML comment above #tmb-bar) ── */
+        .tmb-bar { display:none; }
+        .tmb-menu-overlay { display:none; position:fixed; inset:0; background:rgba(0,0,0,.4); z-index:1000; }
+        .tmb-menu-overlay.open { display:block; }
+        .tmb-menu-sheet {
+            position:absolute; right:12px; top:64px; width:min(280px, calc(100vw - 24px));
+            background:var(--bg-card); border:1px solid var(--border); border-radius:16px;
+            box-shadow:0 16px 40px rgba(0,0,0,.22); padding:14px; animation:tmb-pop .15s ease-out;
+        }
+        @keyframes tmb-pop { from { opacity:0; transform:translateY(-6px); } to { opacity:1; transform:translateY(0); } }
+        .tmb-menu-handle { display:none; }
+        .tmb-avatar-circle {
+            width:34px; height:34px; border-radius:50%; background:var(--orange); color:#fff;
+            display:flex; align-items:center; justify-content:center; font-size:13px; font-weight:700;
+            flex-shrink:0;
+        }
+        .tmb-avatar-circle.lg { width:42px; height:42px; font-size:15px; }
+        .tmb-menu-user { display:flex; align-items:center; gap:10px; padding:4px 6px 12px; margin-bottom:8px; border-bottom:1px solid var(--border); }
+        .tmb-menu-email { font-size:12.5px; font-weight:600; color:var(--text-primary); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width:170px; }
+        .tmb-menu-role { font-size:11px; color:var(--text-muted); }
+        .tmb-menu-item {
+            display:flex; align-items:center; gap:10px; width:100%; text-align:left;
+            background:none; border:none; padding:11px 8px; border-radius:9px;
+            font-family:inherit; font-size:13.5px; font-weight:600; color:var(--text-primary); cursor:pointer;
+        }
+        .tmb-menu-item:hover { background:var(--bg-subtle); }
+        .tmb-menu-item-icon { font-size:15px; width:18px; text-align:center; flex-shrink:0; }
+        .tmb-menu-item.tmb-danger { color:var(--red, #dc2626); }
+        .tmb-menu-item.tmb-danger:hover { background:var(--red-light, #fee2e2); }
+
         /* ── Phone screens ── */
-        @media(max-width:640px) {
+        @media(max-width:768px) {
+            body { padding-top:0; }
+            .tmb-bar {
+                /* .app-layout is display:flex — a sticky/static div would become a flex item
+                   squeezed next to the sidebar/main-content columns instead of a real top bar.
+                   position:fixed takes it out of that flow entirely. */
+                display:flex; align-items:center; justify-content:space-between;
+                position:fixed; top:0; left:0; right:0; z-index:60; padding:12px 16px;
+                background:var(--bg-card); border-bottom:1px solid var(--border);
+            }
+            .tmb-title { font-size:16px; font-weight:700; color:var(--text-primary); }
+            .tmb-avatar-btn { background:none; border:none; padding:0; cursor:pointer; border-radius:50%; }
+
+            /* The admin-style sidebar/topbar has no reachable way to open on a phone (see the
+               HTML comment on #tmb-bar) — hide both and let #tmb-bar stand in for them. */
+            #sidebar-root, .topbar { display:none !important; }
+            .main-content { padding-top:58px; }
+
+            /* Primary action becomes a thumb-reachable floating button instead of an inline one
+               that scrolls out of reach as the ticket list grows. */
+            .page-body { padding-bottom:88px; }
+            #tk-new-request-btn {
+                position:fixed; right:18px; bottom:18px; z-index:40; margin-left:0 !important;
+                width:58px; height:58px; border-radius:50%; padding:0;
+                display:flex; align-items:center; justify-content:center;
+                box-shadow:0 6px 18px rgba(0,0,0,.22);
+            }
+            #tk-new-request-btn .tk-fab-icon { font-size:26px; line-height:1; }
+            #tk-new-request-btn .tk-fab-label { display:none; }
+
+            /* Segmented tab control + stacked search/filter — bigger touch targets, no squeezed
+               side-by-side inputs. */
+            .tk-tabs { background:var(--bg-subtle); border:1px solid var(--border); border-radius:11px; padding:3px; gap:0; }
+            .tk-tab { flex:1; text-align:center; border-radius:8px; border-bottom:none !important; margin-bottom:0; padding:10px 8px; }
+            .tk-tab.active { background:var(--bg-card); box-shadow:0 1px 3px rgba(0,0,0,.08); }
+
+            #ticketSearchInput, #ticketStatusFilter { flex:1 1 100% !important; }
+
             .tk-readonly-grid, .tk-2col { grid-template-columns:1fr; }
             .section-head { flex-wrap:wrap; }
-            .section-head .btn-withdraw { margin-left:0 !important; width:100%; text-align:center; }
             .tk-modal-body { padding:16px; }
             .tk-line-row { flex-wrap:wrap; }
             .tk-part-picker { flex:1 1 100%; }
@@ -151,6 +217,39 @@
 <body>
 
 <div class="app-layout">
+    <!-- Mobile-only top bar — replaces the admin-style sidebar/hamburger on phones, since a Tech
+         user has no real navigation destinations in that sidebar anyway (just this one page) and
+         the hamburger button that would open it lives INSIDE the off-canvas sidebar itself, so it
+         can never actually be reached on mobile. This bar is the tech's only way to reach
+         theme/language/logout on a phone. -->
+    <div class="tmb-bar" id="tmb-bar">
+        <span class="tmb-title">Tech Workspace</span>
+        <button class="tmb-avatar-btn" id="tmb-avatar-btn" onclick="toggleMobileMenu()">
+            <span class="tmb-avatar-circle" id="tmb-avatar-circle">?</span>
+        </button>
+    </div>
+    <div class="tmb-menu-overlay" id="tmb-menu-overlay" onclick="closeMobileMenu(event)">
+        <div class="tmb-menu-sheet" onclick="event.stopPropagation()">
+            <div class="tmb-menu-handle"></div>
+            <div class="tmb-menu-user">
+                <span class="tmb-avatar-circle lg" id="tmb-menu-avatar">?</span>
+                <div>
+                    <div class="tmb-menu-email" id="tmb-menu-email">—</div>
+                    <div class="tmb-menu-role" id="tmb-menu-role">ช่าง</div>
+                </div>
+            </div>
+            <button class="tmb-menu-item" onclick="tmbToggleTheme()">
+                <span class="tmb-menu-item-icon">🌓</span> <span id="tmb-theme-label">สลับธีมมืด/สว่าง</span>
+            </button>
+            <button class="tmb-menu-item" onclick="tmbToggleLang()">
+                <span class="tmb-menu-item-icon">🌐</span> <span id="tmb-lang-label">เปลี่ยนภาษา</span>
+            </button>
+            <button class="tmb-menu-item tmb-danger" onclick="signOut()">
+                <span class="tmb-menu-item-icon">⏏</span> ออกจากระบบ
+            </button>
+        </div>
+    </div>
+
     <div id="sidebar-root"></div>
     <div class="main-content">
         <div class="topbar">
@@ -168,7 +267,7 @@
                         <div class="section-accent"></div>
                         <span class="section-title" id="tickets-section-title">Ticket ของฉัน</span>
                         <span class="section-count" id="tickets-count">—</span>
-                        <button class="btn-withdraw" style="margin-left:auto;" onclick="openNewRequestModal()">+ ขอเบิกอะไหล่ใหม่</button>
+                        <button class="btn-withdraw" id="tk-new-request-btn" style="margin-left:auto;" onclick="openNewRequestModal()"><span class="tk-fab-icon">＋</span> <span class="tk-fab-label">ขอเบิกอะไหล่ใหม่</span></button>
                     </div>
                     <div class="tk-tabs">
                         <button class="tk-tab active" id="tabActive" onclick="switchTab('active')">Ticket ของฉัน</button>
@@ -456,10 +555,10 @@
     <option value="NBD17 (Cut-off 16:00)">
 </datalist>
 
-<script src="shared/translations.js?v=62"></script>
-<script src="shared/toast.js?v=62"></script>
-<script src="shared/api.js?v=62"></script>
-<script src="shared/layout.js?v=62"></script>
+<script src="shared/translations.js?v=63"></script>
+<script src="shared/toast.js?v=63"></script>
+<script src="shared/api.js?v=63"></script>
+<script src="shared/layout.js?v=63"></script>
 <script>
     // Auth guard — runs before anything else renders. No token means nobody actually signed in
     // through login-tech.html (or login.html); bounce there immediately instead of quietly
@@ -480,8 +579,31 @@
     let activeReturnTicketId = null;
     let wdLineCount = 0, rtLineCount = 0, nrLineCount = 0;
 
+    /* ── Mobile top-bar menu (theme/language/logout) — see the HTML comment on #tmb-bar for why
+       this exists instead of reusing the sidebar's hamburger on phones. ── */
+    function renderMobileMenu() {
+        const initials = currentEmail ? currentEmail[0].toUpperCase() : '?';
+        document.getElementById('tmb-avatar-circle').textContent = initials;
+        document.getElementById('tmb-menu-avatar').textContent = initials;
+        document.getElementById('tmb-menu-email').textContent = currentEmail;
+        const isDark = (localStorage.getItem('theme') || 'light') === 'dark';
+        document.getElementById('tmb-theme-label').textContent = isDark ? 'สลับเป็นธีมสว่าง' : 'สลับเป็นธีมมืด';
+        const isEn = (localStorage.getItem('lang') || 'th') === 'en';
+        document.getElementById('tmb-lang-label').textContent = isEn ? 'Switch to Thai' : 'Switch to English';
+    }
+    function toggleMobileMenu() {
+        renderMobileMenu();
+        document.getElementById('tmb-menu-overlay').classList.toggle('open');
+    }
+    function closeMobileMenu() {
+        document.getElementById('tmb-menu-overlay').classList.remove('open');
+    }
+    function tmbToggleTheme() { toggleTheme(); renderMobileMenu(); }
+    function tmbToggleLang() { toggleLang(); renderMobileMenu(); }
+
     window.addEventListener('DOMContentLoaded', async () => {
         initLayout();
+        renderMobileMenu();
         await fetchParts();
         await fetchTechSupportList();
         await fetchTickets();
