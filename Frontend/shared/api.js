@@ -149,6 +149,22 @@ const api = {
     confirmReturn:(id)           => apiFetch(`/Ticket/${id}/confirm-return`, { method: 'PUT' }),
     uploadAttachment: (file) => { const fd = new FormData(); fd.append('file', file); return apiUpload('/Ticket/upload', fd); },
     remove: (id) => apiFetch(`/Ticket/${id}`, { method: 'DELETE' }),
+    // รายงานอะไหล่ขาด — live "รออะไหล่" batches + trend of parts that caused auto-rejects.
+    shortageReport: (days = 30) => apiFetch(`/Ticket/shortage-report?days=${days}`),
+    exportShortageReport: async () => {
+      const token = localStorage.getItem('authToken');
+      const res = await fetch(API_BASE + '/Ticket/shortage-report/export', {
+        headers: token ? { 'Authorization': 'Bearer ' + token } : {},
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body.message || `HTTP ${res.status}`);
+      }
+      const disposition = res.headers.get('Content-Disposition') || '';
+      const match = disposition.match(/filename="?([^"]+)"?/);
+      const fileName = match ? match[1] : 'Shortage-Report.xlsx';
+      return { blob: await res.blob(), fileName };
+    },
   },
   goodsReceipt: {
     getAll:  (params = {}) => apiFetch('/GoodsReceipt?' + new URLSearchParams(params)),

@@ -1,6 +1,7 @@
 using Api.Controllers;
 using Api.Models;
 using Microsoft.AspNetCore.Mvc;
+using System.Linq;
 using Xunit;
 
 namespace Api.Tests;
@@ -189,6 +190,57 @@ public class TicketWorkflowTests
 
         var updated = context.WithdrawBatches.First(b => b.WithdrawBatchId == batch.WithdrawBatchId);
         Assert.Equal("รออะไหล่", updated.Status);
+    }
+
+    [Fact]
+    public void GetShortageReport_ListsWaitingBatchLive_AndCountsAutoRejectsInTrend()
+    {
+        var (controller, context) = TicketControllerFixture.Create();
+        var mainWh = context.Locations.First(l => l.Code == "WH-RAT");
+        context.PartStocks.First(s => s.LocationId == mainWh.Id).GoodQty = 1;
+        context.SaveChanges();
+
+        // Batch A stays waiting — should show up in the live list.
+        controller.SyncFromAservice(new SyncTicketDto { ExternalTicketNo = "SR-A", TechName = "Tech A" });
+        var ticketA = context.Tickets.First(t => t.ExternalTicketNo == "SR-A");
+        controller.SubmitWithdraw(ticketA.TicketId, new SubmitLinesDto
+        {
+            Lines = new() { new LineDto { PartNo = TicketControllerFixture.PartNo, Quantity = 2 } },
+            Address = "Addr A"
+        });
+
+        // Batch B times out — should show up in the trend, not the live list.
+        controller.SyncFromAservice(new SyncTicketDto { ExternalTicketNo = "SR-B", TechName = "Tech B" });
+        var ticketB = context.Tickets.First(t => t.ExternalTicketNo == "SR-B");
+        controller.SubmitWithdraw(ticketB.TicketId, new SubmitLinesDto
+        {
+            Lines = new() { new LineDto { PartNo = TicketControllerFixture.PartNo, Quantity = 2 } },
+            Address = "Addr B"
+        });
+        var batchB = context.WithdrawBatches.First(b => b.TicketId == ticketB.TicketId);
+        batchB.WaitingSinceAt = DateTime.Now.AddDays(-2);
+        context.SaveChanges();
+
+        var result = controller.GetShortageReport(30);
+
+        Assert.IsType<OkObjectResult>(result);
+        var value = ((OkObjectResult)result).Value!;
+        var live = (IEnumerable<object>)value.GetType().GetProperty("live")!.GetValue(value)!;
+        var trend = (IEnumerable<object>)value.GetType().GetProperty("trend")!.GetValue(value)!;
+
+        var liveList = live.ToList();
+        Assert.Single(liveList);
+        var liveCaseNo = liveList[0].GetType().GetProperty("caseNo")!.GetValue(liveList[0]);
+        Assert.Equal("SR-A", liveCaseNo);
+
+        var trendList = trend.ToList();
+        Assert.Single(trendList);
+        var trendPart = trendList[0].GetType().GetProperty("partName")!.GetValue(trendList[0]);
+        Assert.Equal("Test Part", trendPart);
+        var trendCount = trendList[0].GetType().GetProperty("timesCausedReject")!.GetValue(trendList[0]);
+        Assert.Equal(1, trendCount);
+
+        Assert.Equal("Reject", context.WithdrawBatches.First(b => b.WithdrawBatchId == batchB.WithdrawBatchId).Status);
     }
 
     [Fact]

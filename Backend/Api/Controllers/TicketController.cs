@@ -2,6 +2,8 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Api.Models;
 using Api.Services;
+using System.Text.Json;
+using System.Text.RegularExpressions;
 
 namespace Api.Controllers;
 
@@ -91,13 +93,164 @@ public class TicketController : ControllerBase
 
             b.Status = "Reject";
             b.RejectReason = shortages.Count > 0
-                ? $"อะไหล่ไม่พอเกิน 24 ชม.: {string.Join(", ", shortages)}"
+                ? $"อะไหล่ไม่พอเกิน 24 ชม.: {string.Join("; ", shortages)}"
                 : "อะไหล่ไม่พอเกิน 24 ชม.";
             b.WaitingSinceAt = null;
             b.UpdatedAt = DateTime.Now;
             _audit.Log(User, "WithdrawBatch", b.WithdrawBatchId.ToString(), "AUTO_REJECT_TIMEOUT", null, new { b.WithdrawBatchId, b.RejectReason });
         }
         _context.SaveChanges();
+    }
+
+    // GET /api/Ticket/shortage-report?days=30 — Admin visibility into stock shortages: which
+    // batches are stuck on "รออะไหล่" right now (closest to the 24h auto-reject deadline first),
+    // plus which parts have caused the most auto-rejects over the requested window. The trend half
+    // only counts AUTO_REJECT_TIMEOUT audit entries (not free-text manual Reject reasons, which
+    // aren't a reliable shape to parse) — so it has no data from before this feature shipped.
+    [HttpGet("shortage-report")]
+    public IActionResult GetShortageReport(int days = 30)
+    {
+        CheckAndRejectTimedOutBatches();
+
+        var waitingBatches = _context.WithdrawBatches
+            .Include(b => b.Ticket)
+            .Where(b => b.Status == "รออะไหล่")
+            .OrderBy(b => b.WaitingSinceAt)
+            .ToList();
+
+        var mainWh = _context.Locations.FirstOrDefault(l => l.Code == "WH-RAT");
+        var stockByPartId = mainWh == null
+            ? new Dictionary<int, int>()
+            : _context.PartStocks.Where(s => s.LocationId == mainWh.Id).ToDictionary(s => s.PartId, s => s.GoodQty);
+        var batchIds = waitingBatches.Select(b => b.WithdrawBatchId).ToList();
+        var lines = _context.TicketPartLines.Where(l => l.WithdrawBatchId != null && batchIds.Contains(l.WithdrawBatchId.Value)).ToList();
+        var partNameById = _context.Parts.ToDictionary(p => p.Id, p => p.PartName);
+
+        var live = waitingBatches.Select(b =>
+        {
+            var shortages = lines.Where(l => l.WithdrawBatchId == b.WithdrawBatchId)
+                .GroupBy(l => l.PartId)
+                .Select(g => new { partName = partNameById.GetValueOrDefault(g.Key, "?"), need = g.Sum(l => l.Quantity), have = stockByPartId.GetValueOrDefault(g.Key, 0) })
+                .Where(x => x.have < x.need)
+                .Select(x => new { x.partName, shortQty = x.need - x.have })
+                .ToList();
+            var deadline = b.WaitingSinceAt?.Add(WaitingTimeout);
+            return new
+            {
+                b.WithdrawBatchId,
+                b.TicketId,
+                caseNo = b.Ticket?.ExternalTicketNo,
+                techName = b.Ticket?.TechName,
+                techDept = b.Ticket?.TechDept,
+                b.WaitingSinceAt,
+                deadline,
+                hoursWaiting = b.WaitingSinceAt.HasValue ? Math.Round((DateTime.Now - b.WaitingSinceAt.Value).TotalHours, 1) : (double?)null,
+                hoursUntilReject = deadline.HasValue ? Math.Round((deadline.Value - DateTime.Now).TotalHours, 1) : (double?)null,
+                shortages
+            };
+        }).ToList();
+
+        var cutoff = DateTime.UtcNow.AddDays(-Math.Max(1, days));
+        var events = _context.AuditLogs
+            .Where(a => a.EntityType == "WithdrawBatch" && a.Action == "AUTO_REJECT_TIMEOUT" && a.Timestamp >= cutoff)
+            .ToList();
+
+        var counts = new Dictionary<string, int>();
+        foreach (var e in events)
+        {
+            if (string.IsNullOrEmpty(e.NewValues)) continue;
+            string? reason = null;
+            try
+            {
+                using var doc = JsonDocument.Parse(e.NewValues);
+                if (doc.RootElement.TryGetProperty("RejectReason", out var rr)) reason = rr.GetString();
+            }
+            catch (JsonException) { continue; }
+            if (string.IsNullOrEmpty(reason)) continue;
+
+            var colonIdx = reason.IndexOf(':');
+            var body = colonIdx >= 0 ? reason[(colonIdx + 1)..] : reason;
+            foreach (var segment in body.Split(';'))
+            {
+                var m = Regex.Match(segment.Trim(), @"^(.*) ขาด (\d+)$");
+                if (!m.Success) continue;
+                var name = m.Groups[1].Value.Trim();
+                counts[name] = counts.GetValueOrDefault(name, 0) + 1;
+            }
+        }
+        var trend = counts.OrderByDescending(kv => kv.Value)
+            .Select(kv => new { partName = kv.Key, timesCausedReject = kv.Value })
+            .ToList();
+
+        return Ok(new { live, trend, trendDays = days, trendEventCount = events.Count });
+    }
+
+    // GET /api/Ticket/shortage-report/export — Excel version of the live shortage list above
+    // (same rows, one line per shortage so a batch with 2 short parts gets 2 rows).
+    [HttpGet("shortage-report/export")]
+    public IActionResult ExportShortageReport()
+    {
+        CheckAndRejectTimedOutBatches();
+
+        var waitingBatches = _context.WithdrawBatches
+            .Include(b => b.Ticket)
+            .Where(b => b.Status == "รออะไหล่")
+            .OrderBy(b => b.WaitingSinceAt)
+            .ToList();
+
+        var mainWh = _context.Locations.FirstOrDefault(l => l.Code == "WH-RAT");
+        var stockByPartId = mainWh == null
+            ? new Dictionary<int, int>()
+            : _context.PartStocks.Where(s => s.LocationId == mainWh.Id).ToDictionary(s => s.PartId, s => s.GoodQty);
+        var batchIds = waitingBatches.Select(b => b.WithdrawBatchId).ToList();
+        var lines = _context.TicketPartLines.Where(l => l.WithdrawBatchId != null && batchIds.Contains(l.WithdrawBatchId.Value)).ToList();
+        var partNameById = _context.Parts.ToDictionary(p => p.Id, p => p.PartName);
+
+        using var wb = new ClosedXML.Excel.XLWorkbook();
+        var ws = wb.Worksheets.Add("อะไหล่ขาด");
+        var headers = new[] { "Case No.", "ช่าง", "แผนก", "อะไหล่ที่ขาด", "จำนวนที่ขาด", "รอมาแล้ว (ชม.)", "จะโดน auto-reject ใน (ชม.)" };
+        for (int c = 0; c < headers.Length; c++) ws.Cell(1, c + 1).Value = headers[c];
+        ws.Row(1).Style.Font.Bold = true;
+
+        int row = 2;
+        foreach (var b in waitingBatches)
+        {
+            var shortages = lines.Where(l => l.WithdrawBatchId == b.WithdrawBatchId)
+                .GroupBy(l => l.PartId)
+                .Select(g => new { partName = partNameById.GetValueOrDefault(g.Key, "?"), need = g.Sum(l => l.Quantity), have = stockByPartId.GetValueOrDefault(g.Key, 0) })
+                .Where(x => x.have < x.need)
+                .ToList();
+            var hoursWaiting = b.WaitingSinceAt.HasValue ? Math.Round((DateTime.Now - b.WaitingSinceAt.Value).TotalHours, 1) : (double?)null;
+            var hoursUntilReject = b.WaitingSinceAt.HasValue ? Math.Round(WaitingTimeout.TotalHours - hoursWaiting!.Value, 1) : (double?)null;
+
+            if (!shortages.Any())
+            {
+                ws.Cell(row, 1).Value = b.Ticket?.ExternalTicketNo ?? "";
+                ws.Cell(row, 2).Value = b.Ticket?.TechName ?? "";
+                ws.Cell(row, 3).Value = b.Ticket?.TechDept ?? "";
+                ws.Cell(row, 6).Value = hoursWaiting ?? 0;
+                ws.Cell(row, 7).Value = hoursUntilReject ?? 0;
+                row++;
+                continue;
+            }
+            foreach (var s in shortages)
+            {
+                ws.Cell(row, 1).Value = b.Ticket?.ExternalTicketNo ?? "";
+                ws.Cell(row, 2).Value = b.Ticket?.TechName ?? "";
+                ws.Cell(row, 3).Value = b.Ticket?.TechDept ?? "";
+                ws.Cell(row, 4).Value = s.partName;
+                ws.Cell(row, 5).Value = s.need - s.have;
+                ws.Cell(row, 6).Value = hoursWaiting ?? 0;
+                ws.Cell(row, 7).Value = hoursUntilReject ?? 0;
+                row++;
+            }
+        }
+        ws.Columns().AdjustToContents();
+
+        using var stream = new MemoryStream();
+        wb.SaveAs(stream);
+        var fileName = $"Shortage-Report-{DateTime.Now:yyyyMMdd-HHmmss}.xlsx";
+        return File(stream.ToArray(), "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", fileName);
     }
 
     // GET /api/Ticket

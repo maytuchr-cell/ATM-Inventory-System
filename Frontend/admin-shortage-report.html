@@ -1,0 +1,205 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Shortage Report — ATM Inventory</title>
+  <link rel="stylesheet" href="shared/styles.css?v=62">
+  <style>
+    .sr-tabs { display:flex; gap:4px; border-bottom:1px solid var(--border); margin-bottom:16px; }
+    .sr-tab { background:none; border:none; padding:10px 16px; font-family:inherit; font-size:13px; font-weight:600; color:var(--text-secondary); cursor:pointer; border-bottom:2.5px solid transparent; margin-bottom:-1px; }
+    .sr-tab.active { color:var(--orange); border-bottom-color:var(--orange); }
+
+    .sr-toolbar { display:flex; align-items:center; justify-content:space-between; margin-bottom:14px; gap:10px; flex-wrap:wrap; }
+    .sr-count { font-size:13px; color:var(--text-secondary); }
+    .sr-count strong { color:var(--text-primary); }
+
+    .sr-deadline { font-weight:700; }
+    .sr-deadline.crit { color:var(--red); }
+    .sr-deadline.warn { color:#b8860b; }
+    .sr-deadline.ok   { color:var(--text-secondary); }
+
+    .sr-part-list { display:flex; flex-direction:column; gap:2px; }
+    .sr-part-list span { font-size:12.5px; }
+    .sr-part-list .short-qty { color:var(--red); font-weight:600; }
+
+    .sr-days-select { padding:8px 12px; border:1.5px solid var(--border); border-radius:8px; background:var(--bg-input); color:var(--text-primary); font-family:inherit; font-size:13px; }
+
+    .sr-trend-bar-wrap { display:flex; align-items:center; gap:10px; }
+    .sr-trend-bar-track { flex:1; height:10px; border-radius:5px; background:var(--bg-subtle); overflow:hidden; }
+    .sr-trend-bar-fill { height:100%; background:var(--orange); border-radius:5px; }
+    .sr-trend-count { font-weight:700; font-size:13px; width:28px; text-align:right; }
+
+    .sr-note { font-size:12px; color:var(--text-muted); margin-top:14px; }
+  </style>
+</head>
+<body>
+<div class="app-layout">
+  <div id="sidebar-root"></div>
+  <div class="main-content">
+
+    <div class="topbar">
+      <div>
+        <div class="topbar-title">รายงานอะไหล่ขาด</div>
+        <div class="topbar-sub">Ticket ที่ติดอยู่เพราะสต็อกกลางไม่พอ — และอะไหล่ที่ทำให้เกิดปัญหานี้บ่อยที่สุด</div>
+      </div>
+      <div style="display:flex;gap:10px;align-items:center;">
+        <button class="btn btn-secondary" id="sr-export-btn" onclick="exportShortage()">⬇ ส่งออก Excel</button>
+      </div>
+    </div>
+
+    <div class="page-body">
+      <div class="sr-tabs">
+        <button class="sr-tab active" id="sr-tab-live" onclick="switchSrTab('live')">ตอนนี้ (Live)</button>
+        <button class="sr-tab" id="sr-tab-trend" onclick="switchSrTab('trend')">เทรนด์ย้อนหลัง</button>
+      </div>
+
+      <!-- Live panel -->
+      <div id="sr-panel-live">
+        <div class="card">
+          <div class="card-body">
+            <div class="sr-toolbar">
+              <span class="sr-count"><strong id="sr-live-count">0</strong> Ticket ที่รออะไหล่อยู่ตอนนี้</span>
+            </div>
+            <div class="tbl-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Case No.</th>
+                    <th>ช่าง</th>
+                    <th>อะไหล่ที่ขาด</th>
+                    <th>รอมาแล้ว</th>
+                    <th>จะโดน auto-reject ใน</th>
+                  </tr>
+                </thead>
+                <tbody id="sr-live-tbody"></tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Trend panel -->
+      <div id="sr-panel-trend" style="display:none;">
+        <div class="card">
+          <div class="card-body">
+            <div class="sr-toolbar">
+              <span class="sr-count"><strong id="sr-trend-count">0</strong> ครั้งที่ auto-reject ในช่วงที่เลือก</span>
+              <select class="sr-days-select" id="sr-days-select" onchange="loadShortageReport()">
+                <option value="7">7 วันล่าสุด</option>
+                <option value="30" selected>30 วันล่าสุด</option>
+                <option value="90">90 วันล่าสุด</option>
+              </select>
+            </div>
+            <div class="tbl-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th style="width:40%">อะไหล่</th>
+                    <th>จำนวนครั้งที่ทำให้ auto-reject</th>
+                  </tr>
+                </thead>
+                <tbody id="sr-trend-tbody"></tbody>
+              </table>
+            </div>
+            <div class="sr-note">
+              นับเฉพาะการ auto-reject อัตโนมัติ (รอเกิน 24 ชม.) เท่านั้น — ไม่รวม Reject ที่ Admin กดเอง เพราะเหตุผลที่พิมพ์เองไม่มีรูปแบบตายตัวให้นับได้แม่นยำ
+              ข้อมูลเริ่มนับตั้งแต่ฟีเจอร์นี้เปิดใช้งาน จึงไม่มีประวัติย้อนหลังก่อนหน้านั้น
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script src="https://code.iconify.design/iconify-icon/2.1.0/iconify-icon.min.js"></script>
+<script src="shared/translations.js?v=62"></script>
+<script src="shared/toast.js?v=62"></script>
+<script src="shared/api.js?v=62"></script>
+<script src="shared/layout.js?v=62"></script>
+<script>
+    let srTab = 'live';
+    function switchSrTab(tab) {
+        srTab = tab;
+        document.getElementById('sr-tab-live').classList.toggle('active', tab === 'live');
+        document.getElementById('sr-tab-trend').classList.toggle('active', tab === 'trend');
+        document.getElementById('sr-panel-live').style.display = tab === 'live' ? 'block' : 'none';
+        document.getElementById('sr-panel-trend').style.display = tab === 'trend' ? 'block' : 'none';
+    }
+
+    function partsSummaryHtml(shortages) {
+        if (!shortages || !shortages.length) return `<span class="text-muted">—</span>`;
+        return `<div class="sr-part-list">${shortages.map(s =>
+            `<span>${s.partName} <span class="short-qty">ขาด ${s.shortQty}</span></span>`).join('')}</div>`;
+    }
+
+    function deadlineClass(hoursUntilReject) {
+        if (hoursUntilReject == null) return 'ok';
+        if (hoursUntilReject <= 4) return 'crit';
+        if (hoursUntilReject <= 12) return 'warn';
+        return 'ok';
+    }
+
+    async function loadShortageReport() {
+        const days = document.getElementById('sr-days-select').value;
+        try {
+            const data = await api.tickets.shortageReport(days);
+            renderLive(data.live || []);
+            renderTrend(data.trend || [], data.trendEventCount || 0);
+        } catch (e) {
+            showToast?.(e.message || 'โหลดรายงานไม่สำเร็จ', 'error');
+        }
+    }
+
+    function renderLive(live) {
+        document.getElementById('sr-live-count').textContent = live.length;
+        const tbody = document.getElementById('sr-live-tbody');
+        tbody.innerHTML = live.length
+            ? live.map(b => `
+                <tr>
+                    <td><span class="id-chip">${b.caseNo || '—'}</span></td>
+                    <td>${b.techName || '—'}${b.techDept ? `<div class="sub-text">${b.techDept}</div>` : ''}</td>
+                    <td>${partsSummaryHtml(b.shortages)}</td>
+                    <td>${b.hoursWaiting != null ? b.hoursWaiting + ' ชม.' : '—'}</td>
+                    <td class="sr-deadline ${deadlineClass(b.hoursUntilReject)}">${b.hoursUntilReject != null ? (b.hoursUntilReject > 0 ? b.hoursUntilReject + ' ชม.' : 'เกินกำหนดแล้ว') : '—'}</td>
+                </tr>`).join('')
+            : `<tr><td colspan="5" class="empty-state">ไม่มี Ticket ที่รออะไหล่อยู่ตอนนี้ 🎉</td></tr>`;
+    }
+
+    function renderTrend(trend, eventCount) {
+        document.getElementById('sr-trend-count').textContent = eventCount;
+        const tbody = document.getElementById('sr-trend-tbody');
+        const max = trend.length ? Math.max(...trend.map(t => t.timesCausedReject)) : 0;
+        tbody.innerHTML = trend.length
+            ? trend.map(t => `
+                <tr>
+                    <td>${t.partName}</td>
+                    <td>
+                        <div class="sr-trend-bar-wrap">
+                            <div class="sr-trend-bar-track"><div class="sr-trend-bar-fill" style="width:${max ? (t.timesCausedReject / max * 100) : 0}%"></div></div>
+                            <span class="sr-trend-count">${t.timesCausedReject}</span>
+                        </div>
+                    </td>
+                </tr>`).join('')
+            : `<tr><td colspan="2" class="empty-state">ยังไม่มี auto-reject ในช่วงเวลาที่เลือก</td></tr>`;
+    }
+
+    async function exportShortage() {
+        try {
+            const { blob, fileName } = await api.tickets.exportShortageReport();
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url; a.download = fileName;
+            document.body.appendChild(a); a.click(); a.remove();
+            URL.revokeObjectURL(url);
+            showToast?.('ดาวน์โหลด Excel แล้ว', 'success');
+        } catch (e) {
+            showToast?.(e.message || 'ส่งออกไม่สำเร็จ', 'error');
+        }
+    }
+
+    loadShortageReport();
+</script>
+</body>
+</html>
