@@ -133,7 +133,62 @@ public class TicketWorkflowTests
         var batch = context.WithdrawBatches.First(b => b.TicketId == ticket.TicketId);
         Assert.Equal("รออะไหล่", batch.Status);
         Assert.Null(batch.ApprovedAt);
+        Assert.NotNull(batch.WaitingSinceAt); // starts the 24h auto-reject-on-timeout clock
         Assert.Equal(1, context.PartStocks.First(s => s.LocationId == mainWh.Id).GoodQty); // untouched
+    }
+
+    [Fact]
+    public void GetAllTickets_RejectsWaitingForPartsBatch_AfterTimeout_WithShortageInReason()
+    {
+        var (controller, context) = TicketControllerFixture.Create();
+        var mainWh = context.Locations.First(l => l.Code == "WH-RAT");
+        context.PartStocks.First(s => s.LocationId == mainWh.Id).GoodQty = 1;
+        context.SaveChanges();
+
+        controller.SyncFromAservice(new SyncTicketDto { ExternalTicketNo = "T1C", TechName = "Tech" });
+        var ticket = context.Tickets.First(t => t.ExternalTicketNo == "T1C");
+        controller.SubmitWithdraw(ticket.TicketId, new SubmitLinesDto
+        {
+            Lines = new() { new LineDto { PartNo = TicketControllerFixture.PartNo, Quantity = 2 } },
+            Address = "123 Main St"
+        });
+        var batch = context.WithdrawBatches.First(b => b.TicketId == ticket.TicketId);
+        Assert.Equal("รออะไหล่", batch.Status);
+
+        // Backdate past the 24h window, as if this had been sitting untouched since yesterday.
+        batch.WaitingSinceAt = DateTime.Now.AddDays(-2);
+        context.SaveChanges();
+
+        controller.GetAllTickets(); // lazy timeout check runs here
+
+        var updated = context.WithdrawBatches.First(b => b.WithdrawBatchId == batch.WithdrawBatchId);
+        Assert.Equal("Reject", updated.Status);
+        Assert.Contains("Test Part", updated.RejectReason);
+        Assert.Contains("ขาด 1", updated.RejectReason);
+        Assert.Null(updated.WaitingSinceAt);
+    }
+
+    [Fact]
+    public void GetAllTickets_LeavesWaitingForPartsBatch_UntilTimeoutElapses()
+    {
+        var (controller, context) = TicketControllerFixture.Create();
+        var mainWh = context.Locations.First(l => l.Code == "WH-RAT");
+        context.PartStocks.First(s => s.LocationId == mainWh.Id).GoodQty = 1;
+        context.SaveChanges();
+
+        controller.SyncFromAservice(new SyncTicketDto { ExternalTicketNo = "T1D", TechName = "Tech" });
+        var ticket = context.Tickets.First(t => t.ExternalTicketNo == "T1D");
+        controller.SubmitWithdraw(ticket.TicketId, new SubmitLinesDto
+        {
+            Lines = new() { new LineDto { PartNo = TicketControllerFixture.PartNo, Quantity = 2 } },
+            Address = "123 Main St"
+        });
+        var batch = context.WithdrawBatches.First(b => b.TicketId == ticket.TicketId);
+
+        controller.GetAllTickets(); // well within the 24h window — must not reject yet
+
+        var updated = context.WithdrawBatches.First(b => b.WithdrawBatchId == batch.WithdrawBatchId);
+        Assert.Equal("รออะไหล่", updated.Status);
     }
 
     [Fact]

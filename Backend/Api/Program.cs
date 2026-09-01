@@ -421,6 +421,7 @@ using (var scope = app.Services.CreateScope())
                     FeId TEXT NULL,
                     Sla TEXT NULL,
                     AtmCode TEXT NULL,
+                    WaitingSinceAt TEXT NULL,
                     CreatedAt TEXT NOT NULL,
                     UpdatedAt TEXT NOT NULL,
                     CONSTRAINT FK_WithdrawBatches_Tickets FOREIGN KEY (TicketId) REFERENCES Tickets (TicketId) ON DELETE CASCADE
@@ -445,6 +446,11 @@ using (var scope = app.Services.CreateScope())
                 context.Database.ExecuteSqlRaw("ALTER TABLE WithdrawBatches ADD COLUMN Sla TEXT NULL;");
                 context.Database.ExecuteSqlRaw("ALTER TABLE WithdrawBatches ADD COLUMN AtmCode TEXT NULL;");
                 Console.WriteLine("✅ Migration: added WithdrawBatches.NeededByDate/FeId/Sla/AtmCode");
+            }
+            if (!wbCols.Contains("WaitingSinceAt"))
+            {
+                context.Database.ExecuteSqlRaw("ALTER TABLE WithdrawBatches ADD COLUMN WaitingSinceAt TEXT NULL;");
+                Console.WriteLine("✅ Migration: added WithdrawBatches.WaitingSinceAt");
             }
 
             var tplCols2 = new HashSet<string>(StringComparer.OrdinalIgnoreCase);

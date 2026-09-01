@@ -55,6 +55,12 @@ public class WithdrawBatch
     public string? Sla { get; set; }             // Delivery urgency tier, e.g. "Urgent 4 Hr (Cut-off 13:30)"
     public string? AtmCode { get; set; }         // Site/ATM machine code, e.g. "T091B030B950G262"
 
+    // When this batch first landed on "รออะไหล่" (insufficient stock) — null once it leaves that
+    // status (auto-approved, rejected, or cancelled). Drives the 24h auto-reject-on-timeout check
+    // in TicketController.CheckAndRejectTimedOutBatches; kept across repeated failed substitution
+    // attempts (only set the first time, via ??=) so the clock doesn't reset on every retry.
+    public DateTime? WaitingSinceAt { get; set; }
+
     public DateTime CreatedAt { get; set; } = DateTime.Now;
     public DateTime UpdatedAt { get; set; } = DateTime.Now;
 

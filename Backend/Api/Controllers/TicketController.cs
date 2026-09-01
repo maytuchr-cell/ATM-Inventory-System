@@ -58,10 +58,54 @@ public class TicketController : ControllerBase
         return best;
     }
 
+    // A "รออะไหล่" batch that's been waiting for stock more than a day auto-rejects itself, so the
+    // ticket doesn't just sit there indefinitely — the tech gets a clear reason (which parts were
+    // short) and can resubmit once stock or the request changes. Checked lazily on every ticket
+    // list load rather than via a background job (matches TryAutoApprove's on-demand style, no
+    // extra hosted-service infra needed for this internal, low-traffic workflow).
+    private static readonly TimeSpan WaitingTimeout = TimeSpan.FromDays(1);
+    private void CheckAndRejectTimedOutBatches()
+    {
+        var cutoff = DateTime.Now - WaitingTimeout;
+        var timedOut = _context.WithdrawBatches
+            .Where(b => b.Status == "รออะไหล่" && b.WaitingSinceAt != null && b.WaitingSinceAt < cutoff)
+            .ToList();
+        if (timedOut.Count == 0) return;
+
+        var mainWh = _context.Locations.FirstOrDefault(l => l.Code == "WH-RAT");
+        var stockByPartId = mainWh == null
+            ? new Dictionary<int, int>()
+            : _context.PartStocks.Where(s => s.LocationId == mainWh.Id).ToDictionary(s => s.PartId, s => s.GoodQty);
+        var batchIds = timedOut.Select(b => b.WithdrawBatchId).ToList();
+        var lines = _context.TicketPartLines.Where(l => l.WithdrawBatchId != null && batchIds.Contains(l.WithdrawBatchId.Value)).ToList();
+        var partNameById = _context.Parts.ToDictionary(p => p.Id, p => p.PartName);
+
+        foreach (var b in timedOut)
+        {
+            var shortages = lines.Where(l => l.WithdrawBatchId == b.WithdrawBatchId)
+                .GroupBy(l => l.PartId)
+                .Select(g => new { Name = partNameById.GetValueOrDefault(g.Key, "?"), Need = g.Sum(l => l.Quantity), Have = stockByPartId.GetValueOrDefault(g.Key, 0) })
+                .Where(x => x.Have < x.Need)
+                .Select(x => $"{x.Name} ขาด {x.Need - x.Have}")
+                .ToList();
+
+            b.Status = "Reject";
+            b.RejectReason = shortages.Count > 0
+                ? $"อะไหล่ไม่พอเกิน 24 ชม.: {string.Join(", ", shortages)}"
+                : "อะไหล่ไม่พอเกิน 24 ชม.";
+            b.WaitingSinceAt = null;
+            b.UpdatedAt = DateTime.Now;
+            _audit.Log(User, "WithdrawBatch", b.WithdrawBatchId.ToString(), "AUTO_REJECT_TIMEOUT", null, new { b.WithdrawBatchId, b.RejectReason });
+        }
+        _context.SaveChanges();
+    }
+
     // GET /api/Ticket
     [HttpGet]
     public IActionResult GetAllTickets()
     {
+        CheckAndRejectTimedOutBatches();
+
         var tickets = _context.Tickets
             .Include(t => t.WithdrawBatches)
             .OrderByDescending(t => t.CreatedAt)
@@ -122,7 +166,7 @@ public class TicketController : ControllerBase
                     b.WithdrawBatchId, b.Status, b.RejectReason, b.ApproverName, b.ApprovedAt, b.EmailSentAt,
                     b.WithdrawAddress, b.WithdrawDescription, b.WithdrawSlipNo, b.WithdrawDate,
                     b.EmployeeCode, b.UsageStatus, b.TechSupportName, b.CreatedAt, b.UpdatedAt,
-                    b.NeededByDate, b.FeId, b.Sla, b.AtmCode,
+                    b.NeededByDate, b.FeId, b.Sla, b.AtmCode, b.WaitingSinceAt,
                     lines = lines.Where(l => l.WithdrawBatchId == b.WithdrawBatchId).Select(l => LineOut(l, withdrawnPartNos)),
                     attachments = attachments.Where(a => a.WithdrawBatchId == b.WithdrawBatchId)
                         .Select(a => new { a.TicketAttachmentId, a.Phase, a.FilePath, a.FileName, a.UploadedAt })
@@ -368,9 +412,11 @@ public class TicketController : ControllerBase
         if (!hasEnough)
         {
             batch.Status = "รออะไหล่";
+            batch.WaitingSinceAt ??= DateTime.Now; // keep the original wait start across retries
             batch.UpdatedAt = DateTime.Now;
             return;
         }
+        batch.WaitingSinceAt = null;
 
         var externalTicketNo = _context.Tickets.Where(t => t.TicketId == batch.TicketId).Select(t => t.ExternalTicketNo).FirstOrDefault();
         foreach (var line in withdrawLines)
@@ -490,6 +536,7 @@ public class TicketController : ControllerBase
 
         batch.Status = "Reject";
         batch.RejectReason = dto.Reason;
+        batch.WaitingSinceAt = null;
         batch.UpdatedAt = DateTime.Now;
 
         _context.SaveChanges();
