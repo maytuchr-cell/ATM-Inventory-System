@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Tech Workspace — ATM Inventory</title>
-    <link rel="stylesheet" href="shared/styles.css?v=60">
+    <link rel="stylesheet" href="shared/styles.css?v=61">
     <style>
         .section-head { display:flex; align-items:center; gap:10px; margin-bottom:20px; }
         .section-accent { width:4px; height:22px; background:var(--orange); border-radius:2px; }
@@ -173,6 +173,13 @@
                     <div class="tk-tabs">
                         <button class="tk-tab active" id="tabActive" onclick="switchTab('active')">Ticket ของฉัน</button>
                         <button class="tk-tab" id="tabHistory" onclick="switchTab('history')">ประวัติการเบิก</button>
+                    </div>
+                    <div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap;">
+                        <input id="ticketSearchInput" type="text" placeholder="🔍 ค้นหา Ticket, ชื่อช่าง, แผนก..."
+                               class="select-part" style="flex:1;min-width:180px;margin-bottom:0;" oninput="onTicketSearchInput()">
+                        <select id="ticketStatusFilter" class="select-part" style="width:auto;margin-bottom:0;" onchange="onTicketStatusFilterChange()">
+                            <option value="">ทุกสถานะ</option>
+                        </select>
                     </div>
                     <div class="tbl-wrap" id="ticketsTableWrap"></div>
                 </div>
@@ -449,10 +456,10 @@
     <option value="NBD17 (Cut-off 16:00)">
 </datalist>
 
-<script src="shared/translations.js?v=60"></script>
-<script src="shared/toast.js?v=60"></script>
-<script src="shared/api.js?v=60"></script>
-<script src="shared/layout.js?v=60"></script>
+<script src="shared/translations.js?v=61"></script>
+<script src="shared/toast.js?v=61"></script>
+<script src="shared/api.js?v=61"></script>
+<script src="shared/layout.js?v=61"></script>
 <script>
     // Auth guard — runs before anything else renders. No token means nobody actually signed in
     // through login-tech.html (or login.html); bounce there immediately instead of quietly
@@ -544,6 +551,43 @@
         document.getElementById('tabHistory').classList.toggle('active', tab === 'history');
         document.getElementById('tickets-section-title').textContent = tab === 'active' ? 'Ticket ของฉัน' : 'ประวัติการเบิก';
         renderTicketsTable();
+    }
+
+    // Free-text search (ticket no. / tech name / dept) + status dropdown, both scoped to whichever
+    // tab is active — the dropdown's options are rebuilt from whatever statuses actually show up
+    // in that tab's rows, so it never lists a status this tech can't currently see.
+    let ticketSearchQuery = '';
+    let ticketStatusFilterValue = '';
+    function onTicketSearchInput() {
+        ticketSearchQuery = document.getElementById('ticketSearchInput').value.trim().toLowerCase();
+        renderTicketsTable();
+    }
+    function onTicketStatusFilterChange() {
+        ticketStatusFilterValue = document.getElementById('ticketStatusFilter').value;
+        renderTicketsTable();
+    }
+    function matchesTicketSearch(tk) {
+        if (!ticketSearchQuery) return true;
+        const haystack = [tk.externalTicketNo, tk.techName, tk.techDept].filter(Boolean).join(' ').toLowerCase();
+        return haystack.includes(ticketSearchQuery);
+    }
+    function matchesTicketStatusFilter(tk) {
+        if (!ticketStatusFilterValue) return true;
+        if (tk.displayStatus === ticketStatusFilterValue) return true;
+        return (tk.withdrawBatches || []).some(b => b.status === ticketStatusFilterValue);
+    }
+    function updateTicketStatusFilterOptions(rows) {
+        const select = document.getElementById('ticketStatusFilter');
+        const statuses = new Set();
+        rows.forEach(tk => {
+            (tk.withdrawBatches || []).forEach(b => { if (b.status) statuses.add(b.status); });
+            if (tk.status) statuses.add(tk.status);
+        });
+        const current = select.value;
+        select.innerHTML = '<option value="">ทุกสถานะ</option>' +
+            [...statuses].map(s => `<option value="${s}">${(STATUS_BADGE[s] || {}).label || s}</option>`).join('');
+        if (statuses.has(current)) select.value = current;
+        else { ticketStatusFilterValue = ''; }
     }
 
     const CONDITION_LABEL = { Good: 'ของดี', Bad: 'ของเสีย', Lost: 'สูญหาย' };
@@ -743,7 +787,9 @@
     }
 
     function renderTicketsTable() {
-        const rows = cachedTickets.filter(tk => TERMINAL_STATUSES.includes(tk.displayStatus) === (activeTab === 'history'));
+        const tabRows = cachedTickets.filter(tk => TERMINAL_STATUSES.includes(tk.displayStatus) === (activeTab === 'history'));
+        updateTicketStatusFilterOptions(tabRows);
+        const rows = tabRows.filter(tk => matchesTicketSearch(tk) && matchesTicketStatusFilter(tk));
         document.getElementById('tickets-count').textContent = rows.length + ' ตั๋ว';
         const wrap = document.getElementById('ticketsTableWrap');
 
