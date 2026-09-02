@@ -483,6 +483,23 @@ using (var scope = app.Services.CreateScope())
         }
         catch (Exception mex) { Console.WriteLine($"⚠ WithdrawBatches migration skipped: {mex.Message}"); }
 
+        // ── Lightweight migration: create SavedAddresses table — a tech's own reusable address
+        //    book, picked from on both the withdraw and return forms (see SavedAddress.cs). ──
+        if (isSqlite) try
+        {
+            context.Database.ExecuteSqlRaw(@"
+                CREATE TABLE IF NOT EXISTS SavedAddresses (
+                    SavedAddressId INTEGER NOT NULL CONSTRAINT PK_SavedAddresses PRIMARY KEY AUTOINCREMENT,
+                    TechEmail TEXT NOT NULL,
+                    Label TEXT NOT NULL,
+                    Address TEXT NOT NULL,
+                    CreatedAt TEXT NOT NULL
+                );");
+            context.Database.ExecuteSqlRaw(
+                "CREATE INDEX IF NOT EXISTS IX_SavedAddresses_TechEmail ON SavedAddresses (TechEmail);");
+        }
+        catch (Exception mex) { Console.WriteLine($"⚠ SavedAddresses migration skipped: {mex.Message}"); }
+
         // ── One-shot data migration: fold existing Ticket rows' withdraw fields into
         //    WithdrawBatch rows, and merge "sibling" Ticket rows that share an ExternalTicketNo
         //    (the old multi-withdraw mechanic — see CreateAdditionalWithdraw, now removed) into a

@@ -49,6 +49,7 @@ public class AppDbContext : DbContext
     public DbSet<AtmModel> AtmModels { get; set; }
     public DbSet<AtmModelPart> AtmModelParts { get; set; }
     public DbSet<User> Users { get; set; }
+    public DbSet<SavedAddress> SavedAddresses { get; set; }
 
     // Bump concurrency tokens on every insert/update so the original value is used in the
     // UPDATE ... WHERE RowVersion = @original check. A mismatch throws DbUpdateConcurrencyException.

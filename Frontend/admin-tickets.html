@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Tickets — ATM Inventory</title>
-    <link rel="stylesheet" href="shared/styles.css?v=65">
+    <link rel="stylesheet" href="shared/styles.css?v=70">
     <style>
         /* Page-specific overrides */
         .section-head { display:flex; align-items:center; gap:10px; margin-bottom:20px; }
@@ -323,6 +323,23 @@
     </div>
 </div>
 
+<!-- Approve withdraw batch modal — SLA is Admin's call now, set at the same step as approval -->
+<div class="reason-overlay" id="approveOverlay">
+    <div class="reason-modal">
+        <h3>อนุมัติใบเบิก</h3>
+        <p>สถานะจะเปลี่ยนเป็น "รอส่งเมล DHL" — เลือก SLA สำหรับแจ้ง DHL</p>
+        <label style="font-size:12px;color:var(--text-secondary);display:block;margin-bottom:6px;">SLA</label>
+        <select id="approveSlaSelect" class="select-part" style="margin-bottom:14px;">
+            <option value="NBD17 (Cut-off 16:00)" selected>NBD17 (Cut-off 16:00)</option>
+            <option value="Urgent 4 Hr (Cut-off 13:30)">Urgent 4 Hr (Cut-off 13:30)</option>
+        </select>
+        <div class="reason-modal-actions">
+            <button class="btn-cancel" style="width:auto;padding:8px 16px;" onclick="closeApproveModal()">ยกเลิก</button>
+            <button class="btn-approve" style="width:auto;padding:8px 16px;margin-bottom:0;" onclick="confirmApprove()">อนุมัติ</button>
+        </div>
+    </div>
+</div>
+
 <!-- Ticket Detail Modal -->
 <div class="detail-overlay" id="detailOverlay" onclick="closeDetail(event)">
     <div class="detail-modal" id="detailModal">
@@ -336,10 +353,10 @@
     </div>
 </div>
 
-<script src="shared/translations.js?v=65"></script>
-<script src="shared/toast.js?v=65"></script>
-<script src="shared/api.js?v=65"></script>
-<script src="shared/layout.js?v=65"></script>
+<script src="shared/translations.js?v=70"></script>
+<script src="shared/toast.js?v=70"></script>
+<script src="shared/api.js?v=70"></script>
+<script src="shared/layout.js?v=70"></script>
 <script>
     let cachedTickets = [];
     let rejectTargetId = null;
@@ -728,7 +745,7 @@
                 if (actionableBatch.status === "รอ" || actionableBatch.status === "รออะไหล่") {
                     action = `
                         <div class="ticket-action-row">
-                            <button class="btn-approve" onclick="approveBatch(${tk.ticketId},${actionableBatch.withdrawBatchId})" ${batchHasShortage ? 'disabled title="สต็อกในคลังไม่พอสำหรับอะไหล่บางรายการ"' : ''} style="${batchHasShortage ? 'opacity:.45;cursor:not-allowed;' : ''}">
+                            <button class="btn-approve" onclick="${actionableBatch.status === "รออะไหล่" ? `approveBatch(${tk.ticketId},${actionableBatch.withdrawBatchId})` : `openApproveModal(${tk.ticketId},${actionableBatch.withdrawBatchId})`}" ${batchHasShortage ? 'disabled title="สต็อกในคลังไม่พอสำหรับอะไหล่บางรายการ"' : ''} style="${batchHasShortage ? 'opacity:.45;cursor:not-allowed;' : ''}">
                                 <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
                                 ${actionableBatch.status === "รออะไหล่" ? "เช็คสต็อกอีกครั้ง" : "อนุมัติ"}
                             </button>
@@ -779,13 +796,39 @@
         });
     }
 
+    // "รออะไหล่" recheck path — just re-runs the stock check, doesn't itself finalize approval,
+    // so no SLA prompt here (see openApproveModal for the real approve step).
     async function approveBatch(ticketId, batchId) {
-        if (!confirm('อนุมัติใบเบิกนี้? สถานะจะเปลี่ยนเป็น "รอส่งเมล DHL"')) return;
         try {
             await api.tickets.approveBatch(ticketId, batchId);
             await fetchTickets();
+            showToast?.('เช็คสต็อกแล้ว', 'success');
+        } catch (e) { showToast?.(e.message || 'เกิดข้อผิดพลาด กรุณาลองใหม่', 'error'); }
+    }
+
+    // Real approve step ("รอ" → "รอส่งเมล DHL") — Admin also picks the DHL SLA here (used to be a
+    // tech-filled form field, now Admin's call at this same step, defaulting to NBD17).
+    let approveTargetTicketId = null;
+    let approveTargetBatchId = null;
+    function openApproveModal(ticketId, batchId) {
+        approveTargetTicketId = ticketId;
+        approveTargetBatchId = batchId;
+        document.getElementById('approveSlaSelect').value = 'NBD17 (Cut-off 16:00)';
+        document.getElementById('approveOverlay').classList.add('open');
+    }
+    function closeApproveModal() {
+        document.getElementById('approveOverlay').classList.remove('open');
+        approveTargetTicketId = null;
+        approveTargetBatchId = null;
+    }
+    async function confirmApprove() {
+        const sla = document.getElementById('approveSlaSelect').value;
+        try {
+            await api.tickets.approveBatch(approveTargetTicketId, approveTargetBatchId, sla);
+            await fetchTickets();
             showToast?.('อนุมัติใบเบิกแล้ว', 'success');
         } catch (e) { showToast?.(e.message || 'เกิดข้อผิดพลาด กรุณาลองใหม่', 'error'); }
+        closeApproveModal();
     }
 
     // Admin confirms the DHL email actually went out — "รอส่งเมล DHL" → "เดินทาง". From here the

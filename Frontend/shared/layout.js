@@ -81,6 +81,7 @@
       adminOnly: false,
       items: [
         { key: 'nav.workspace', href: 'tech.html', icon: 'mdi:tools', adminOnly: false },
+        { key: 'nav.addresses', href: 'tech-addresses.html', icon: 'mdi:map-marker', adminOnly: false },
       ]
     },
   ];

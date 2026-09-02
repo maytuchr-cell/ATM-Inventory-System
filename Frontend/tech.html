@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Tech Workspace — ATM Inventory</title>
-    <link rel="stylesheet" href="shared/styles.css?v=65">
+    <link rel="stylesheet" href="shared/styles.css?v=70">
     <style>
         .section-head { display:flex; align-items:center; gap:10px; margin-bottom:20px; }
         .section-accent { width:4px; height:22px; background:var(--orange); border-radius:2px; }
@@ -76,15 +76,26 @@
         .tk-part-picker .tk-part-caret { position:absolute; right:9px; top:9px; pointer-events:none; color:var(--text-muted); font-size:11px; }
         .tk-part-dropdown { display:none; position:absolute; left:0; right:0; top:calc(100% + 4px); background:var(--bg-card); border:1.5px solid var(--border); border-radius:8px; max-height:220px; overflow-y:auto; z-index:30; box-shadow:0 8px 24px rgba(0,0,0,.15); }
         .tk-part-dropdown.open { display:block; }
-        .tk-part-option { padding:8px 10px; font-size:12.5px; cursor:pointer; border-bottom:1px solid var(--border); }
+        .tk-part-option { display:flex; align-items:center; gap:8px; padding:6px 10px; font-size:12.5px; cursor:pointer; border-bottom:1px solid var(--border); }
         .tk-part-option:last-child { border-bottom:none; }
         .tk-part-option:hover, .tk-part-option.active { background:var(--orange-light); color:var(--orange); }
+        .tk-part-option .tk-part-label { flex:1; min-width:0; }
         .tk-part-option .tk-part-no { font-size:10.5px; color:var(--text-muted); display:block; margin-top:1px; }
         .tk-part-option:hover .tk-part-no, .tk-part-option.active .tk-part-no { color:var(--orange); opacity:.75; }
         .tk-part-empty { padding:10px; font-size:12px; color:var(--text-muted); text-align:center; }
+        /* Part thumbnails — dropdown row (36px) and the confirmed line badge (34px). Both share
+           the same look; a part with no uploaded photo gets a placeholder camera icon instead of
+           a broken <img>. Clicking either opens the full photo in a new tab (same pattern already
+           used for ticket attachment photos elsewhere in this file). */
+        .tk-part-thumb, .tk-part-thumb-ph {
+            flex:0 0 auto; width:36px; height:36px; border-radius:7px; object-fit:cover;
+            border:1px solid var(--border); background:var(--bg-subtle); cursor:pointer;
+        }
+        .tk-part-thumb-ph { display:flex; align-items:center; justify-content:center; font-size:15px; cursor:default; color:var(--text-muted); }
         .tk-line-row input[type=number] { flex:0 0 70px; padding:8px 8px; border-radius:8px; background:var(--bg-input); color:var(--text-primary); border:1.5px solid var(--border); font-family:inherit; font-size:13px; outline:none; text-align:center; }
         .tk-line-row select.tk-condition { flex:0 0 92px; padding:8px 6px; border-radius:8px; background:var(--bg-input); color:var(--text-primary); border:1.5px solid var(--border); font-family:inherit; font-size:12.5px; outline:none; }
         .tk-line-row .tk-remove { flex:0 0 auto; background:none; border:none; color:var(--red); cursor:pointer; font-size:15px; padding:4px 6px; }
+        .tk-line-thumb-wrap { flex:0 0 auto; }
         .tk-photo-preview { display:flex; flex-wrap:wrap; gap:8px; margin-top:10px; }
         .tk-photo-thumb { position:relative; width:64px; height:64px; }
         .tk-photo-thumb img { width:100%; height:100%; object-fit:cover; border-radius:8px; border:1.5px solid var(--border); }
@@ -244,6 +255,9 @@
             <button class="tmb-menu-item" onclick="tmbToggleLang()">
                 <span class="tmb-menu-item-icon">🌐</span> <span id="tmb-lang-label">เปลี่ยนภาษา</span>
             </button>
+            <button class="tmb-menu-item" onclick="location.href='tech-addresses.html'">
+                <span class="tmb-menu-item-icon">📍</span> สมุดบันทึกที่อยู่
+            </button>
             <button class="tmb-menu-item tmb-danger" onclick="signOut()">
                 <span class="tmb-menu-item-icon">⏏</span> ออกจากระบบ
             </button>
@@ -352,15 +366,9 @@
                     <input id="wdAtmCode" type="text" placeholder="เช่น T091B030B950G262" class="select-part" style="margin-bottom:0;">
                 </div>
             </div>
-            <div class="tk-2col" style="margin-bottom:18px;">
-                <div>
-                    <label style="font-size:11px;color:var(--text-muted);display:block;margin-bottom:4px;">FE ID (โซน/เส้นทาง)</label>
-                    <input id="wdFeId" type="text" placeholder="เช่น Center 04" class="select-part" style="margin-bottom:0;">
-                </div>
-                <div>
-                    <label style="font-size:11px;color:var(--text-muted);display:block;margin-bottom:4px;">SLA</label>
-                    <input id="wdSla" type="text" placeholder="เช่น Urgent 4 Hr (Cut-off 13:30)" class="select-part" style="margin-bottom:0;" list="slaOptions">
-                </div>
+            <div style="margin-bottom:18px;">
+                <label style="font-size:11px;color:var(--text-muted);display:block;margin-bottom:4px;">FE ID (โซน/เส้นทาง)</label>
+                <input id="wdFeId" type="text" placeholder="เช่น Center 04" class="select-part" style="margin-bottom:0;">
             </div>
 
             <span class="tk-section-label">เลือกอะไหล่ที่ต้องการเบิก</span>
@@ -368,6 +376,7 @@
             <button type="button" class="btn-add-line" onclick="addLine('withdraw')">+ เพิ่มอะไหล่</button>
 
             <span class="tk-section-label" style="margin-top:18px;display:block;">ที่อยู่จัดส่ง</span>
+            <button type="button" class="btn-add-line" style="margin-bottom:8px;" onclick="openAddressPicker('wdAddress')">📍 เลือกที่บันทึกไว้</button>
             <textarea id="wdAddress" class="form-textarea" placeholder="กรอกที่อยู่สำหรับจัดส่งอะไหล่..." style="min-height:70px;"></textarea>
 
             <span class="tk-section-label" style="margin-top:18px;display:block;">แนบรูปภาพ</span>
@@ -445,6 +454,7 @@
             <button type="button" class="btn-add-line" onclick="addLine('return')">+ เพิ่มอะไหล่นอกเหนือใบเบิก</button>
 
             <span class="tk-section-label" style="margin-top:18px;display:block;">ที่อยู่ (จุดส่งคืน)</span>
+            <button type="button" class="btn-add-line" style="margin-bottom:8px;" onclick="openAddressPicker('rtAddress')">📍 เลือกที่บันทึกไว้</button>
             <textarea id="rtAddress" class="form-textarea" placeholder="กรอกที่อยู่ที่จะส่งของคืน..." style="min-height:70px;"></textarea>
 
             <span class="tk-section-label" style="margin-top:18px;display:block;">แนบรูปภาพ</span>
@@ -455,6 +465,24 @@
             <div class="tk-modal-actions">
                 <button type="button" class="btn btn-ghost" onclick="closeReturnModal()">ยกเลิก</button>
                 <button type="button" class="btn btn-primary" style="width:auto;margin-top:0;" onclick="submitReturn()">ส่ง</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Saved-address picker — reused by the withdraw, return, and new-request forms -->
+<div class="tk-overlay" id="addressPickerOverlay" style="z-index:1001;">
+    <div class="tk-modal" style="max-width:420px;">
+        <div class="tk-modal-header">
+            <span class="tk-modal-title">เลือกที่อยู่ที่บันทึกไว้</span>
+            <button class="tk-modal-close" onclick="closeAddressPicker()">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+            </button>
+        </div>
+        <div class="tk-modal-body">
+            <div id="addressPickerList"></div>
+            <div class="tk-modal-actions">
+                <button type="button" class="btn btn-ghost" onclick="location.href='tech-addresses.html'">＋ จัดการที่อยู่</button>
             </div>
         </div>
     </div>
@@ -516,15 +544,9 @@
                     <input id="nrAtmCode" type="text" placeholder="เช่น T091B030B950G262" class="select-part" style="margin-bottom:0;">
                 </div>
             </div>
-            <div class="tk-2col" style="margin-bottom:18px;">
-                <div>
-                    <label style="font-size:11px;color:var(--text-muted);display:block;margin-bottom:4px;">FE ID (โซน/เส้นทาง)</label>
-                    <input id="nrFeId" type="text" placeholder="เช่น Center 04" class="select-part" style="margin-bottom:0;">
-                </div>
-                <div>
-                    <label style="font-size:11px;color:var(--text-muted);display:block;margin-bottom:4px;">SLA</label>
-                    <input id="nrSla" type="text" placeholder="เช่น Urgent 4 Hr (Cut-off 13:30)" class="select-part" style="margin-bottom:0;" list="slaOptions">
-                </div>
+            <div style="margin-bottom:18px;">
+                <label style="font-size:11px;color:var(--text-muted);display:block;margin-bottom:4px;">FE ID (โซน/เส้นทาง)</label>
+                <input id="nrFeId" type="text" placeholder="เช่น Center 04" class="select-part" style="margin-bottom:0;">
             </div>
 
             <span class="tk-section-label">เลือกอะไหล่ที่ต้องการเบิก</span>
@@ -532,6 +554,7 @@
             <button type="button" class="btn-add-line" onclick="addLine('new')">+ เพิ่มอะไหล่</button>
 
             <span class="tk-section-label" style="margin-top:18px;display:block;">ที่อยู่จัดส่ง</span>
+            <button type="button" class="btn-add-line" style="margin-bottom:8px;" onclick="openAddressPicker('nrAddress')">📍 เลือกที่บันทึกไว้</button>
             <textarea id="nrAddress" class="form-textarea" placeholder="กรอกที่อยู่สำหรับจัดส่งอะไหล่..." style="min-height:70px;"></textarea>
 
             <span class="tk-section-label" style="margin-top:18px;display:block;">แนบรูปภาพ</span>
@@ -550,15 +573,10 @@
     </div>
 </div>
 
-<datalist id="slaOptions">
-    <option value="Urgent 4 Hr (Cut-off 13:30)">
-    <option value="NBD17 (Cut-off 16:00)">
-</datalist>
-
-<script src="shared/translations.js?v=65"></script>
-<script src="shared/toast.js?v=65"></script>
-<script src="shared/api.js?v=65"></script>
-<script src="shared/layout.js?v=65"></script>
+<script src="shared/translations.js?v=70"></script>
+<script src="shared/toast.js?v=70"></script>
+<script src="shared/api.js?v=70"></script>
+<script src="shared/layout.js?v=70"></script>
 <script>
     // Auth guard — runs before anything else renders. No token means nobody actually signed in
     // through login-tech.html (or login.html); bounce there immediately instead of quietly
@@ -987,6 +1005,21 @@
        so a stale/edited-but-not-reselected label can't silently submit the wrong part. ── */
     function partLabel(p) { return `${p.partName} (${p.partNo})`; }
 
+    // Small photo badge shared by the search dropdown (decorative — the whole row is already the
+    // tap target to select) and the confirmed line row (clickable — lets the tech re-check they
+    // picked the right part by opening the full photo, same open-in-new-tab pattern used for
+    // ticket attachment photos elsewhere on this page). No photo uploaded for that part → a plain
+    // placeholder box instead of a broken <img>.
+    function partThumbHtml(part, size, clickable) {
+        const img = part?.images?.[0];
+        if (img) {
+            const src = `${IMG_BASE}${img.filePath}`;
+            const clickAttr = clickable ? ` onclick="event.stopPropagation();window.open('${src}','_blank')"` : '';
+            return `<img class="tk-part-thumb" style="width:${size}px;height:${size}px;" src="${src}" alt="${part.partName}"${clickAttr}>`;
+        }
+        return `<div class="tk-part-thumb-ph" style="width:${size}px;height:${size}px;">📦</div>`;
+    }
+
     const CONDITION_OPTIONS = [
         { value: 'Good',      label: 'ของดี' },
         { value: 'Bad',       label: 'ของเสีย' },
@@ -1003,6 +1036,7 @@
                 `<option value="${o.value}" ${o.value === (condition || 'Good') ? 'selected' : ''}>${o.label}</option>`).join('')}</select>`
             : '';
         return `<div class="tk-line-row" id="${prefix}-row-${idx}">
+            <div class="tk-line-thumb-wrap" id="${prefix}-thumb-${idx}">${partThumbHtml(selected, 34, true)}</div>
             <div class="tk-part-picker">
                 <input type="text" id="${prefix}-part-${idx}"${dataAttr}
                     placeholder="พิมพ์ชื่ออะไหล่เพื่อค้นหา..." autocomplete="off" value="${val}"
@@ -1031,7 +1065,8 @@
         dropdown.innerHTML = matches.length
             ? matches.map(p => `
                 <div class="tk-part-option" onclick="selectPart('${prefix}', ${idx}, '${p.partNo.replace(/'/g, "\\'")}')">
-                    ${p.partName}<span class="tk-part-no">${p.partNo}</span>
+                    ${partThumbHtml(p, 36, false)}
+                    <div class="tk-part-label">${p.partName}<span class="tk-part-no">${p.partNo}</span></div>
                 </div>`).join('')
             : `<div class="tk-part-empty">ไม่พบอะไหล่ที่ตรงกับ "${input.value}"</div>`;
         dropdown.classList.add('open');
@@ -1042,6 +1077,8 @@
         const input = document.getElementById(`${prefix}-part-${idx}`);
         input.value = partLabel(part);
         input.dataset.partno = partNo;
+        const thumbWrap = document.getElementById(`${prefix}-thumb-${idx}`);
+        if (thumbWrap) thumbWrap.innerHTML = partThumbHtml(part, 34, true);
         document.getElementById(`${prefix}-dropdown-${idx}`).classList.remove('open');
     }
     function closeAllPartDropdowns(except) {
@@ -1155,7 +1192,6 @@
         document.getElementById('wdNeededByDate').value = batch?.neededByDate ? batch.neededByDate.slice(0, 16) : '';
         document.getElementById('wdAtmCode').value = batch?.status === 'Reject' ? (batch.atmCode || '') : '';
         document.getElementById('wdFeId').value = batch?.status === 'Reject' ? (batch.feId || '') : '';
-        document.getElementById('wdSla').value = batch?.status === 'Reject' ? (batch.sla || '') : '';
 
         const rejectBox = document.getElementById('wdRejectBox');
         if (batch?.status === 'Reject' && batch.rejectReason) {
@@ -1187,6 +1223,42 @@
         activeTicketId = null;
         activeBatchId = null;
     }
+
+    // ── Saved-address picker — one small overlay reused by the withdraw, return, and
+    // new-request forms. Remembers which textarea field id to fill in when a saved address is picked. ──
+    let addressPickerTargetId = null;
+    async function openAddressPicker(targetFieldId) {
+        addressPickerTargetId = targetFieldId;
+        const listEl = document.getElementById('addressPickerList');
+        listEl.innerHTML = '<div class="text-muted" style="padding:12px 0;">กำลังโหลด...</div>';
+        document.getElementById('addressPickerOverlay').classList.add('open');
+        try {
+            const addresses = await api.savedAddresses.getAll(currentEmail);
+            if (!addresses.length) {
+                listEl.innerHTML = '<div class="text-muted" style="padding:12px 0;">ยังไม่มีที่อยู่ที่บันทึกไว้ — กด "จัดการที่อยู่" ด้านล่างเพื่อเพิ่ม</div>';
+                return;
+            }
+            listEl.innerHTML = addresses.map(a => `
+                <button type="button" class="btn-add-line" style="display:block;width:100%;text-align:left;margin-bottom:8px;"
+                        onclick="pickSavedAddress(${a.savedAddressId})">
+                    <div style="font-weight:700;">${a.label}</div>
+                    <div style="font-size:12.5px;color:var(--text-muted);margin-top:2px;">${a.address}</div>
+                </button>
+            `).join('');
+            window._savedAddressCache = addresses;
+        } catch (err) {
+            listEl.innerHTML = `<div style="color:var(--red);padding:12px 0;">โหลดไม่สำเร็จ: ${err.message}</div>`;
+        }
+    }
+    function pickSavedAddress(id) {
+        const addr = (window._savedAddressCache || []).find(a => a.savedAddressId === id);
+        if (addr && addressPickerTargetId) document.getElementById(addressPickerTargetId).value = addr.address;
+        closeAddressPicker();
+    }
+    function closeAddressPicker() {
+        document.getElementById('addressPickerOverlay').classList.remove('open');
+        addressPickerTargetId = null;
+    }
     async function submitWithdraw() {
         const lines = collectLines('wd', wdLineCount);
         const address = document.getElementById('wdAddress').value.trim();
@@ -1197,14 +1269,13 @@
         const techSupportName = document.getElementById('wdTechSupport').value || null;
         const neededByDate = document.getElementById('wdNeededByDate').value || null;
         const feId = document.getElementById('wdFeId').value.trim() || null;
-        const sla = document.getElementById('wdSla').value.trim() || null;
         const atmCode = document.getElementById('wdAtmCode').value.trim() || null;
         if (!lines.length) { showToast?.('เลือกอะไหล่อย่างน้อย 1 รายการ', 'error'); return; }
         if (!address) { showToast?.('กรุณากรอกที่อยู่จัดส่ง', 'error'); return; }
 
         try {
             const attachments = await uploadPendingPhotos('wd');
-            const dto = { lines, address, description, attachments, withdrawDate, employeeCode, usageStatus, techSupportName, neededByDate, feId, sla, atmCode };
+            const dto = { lines, address, description, attachments, withdrawDate, employeeCode, usageStatus, techSupportName, neededByDate, feId, atmCode };
             const res = activeBatchId
                 ? await api.tickets.resubmitWithdraw(activeTicketId, activeBatchId, dto)
                 : await api.tickets.submitWithdraw(activeTicketId, dto);
@@ -1362,7 +1433,6 @@
         document.getElementById('nrNeededByDate').value = '';
         document.getElementById('nrAtmCode').value = '';
         document.getElementById('nrFeId').value = '';
-        document.getElementById('nrSla').value = '';
         onUsageStatusChange('nr');
         document.getElementById('nrAddress').value = '';
         document.getElementById('nrDescription').value = '';
@@ -1389,7 +1459,6 @@
         const techSupportName = document.getElementById('nrTechSupport').value || null;
         const neededByDate = document.getElementById('nrNeededByDate').value || null;
         const feId = document.getElementById('nrFeId').value.trim() || null;
-        const sla = document.getElementById('nrSla').value.trim() || null;
         const atmCode = document.getElementById('nrAtmCode').value.trim() || null;
         if (!techName) { showToast?.('กรอกชื่อช่าง', 'error'); return; }
         if (!lines.length) { showToast?.('เลือกอะไหล่อย่างน้อย 1 รายการ', 'error'); return; }
@@ -1404,7 +1473,7 @@
             const synced = await api.tickets.sync({ externalTicketNo, techName, techEmail: currentEmail, techDept });
             syncedTicketId = synced.ticket.ticketId;
             const attachments = await uploadPendingPhotos('nr');
-            const res = await api.tickets.submitWithdraw(syncedTicketId, { lines, address, description, attachments, withdrawDate, employeeCode, usageStatus, techSupportName, neededByDate, feId, sla, atmCode });
+            const res = await api.tickets.submitWithdraw(syncedTicketId, { lines, address, description, attachments, withdrawDate, employeeCode, usageStatus, techSupportName, neededByDate, feId, atmCode });
             photoFiles.nr = [];
             closeNewRequestModal();
             await fetchTickets();

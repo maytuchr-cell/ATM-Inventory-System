@@ -425,7 +425,8 @@ public class TicketController : ControllerBase
             TechSupportName = string.IsNullOrWhiteSpace(dto.TechSupportName) ? null : dto.TechSupportName,
             NeededByDate = dto.NeededByDate,
             FeId = dto.FeId,
-            Sla = dto.Sla,
+            // Sla is no longer tech-entered — Admin sets it as a dropdown at approve time
+            // (see ApproveBatch), defaulting to NBD17 there. Left null until then.
             AtmCode = dto.AtmCode,
         };
         _context.WithdrawBatches.Add(batch);
@@ -496,7 +497,7 @@ public class TicketController : ControllerBase
         batch.TechSupportName = string.IsNullOrWhiteSpace(dto.TechSupportName) ? null : dto.TechSupportName;
         batch.NeededByDate = dto.NeededByDate;
         batch.FeId = dto.FeId;
-        batch.Sla = dto.Sla;
+        // Sla stays Admin-only (see ApproveBatch) — not touched on resubmit.
         batch.AtmCode = dto.AtmCode;
         batch.UpdatedAt = DateTime.Now;
         _context.SaveChanges();
@@ -640,9 +641,11 @@ public class TicketController : ControllerBase
     }
 
     // PUT /api/Ticket/{ticketId}/withdraw-batches/{batchId}/approve — Admin approves the withdraw
-    // batch → เดินทาง
+    // batch → เดินทาง. Also where Admin sets the DHL SLA (see ApproveBatchDto.Sla) — this used to
+    // be a tech-filled field on the withdraw form; now it's Admin's call, made at the same step as
+    // approval, defaulting to NBD17 client-side.
     [HttpPut("{ticketId}/withdraw-batches/{batchId}/approve")]
-    public IActionResult ApproveBatch(int ticketId, int batchId)
+    public IActionResult ApproveBatch(int ticketId, int batchId, [FromBody] ApproveBatchDto? dto = null)
     {
         var batch = _context.WithdrawBatches.FirstOrDefault(b => b.WithdrawBatchId == batchId && b.TicketId == ticketId);
         if (batch == null) return NotFound(new { message = "Batch not found." });
@@ -692,6 +695,7 @@ public class TicketController : ControllerBase
         batch.Status = "รอส่งเมล DHL";
         batch.ApproverName = User?.Identity?.Name ?? "admin";
         batch.ApprovedAt = DateTime.Now;
+        batch.Sla = string.IsNullOrWhiteSpace(dto?.Sla) ? "NBD17 (Cut-off 16:00)" : dto.Sla;
         batch.UpdatedAt = DateTime.Now;
 
         _context.SaveChanges();
@@ -1242,10 +1246,10 @@ public class SubmitLinesDto
     public string? UsageStatus { get; set; } // "Repair" | "Keep"
     // Withdraw only — see WithdrawBatch.TechSupportName. Null/blank = "ไม่มี" (didn't consult anyone).
     public string? TechSupportName { get; set; }
-    // Withdraw only — DHL Delivery Request Form fields, see WithdrawBatch.cs.
+    // Withdraw only — DHL Delivery Request Form fields, see WithdrawBatch.cs. Sla is NOT here —
+    // it's Admin-only, set at approve time (see ApproveBatch/ApproveBatchDto).
     public DateTime? NeededByDate { get; set; }
     public string? FeId { get; set; }
-    public string? Sla { get; set; }
     public string? AtmCode { get; set; }
 }
 
@@ -1265,4 +1269,11 @@ public class LineDto
 public class RejectDto
 {
     public string Reason { get; set; } = string.Empty;
+}
+
+public class ApproveBatchDto
+{
+    // DHL delivery urgency tier — Admin's call at approve time, see ApproveBatch. Null/blank
+    // defaults to NBD17 server-side too, so an old client that doesn't send this still works.
+    public string? Sla { get; set; }
 }

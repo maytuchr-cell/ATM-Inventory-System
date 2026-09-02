@@ -82,6 +82,12 @@ const api = {
     uploadImage: (id, file) => { const fd = new FormData(); fd.append('file', file); return apiUpload(`/Parts/${id}/images`, fd); },
     deleteImage: (id, imageId) => apiFetch(`/Parts/${id}/images/${imageId}`, { method: 'DELETE' }),
   },
+  savedAddresses: {
+    getAll:  (techEmail)   => apiFetch('/SavedAddress?' + new URLSearchParams({ techEmail })),
+    create:  (data)        => apiFetch('/SavedAddress',      { method: 'POST',   body: JSON.stringify(data) }),
+    update:  (id, data)    => apiFetch(`/SavedAddress/${id}`, { method: 'PUT',    body: JSON.stringify(data) }),
+    remove:  (id, techEmail) => apiFetch(`/SavedAddress/${id}?` + new URLSearchParams({ techEmail }), { method: 'DELETE' }),
+  },
   categories: {
     getAll:  (params = {}) => apiFetch('/Categories?' + new URLSearchParams(params)),
     getById: (id)          => apiFetch(`/Categories/${id}`),
@@ -111,7 +117,7 @@ const api = {
     // or its Nth ("เบิกเพิ่ม" is just calling this again on the same ticketId).
     submitWithdraw:   (ticketId, dto)             => apiFetch(`/Ticket/${ticketId}/withdraw-batches`, { method: 'POST', body: JSON.stringify(dto) }),
     resubmitWithdraw: (ticketId, batchId, dto)    => apiFetch(`/Ticket/${ticketId}/withdraw-batches/${batchId}/resubmit`, { method: 'PUT', body: JSON.stringify(dto) }),
-    approveBatch:     (ticketId, batchId)         => apiFetch(`/Ticket/${ticketId}/withdraw-batches/${batchId}/approve`, { method: 'PUT' }),
+    approveBatch:     (ticketId, batchId, sla)     => apiFetch(`/Ticket/${ticketId}/withdraw-batches/${batchId}/approve`, { method: 'PUT', body: JSON.stringify({ sla: sla || null }) }),
     sendEmailConfirmedBatch: (ticketId, batchId)  => apiFetch(`/Ticket/${ticketId}/withdraw-batches/${batchId}/send-email`, { method: 'PUT' }),
     rejectBatch:      (ticketId, batchId, reason) => apiFetch(`/Ticket/${ticketId}/withdraw-batches/${batchId}/reject`, { method: 'PUT', body: JSON.stringify({ reason }) }),
     cancelBatch:      (ticketId, batchId)         => apiFetch(`/Ticket/${ticketId}/withdraw-batches/${batchId}/cancel`, { method: 'PUT' }),
