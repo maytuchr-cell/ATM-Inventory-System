@@ -43,3 +43,6 @@ Backend/Api/wwwroot/uploads/
 # Test project build output
 Backend/Api.Tests/bin/
 Backend/Api.Tests/obj/
+/DATABASE.md
+/PROJECT_WORKFLOW.md
+/README.md
