@@ -79,6 +79,7 @@
       labelEN: 'Tools', labelTH: 'เครื่องมือ',
       icon: 'mdi:tools',
       adminOnly: false,
+      techOnly: true,
       items: [
         { key: 'nav.workspace', href: 'tech.html', icon: 'mdi:tools', adminOnly: false },
         { key: 'nav.addresses', href: 'tech-addresses.html', icon: 'mdi:map-marker', adminOnly: false },
@@ -148,6 +149,7 @@
 
   // ── Sign out ───────────────────────────────────────────────────────────────
   function signOut() {
+    if (!confirm('ต้องการออกจากระบบหรือไม่?')) return;
     const role = (localStorage.getItem('userRole') || '').toLowerCase();
     const isAdminSide = ['systemadmin', 'staff', 'auditor', 'admin'].includes(role);
     localStorage.removeItem('authToken');
@@ -157,8 +159,44 @@
     window.location.href = isAdminSide ? 'login.html' : 'login-tech.html';
   }
 
+  // ── Role guard — redirect away from a page this session's role isn't meant to see, instead of
+  // silently rendering it with a mismatched identity (e.g. a leftover tech session opening an
+  // admin-*.html URL directly, or vice versa). NAV_GROUPS already lists which page belongs to
+  // which side, so this reuses that instead of a second hand-maintained list. Standalone (not
+  // nested in initLayout) so pages with a custom top bar instead of the full sidebar — see
+  // tech-addresses.html — can still call it. Returns true if it redirected (caller should stop
+  // rendering the page), false if this session is allowed to be here.
+  window.guardPageAccess = function() {
+    const role = (localStorage.getItem('userRole') || 'tech').toLowerCase();
+    const isAdminSide   = ['systemadmin', 'staff', 'auditor', 'admin'].includes(role);
+    const isSystemAdmin = (role === 'systemadmin' || role === 'admin');
+    const page = location.pathname.split('/').pop() || 'index.html';
+
+    const pageNavItem = NAV_GROUPS.flatMap(g => g.items).find(i => i.href === page);
+    if (!pageNavItem) return false;
+
+    if (pageNavItem.adminOnly && !isAdminSide) {
+      window.location.replace('tech.html');
+      return true;
+    }
+    if (pageNavItem.systemAdminOnly && !isSystemAdmin) {
+      window.location.replace('admin.html');
+      return true;
+    }
+    // Tools items (adminOnly:false) are tech-only in practice — see the Tools group's techOnly
+    // flag on the group itself.
+    const group = NAV_GROUPS.find(g => g.items.includes(pageNavItem));
+    if (group?.techOnly && isAdminSide) {
+      window.location.replace('admin.html');
+      return true;
+    }
+    return false;
+  };
+
   // ── Build sidebar ──────────────────────────────────────────────────────────
   window.initLayout = function() {
+    if (window.guardPageAccess()) return;
+
     const root = document.getElementById('sidebar-root');
     if (!root) return;
 
@@ -197,7 +235,7 @@
 
     // Build nav HTML
     const navHtml = NAV_GROUPS
-      .filter(g => !g.adminOnly || isAdminSide)
+      .filter(g => (!g.adminOnly || isAdminSide) && (!g.techOnly || !isAdminSide))
       .map(group => {
         const visibleItems = group.items.filter(i =>
           (!i.adminOnly || isAdminSide) && (!i.systemAdminOnly || isSystemAdmin));
