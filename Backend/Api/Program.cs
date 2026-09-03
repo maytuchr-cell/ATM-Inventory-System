@@ -33,6 +33,15 @@ builder.Services.AddDbContext<AppDbContext>(options =>
 
 builder.Services.AddScoped<StockService>();
 builder.Services.AddScoped<AuditService>();
+builder.Services.AddScoped<CatalogImportService>();
+
+// API_KMM — tech-login identity/engineer check only, see KmmAuthService. BaseUrl defaults to the
+// IIS site set up on this box (http://127.0.0.1:8081); override via appsettings for other envs.
+builder.Services.AddHttpClient<KmmAuthService>(client =>
+{
+    var kmmBaseUrl = builder.Configuration["KmmApi:BaseUrl"] ?? "http://127.0.0.1:8081";
+    client.BaseAddress = new Uri(kmmBaseUrl);
+});
 
 // ── JWT Authentication ──
 var jwtKey = builder.Configuration["Jwt:Key"] ?? JwtHelper.DefaultKey;

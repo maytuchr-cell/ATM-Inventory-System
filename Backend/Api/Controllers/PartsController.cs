@@ -15,13 +15,77 @@ public class PartsController : ControllerBase
     private readonly StockService _stock;
     private readonly IConfiguration _config;
     private readonly IWebHostEnvironment _env;
+    private readonly CatalogImportService _catalogImport;
 
-    public PartsController(AppDbContext context, StockService stock, IConfiguration config, IWebHostEnvironment env)
+    public PartsController(AppDbContext context, StockService stock, IConfiguration config, IWebHostEnvironment env, CatalogImportService catalogImport)
     {
         _context = context;
         _stock = stock;
         _config = config;
         _env = env;
+        _catalogImport = catalogImport;
+    }
+
+    // POST /Parts/import/preview — parses a GRG-style catalog .xlsx and returns what an import
+    // would do (new/update/error per row) without writing anything. See CatalogImportService.
+    [Authorize(Policy = "CanWriteMasterData")]
+    [HttpPost("import/preview")]
+    [RequestSizeLimit(200_000_000)]
+    public IActionResult ImportPreview(IFormFile file)
+    {
+        if (file == null || file.Length == 0) return BadRequest(new { message = "No file uploaded." });
+        if (Path.GetExtension(file.FileName).ToLowerInvariant() != ".xlsx")
+            return BadRequest(new { message = "Only .xlsx files are supported." });
+        try
+        {
+            using var ms = new MemoryStream();
+            file.OpenReadStream().CopyTo(ms);
+            var result = _catalogImport.PreviewParts(ms.ToArray());
+            return Ok(result);
+        }
+        catch (Exception ex)
+        {
+            return BadRequest(new { message = ex.Message });
+        }
+    }
+
+    // POST /Parts/import/confirm — commits the same file (new parts inserted, existing ones
+    // updated only if overwriteExisting=true), then immediately runs the "Same part no." ->
+    // EquivalentGroup linking pass on the same bytes, so newly-created parts are eligible too —
+    // one upload does both. See CatalogImportService.
+    [Authorize(Policy = "CanWriteMasterData")]
+    [HttpPost("import/confirm")]
+    [RequestSizeLimit(200_000_000)]
+    public IActionResult ImportConfirm(IFormFile file, [FromForm] string? project, [FromForm] bool overwriteExisting = false)
+    {
+        if (file == null || file.Length == 0) return BadRequest(new { message = "No file uploaded." });
+        if (Path.GetExtension(file.FileName).ToLowerInvariant() != ".xlsx")
+            return BadRequest(new { message = "Only .xlsx files are supported." });
+        try
+        {
+            using var ms = new MemoryStream();
+            file.OpenReadStream().CopyTo(ms);
+            var bytes = ms.ToArray();
+            var addedBy = User?.Identity?.Name ?? "admin";
+
+            var partsResult = _catalogImport.ConfirmParts(bytes, project, overwriteExisting, addedBy);
+            var linkResult = _catalogImport.LinkEquivalents(bytes, file.FileName);
+
+            return Ok(new
+            {
+                message = "Import complete.",
+                parts = new { partsResult.Inserted, partsResult.Updated, partsResult.Skipped, partsResult.ErrorCount },
+                equivalents = new
+                {
+                    linkResult.RowsProcessed, linkResult.GroupsCreated, linkResult.GroupsMerged,
+                    linkResult.MembersAdded, linkResult.NotFoundCount, linkResult.NotFoundSample
+                }
+            });
+        }
+        catch (Exception ex)
+        {
+            return BadRequest(new { message = ex.Message });
+        }
     }
 
     private Dictionary<int, List<object>> ImagesByPart(IEnumerable<int> partIds)

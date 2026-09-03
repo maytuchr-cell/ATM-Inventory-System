@@ -81,6 +81,14 @@ const api = {
     holders: (id)          => apiFetch(`/Parts/${id}/holders`),
     uploadImage: (id, file) => { const fd = new FormData(); fd.append('file', file); return apiUpload(`/Parts/${id}/images`, fd); },
     deleteImage: (id, imageId) => apiFetch(`/Parts/${id}/images/${imageId}`, { method: 'DELETE' }),
+    importPreview: (file) => { const fd = new FormData(); fd.append('file', file); return apiUpload('/Parts/import/preview', fd); },
+    importConfirm: (file, project, overwriteExisting) => {
+      const fd = new FormData();
+      fd.append('file', file);
+      if (project) fd.append('project', project);
+      fd.append('overwriteExisting', overwriteExisting ? 'true' : 'false');
+      return apiUpload('/Parts/import/confirm', fd);
+    },
   },
   savedAddresses: {
     getAll:  (techEmail)   => apiFetch('/SavedAddress?' + new URLSearchParams({ techEmail })),

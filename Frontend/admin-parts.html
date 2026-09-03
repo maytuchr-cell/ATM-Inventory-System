@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Parts Master — ATM Inventory</title>
-  <link rel="stylesheet" href="shared/styles.css?v=70">
+  <link rel="stylesheet" href="shared/styles.css?v=71">
 </head>
 <body>
   <div class="app-layout">
@@ -16,6 +16,8 @@
           <div class="topbar-sub"   data-i18n="parts.sub">Manage all ATM spare parts inventory</div>
         </div>
         <div class="topbar-controls">
+          <input type="file" id="parts-import-file-input" accept=".xlsx" style="display:none" onchange="handlePartsImportFile(this)">
+          <button class="btn" onclick="document.getElementById('parts-import-file-input').click()">📥 Import จาก Excel</button>
           <button class="btn btn-primary" onclick="openModal()">
             <span>+</span> <span data-i18n="parts.add">Add Part</span>
           </button>
@@ -208,6 +210,80 @@
     </div>
   </div>
 
+  <!-- ── Import Parts from Excel (preview -> confirm) ── -->
+  <div class="modal-overlay hidden" id="parts-import-overlay" onclick="if(event.target===this)closePartsImportModal()">
+    <div class="modal" style="max-width:720px;">
+      <div class="modal-header">
+        <span class="modal-title">Import อะไหล่จาก Excel — <span id="parts-import-filename"></span></span>
+        <button type="button" class="modal-close" onclick="closePartsImportModal()">✕</button>
+      </div>
+      <div style="padding:4px 4px 8px;">
+        <div id="parts-import-loading" style="text-align:center;padding:30px;color:var(--text-secondary);">กำลังอ่านไฟล์…</div>
+        <div id="parts-import-body" style="display:none;">
+          <div class="import-stats" style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:14px;">
+            <div class="import-stat" style="background:var(--bg-subtle);border-radius:8px;padding:12px;text-align:center;">
+              <div class="import-stat-num" id="pi-new-count" style="font-size:22px;font-weight:800;color:var(--green);">0</div>
+              <div style="font-size:11px;color:var(--text-secondary);margin-top:2px;">รายการใหม่</div>
+            </div>
+            <div class="import-stat" style="background:var(--bg-subtle);border-radius:8px;padding:12px;text-align:center;">
+              <div class="import-stat-num" id="pi-update-count" style="font-size:22px;font-weight:800;color:#d97706;">0</div>
+              <div style="font-size:11px;color:var(--text-secondary);margin-top:2px;">มีอยู่แล้ว (ซ้ำ)</div>
+            </div>
+            <div class="import-stat" style="background:var(--bg-subtle);border-radius:8px;padding:12px;text-align:center;">
+              <div class="import-stat-num" id="pi-error-count" style="font-size:22px;font-weight:800;color:var(--red);">0</div>
+              <div style="font-size:11px;color:var(--text-secondary);margin-top:2px;">ผิดพลาด (จะข้าม)</div>
+            </div>
+            <div class="import-stat" style="background:var(--bg-subtle);border-radius:8px;padding:12px;text-align:center;">
+              <div class="import-stat-num" id="pi-total-count" style="font-size:22px;font-weight:800;color:var(--text-primary);">0</div>
+              <div style="font-size:11px;color:var(--text-secondary);margin-top:2px;">ทั้งหมด</div>
+            </div>
+          </div>
+
+          <div class="form-group">
+            <label class="form-label">Project (ระบุแหล่งที่มา เช่น "GSB ATM Project")</label>
+            <input class="form-input" id="pi-project" placeholder="ไม่ระบุก็ได้">
+          </div>
+          <label style="display:flex;align-items:center;gap:8px;font-size:13px;color:var(--text-secondary);margin:8px 0 14px;">
+            <input type="checkbox" id="pi-overwrite"> อัปเดตทับรายการที่มีอยู่แล้วในระบบ (ไม่ติ๊ก = ข้ามรายการซ้ำ)
+          </label>
+
+          <div style="max-height:280px;overflow-y:auto;border:1px solid var(--border);border-radius:8px;">
+            <table style="width:100%;font-size:12.5px;">
+              <thead style="position:sticky;top:0;background:var(--bg-card);">
+                <tr>
+                  <th style="text-align:left;padding:6px 8px;">แถว</th>
+                  <th style="text-align:left;padding:6px 8px;">Part No.</th>
+                  <th style="text-align:left;padding:6px 8px;">ชื่ออะไหล่</th>
+                  <th style="text-align:left;padding:6px 8px;">สถานะ</th>
+                  <th style="text-align:left;padding:6px 8px;">หมายเหตุ</th>
+                </tr>
+              </thead>
+              <tbody id="pi-rows-tbody"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn" onclick="closePartsImportModal()">ยกเลิก</button>
+        <button class="btn btn-primary" id="pi-confirm-btn" onclick="confirmPartsImport()" disabled>ยืนยัน Import</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Import result modal -->
+  <div class="modal-overlay hidden" id="parts-import-result-overlay">
+    <div class="modal" style="max-width:460px;">
+      <div class="modal-header">
+        <span>ผลการ Import</span>
+        <button class="modal-close" onclick="document.getElementById('parts-import-result-overlay').classList.add('hidden')">✕</button>
+      </div>
+      <div class="modal-body" id="parts-import-result-body" style="padding:4px 4px 8px;"></div>
+      <div class="modal-footer">
+        <button class="btn btn-primary" onclick="document.getElementById('parts-import-result-overlay').classList.add('hidden')">ปิด</button>
+      </div>
+    </div>
+  </div>
+
   <style>
     .part-name-link { color: var(--text-primary); text-decoration: none; cursor: pointer; }
     .part-name-link:hover { color: var(--orange); }
@@ -257,10 +333,10 @@
   </style>
 
   <script src="https://code.iconify.design/iconify-icon/2.1.0/iconify-icon.min.js"></script>
-  <script src="shared/translations.js?v=70"></script>
-  <script src="shared/toast.js?v=70"></script>
-  <script src="shared/api.js?v=70"></script>
-  <script src="shared/layout.js?v=70"></script>
-  <script src="admin-parts.js?v=70"></script>
+  <script src="shared/translations.js?v=71"></script>
+  <script src="shared/toast.js?v=71"></script>
+  <script src="shared/api.js?v=71"></script>
+  <script src="shared/layout.js?v=71"></script>
+  <script src="admin-parts.js?v=71"></script>
 </body>
 </html>

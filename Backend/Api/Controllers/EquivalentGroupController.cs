@@ -1,6 +1,6 @@
 using Microsoft.AspNetCore.Mvc;
 using Api.Models;
-using ClosedXML.Excel;
+using Api.Services;
 
 namespace Api.Controllers;
 
@@ -9,7 +9,12 @@ namespace Api.Controllers;
 public class EquivalentGroupController : ControllerBase
 {
     private readonly AppDbContext _context;
-    public EquivalentGroupController(AppDbContext context) => _context = context;
+    private readonly CatalogImportService _catalogImport;
+    public EquivalentGroupController(AppDbContext context, CatalogImportService catalogImport)
+    {
+        _context = context;
+        _catalogImport = catalogImport;
+    }
 
     // GET /api/EquivalentGroup
     [HttpGet]
@@ -113,117 +118,21 @@ public class EquivalentGroupController : ControllerBase
         if (Path.GetExtension(file.FileName).ToLowerInvariant() != ".xlsx")
             return BadRequest(new { message = "Only .xlsx files are supported." });
 
-        using var stream = file.OpenReadStream();
         try
         {
-            using var wb = new XLWorkbook(stream);
-
-            IXLWorksheet? ws = null;
-            int headerRow = -1, partNoCol = -1, sameCol = -1;
-            foreach (var candidate in wb.Worksheets)
-            {
-                int r1 = -1, c1 = -1, c2 = -1;
-                var lastRowScan = Math.Min(10, candidate.LastRowUsed()?.RowNumber() ?? 1);
-                var lastColScan = candidate.LastColumnUsed()?.ColumnNumber() ?? 1;
-                for (int r = 1; r <= lastRowScan && (c1 < 0 || c2 < 0); r++)
-                    for (int c = 1; c <= lastColScan; c++)
-                    {
-                        var val = candidate.Cell(r, c).GetString().Trim();
-                        if (val.Equals("Part Number", StringComparison.OrdinalIgnoreCase)) { c1 = c; r1 = r; }
-                        if (val.Equals("Same part no.", StringComparison.OrdinalIgnoreCase)) c2 = c;
-                    }
-                if (c1 >= 0 && c2 >= 0) { ws = candidate; headerRow = r1; partNoCol = c1; sameCol = c2; break; }
-            }
-            if (ws == null)
-                return BadRequest(new { message = "Could not find a sheet with 'Part Number' and 'Same part no.' columns in its first 10 rows." });
-
-            static string Norm(string s) => s.Trim().TrimStart('-').Trim();
-
-            var dbPartNos = _context.Parts.Select(p => p.PartNo).ToHashSet();
-            var parent = new Dictionary<string, string>();
-            string Find(string x)
-            {
-                if (!parent.ContainsKey(x)) parent[x] = x;
-                return parent[x] == x ? x : (parent[x] = Find(parent[x]));
-            }
-            void Union(string a, string b) { var ra = Find(a); var rb = Find(b); if (ra != rb) parent[ra] = rb; }
-
-            var notFound = new HashSet<string>();
-            int rowsProcessed = 0;
-            var lastRow = ws.LastRowUsed()?.RowNumber() ?? headerRow;
-
-            for (int r = headerRow + 1; r <= lastRow; r++)
-            {
-                var partNo = Norm(ws.Cell(r, partNoCol).GetString());
-                if (string.IsNullOrWhiteSpace(partNo)) continue;
-                rowsProcessed++;
-
-                if (!dbPartNos.Contains(partNo)) { notFound.Add(partNo); continue; }
-                Find(partNo);
-
-                var sameRaw = ws.Cell(r, sameCol).GetString();
-                if (string.IsNullOrWhiteSpace(sameRaw)) continue;
-
-                // Source data isn't consistent about the separator — some cells use one PartNo
-                // per line, others comma- or semicolon-separate several on one line.
-                foreach (var raw in sameRaw.Split(new[] { '\n', ',', ';' }, StringSplitOptions.RemoveEmptyEntries))
-                {
-                    var eq = Norm(raw);
-                    if (string.IsNullOrWhiteSpace(eq)) continue;
-                    if (!dbPartNos.Contains(eq)) { notFound.Add(eq); continue; }
-                    Union(partNo, eq);
-                }
-            }
-
-            var components = parent.Keys.GroupBy(Find).Where(g => g.Count() > 1).ToList();
-
-            var groupIdByPartNo = _context.EquivalentGroupMembers
-                .ToList()
-                .GroupBy(m => m.PartNo)
-                .ToDictionary(g => g.Key, g => g.First().GroupId);
-
-            int groupsCreated = 0, groupsMerged = 0, membersAdded = 0;
-
-            foreach (var comp in components)
-            {
-                var partNos = comp.ToList();
-                var existingGroupIds = partNos.Where(groupIdByPartNo.ContainsKey).Select(p => groupIdByPartNo[p]).Distinct().ToList();
-
-                int targetGroupId;
-                if (existingGroupIds.Count == 0)
-                {
-                    var group = new EquivalentGroup { Name = $"Imported: {partNos[0]}", Description = $"Imported from {file.FileName}" };
-                    _context.EquivalentGroups.Add(group);
-                    _context.SaveChanges();
-                    targetGroupId = group.Id;
-                    groupsCreated++;
-                }
-                else
-                {
-                    targetGroupId = existingGroupIds[0];
-                    groupsMerged++;
-                }
-
-                foreach (var pn in partNos)
-                {
-                    if (_context.EquivalentGroupMembers.Any(m => m.GroupId == targetGroupId && m.PartNo == pn)) continue;
-                    var part = _context.Parts.First(p => p.PartNo == pn);
-                    _context.EquivalentGroupMembers.Add(new EquivalentGroupMember { GroupId = targetGroupId, PartId = part.Id, PartNo = pn });
-                    groupIdByPartNo[pn] = targetGroupId;
-                    membersAdded++;
-                }
-                _context.SaveChanges();
-            }
+            using var ms = new MemoryStream();
+            file.OpenReadStream().CopyTo(ms);
+            var result = _catalogImport.LinkEquivalents(ms.ToArray(), file.FileName);
 
             return Ok(new
             {
                 message = "Import complete.",
-                rowsProcessed,
-                groupsCreated,
-                groupsMerged,
-                membersAdded,
-                notFoundCount = notFound.Count,
-                notFoundSample = notFound.Take(30).ToList()
+                rowsProcessed = result.RowsProcessed,
+                groupsCreated = result.GroupsCreated,
+                groupsMerged = result.GroupsMerged,
+                membersAdded = result.MembersAdded,
+                notFoundCount = result.NotFoundCount,
+                notFoundSample = result.NotFoundSample
             });
         }
         catch (Exception ex)

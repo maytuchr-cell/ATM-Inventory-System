@@ -482,4 +482,118 @@ function onLangChange() {
   renderTable();
 }
 
+// ── Import Parts from Excel (preview -> confirm) ──
+let partsImportFile = null;
+let partsImportPreview = null;
+
+async function handlePartsImportFile(input) {
+  const file = input.files[0];
+  input.value = ''; // allow re-selecting the same file next time
+  if (!file) return;
+  if (!file.name.toLowerCase().endsWith('.xlsx')) {
+    showToast('รองรับเฉพาะไฟล์ .xlsx', 'error');
+    return;
+  }
+  partsImportFile = file;
+  document.getElementById('parts-import-filename').textContent = file.name;
+  document.getElementById('parts-import-loading').style.display = 'block';
+  document.getElementById('parts-import-body').style.display = 'none';
+  document.getElementById('pi-confirm-btn').disabled = true;
+  document.getElementById('parts-import-overlay').classList.remove('hidden');
+
+  try {
+    partsImportPreview = await api.parts.importPreview(file);
+    renderPartsImportPreview(partsImportPreview);
+  } catch (e) {
+    showToast(e.message || 'อ่านไฟล์ไม่สำเร็จ', 'error');
+    closePartsImportModal();
+  }
+}
+
+function renderPartsImportPreview(p) {
+  document.getElementById('parts-import-loading').style.display = 'none';
+  document.getElementById('parts-import-body').style.display = 'block';
+  document.getElementById('pi-new-count').textContent = p.newCount;
+  document.getElementById('pi-update-count').textContent = p.updateCount;
+  document.getElementById('pi-error-count').textContent = p.errorCount;
+  document.getElementById('pi-total-count').textContent = p.totalRows;
+
+  const statusColor = { New: 'var(--green)', Update: '#d97706', Error: 'var(--red)' };
+  const statusLabel = { New: 'ใหม่', Update: 'ซ้ำ', Error: 'ผิดพลาด' };
+  document.getElementById('pi-rows-tbody').innerHTML = p.rows.map(r => `
+    <tr>
+      <td style="padding:5px 8px;">${r.rowNumber}</td>
+      <td style="padding:5px 8px;font-family:monospace;">${r.partNo || '—'}</td>
+      <td style="padding:5px 8px;">${r.partName || '—'}</td>
+      <td style="padding:5px 8px;color:${statusColor[r.status]};font-weight:600;">${statusLabel[r.status]}</td>
+      <td style="padding:5px 8px;color:var(--text-secondary);">${r.note || ''}</td>
+    </tr>
+  `).join('');
+
+  document.getElementById('pi-confirm-btn').disabled = (p.newCount + p.updateCount) === 0;
+}
+
+function closePartsImportModal() {
+  document.getElementById('parts-import-overlay').classList.add('hidden');
+  partsImportFile = null;
+  partsImportPreview = null;
+}
+
+async function confirmPartsImport() {
+  if (!partsImportFile) return;
+  const project = document.getElementById('pi-project').value.trim();
+  const overwrite = document.getElementById('pi-overwrite').checked;
+  const btn = document.getElementById('pi-confirm-btn');
+  btn.disabled = true;
+  try {
+    const result = await api.parts.importConfirm(partsImportFile, project, overwrite);
+    closePartsImportModal();
+    showPartsImportResult(result);
+    await loadParts();
+  } catch (e) {
+    showToast(e.message || 'Import ไม่สำเร็จ', 'error');
+    btn.disabled = false;
+  }
+}
+
+function showPartsImportResult(r) {
+  document.getElementById('parts-import-result-body').innerHTML = `
+    <div style="font-size:13px;font-weight:700;margin-bottom:8px;">อะไหล่ (Parts)</div>
+    <div class="import-stats" style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:16px;">
+      <div style="background:var(--bg-subtle);border-radius:8px;padding:10px;text-align:center;">
+        <div style="font-size:20px;font-weight:800;color:var(--green);">${r.parts.inserted}</div>
+        <div style="font-size:10.5px;color:var(--text-secondary);">เพิ่มใหม่</div>
+      </div>
+      <div style="background:var(--bg-subtle);border-radius:8px;padding:10px;text-align:center;">
+        <div style="font-size:20px;font-weight:800;color:#d97706;">${r.parts.updated}</div>
+        <div style="font-size:10.5px;color:var(--text-secondary);">อัปเดต</div>
+      </div>
+      <div style="background:var(--bg-subtle);border-radius:8px;padding:10px;text-align:center;">
+        <div style="font-size:20px;font-weight:800;color:var(--text-secondary);">${r.parts.skipped}</div>
+        <div style="font-size:10.5px;color:var(--text-secondary);">ข้าม (ซ้ำ)</div>
+      </div>
+      <div style="background:var(--bg-subtle);border-radius:8px;padding:10px;text-align:center;">
+        <div style="font-size:20px;font-weight:800;color:var(--red);">${r.parts.errorCount}</div>
+        <div style="font-size:10.5px;color:var(--text-secondary);">ผิดพลาด</div>
+      </div>
+    </div>
+    <div style="font-size:13px;font-weight:700;margin-bottom:8px;">กลุ่มอะไหล่ทดแทน (Equivalent Groups) — จาก "Same part no."</div>
+    <div class="import-stats" style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;">
+      <div style="background:var(--bg-subtle);border-radius:8px;padding:10px;text-align:center;">
+        <div style="font-size:20px;font-weight:800;color:var(--orange);">${r.equivalents.groupsCreated}</div>
+        <div style="font-size:10.5px;color:var(--text-secondary);">กลุ่มใหม่</div>
+      </div>
+      <div style="background:var(--bg-subtle);border-radius:8px;padding:10px;text-align:center;">
+        <div style="font-size:20px;font-weight:800;color:var(--orange);">${r.equivalents.groupsMerged}</div>
+        <div style="font-size:10.5px;color:var(--text-secondary);">รวมเข้ากลุ่มเดิม</div>
+      </div>
+      <div style="background:var(--bg-subtle);border-radius:8px;padding:10px;text-align:center;">
+        <div style="font-size:20px;font-weight:800;color:var(--orange);">${r.equivalents.membersAdded}</div>
+        <div style="font-size:10.5px;color:var(--text-secondary);">อะไหล่ที่เพิ่ม</div>
+      </div>
+    </div>
+  `;
+  document.getElementById('parts-import-result-overlay').classList.remove('hidden');
+}
+
 init();
