@@ -211,12 +211,12 @@ public class DemoController : ControllerBase
         _context.TicketPartLines.Add(Line(tk3.TicketId, tk3Batch.WithdrawBatchId, p3, 1, "Withdraw"));
         _context.SaveChanges();
 
-        // Ticket 4 — รอ (ขาคืน — ช่างส่งคำขอคืนแล้ว รอจัดส่ง) — withdraw batch already เบิก, return in flight
+        // Ticket 4 — รอ (ขาคืน — ช่างส่งคำขอคืนแล้ว รอจัดส่ง) — withdraw batch already เบิก, return
+        // leg (batch-scoped, "คืนตามใบเบิก") in flight against that same batch.
         var p4 = parts[12];
         var tk4 = new Ticket
         {
             ExternalTicketNo = "ASV-DEMO-004", TechName = techs[3].Item1, TechEmail = techs[3].Item2, TechDept = techs[3].Item3,
-            Status = "รอ", ReturnAddress = "DHL Hub รามคำแหง",
             CreatedAt = DateTime.Now.AddDays(-10), UpdatedAt = DateTime.Now.AddDays(-1),
         };
         _context.Tickets.Add(tk4);
@@ -225,23 +225,23 @@ public class DemoController : ControllerBase
         {
             TicketId = tk4.TicketId, Status = "เบิก", WithdrawAddress = "สาขารามคำแหง กทม.",
             ApproverName = "admin@atm.com", ApprovedAt = DateTime.Now.AddDays(-9),
-            CreatedAt = DateTime.Now.AddDays(-10), UpdatedAt = DateTime.Now.AddDays(-9),
+            ReturnStatus = "รอ", ReturnAddress = "DHL Hub รามคำแหง",
+            CreatedAt = DateTime.Now.AddDays(-10), UpdatedAt = DateTime.Now.AddDays(-1),
         };
         _context.WithdrawBatches.Add(tk4Batch);
         _context.SaveChanges();
         _context.TicketPartLines.Add(Line(tk4.TicketId, tk4Batch.WithdrawBatchId, p4, 1, "Withdraw"));
-        _context.TicketPartLines.Add(Line(tk4.TicketId, null, p4, 1, "Return"));
+        _context.TicketPartLines.Add(Line(tk4.TicketId, tk4Batch.WithdrawBatchId, p4, 1, "Return"));
         _context.SaveChanges();
         _stock.AdjustStock(p4.PartNo, locDhl.Id, -1, "Good",
             "Issue", "WithdrawBatch", tk4Batch.WithdrawBatchId.ToString(), techs[3].Item1, "เบิกให้ช่าง " + techs[3].Item1);
         _context.SaveChanges();
 
-        // Ticket 5 — คืน (จบขาคืนแล้ว) — withdraw batch เบิก, return leg closed
+        // Ticket 5 — คืน (จบขาคืนแล้ว) — withdraw batch เบิก, return leg (batch-scoped) closed
         var p5 = parts[15];
         var tk5 = new Ticket
         {
             ExternalTicketNo = "ASV-DEMO-005", TechName = techs[4].Item1, TechEmail = techs[4].Item2, TechDept = techs[4].Item3,
-            Status = "คืน", ReturnAddress = "DHL Hub สีลม",
             CreatedAt = DateTime.Now.AddDays(-20), UpdatedAt = DateTime.Now.AddDays(-3),
         };
         _context.Tickets.Add(tk5);
@@ -250,12 +250,13 @@ public class DemoController : ControllerBase
         {
             TicketId = tk5.TicketId, Status = "เบิก", WithdrawAddress = "สาขาสีลม กทม.",
             ApproverName = "admin@atm.com", ApprovedAt = DateTime.Now.AddDays(-19),
-            CreatedAt = DateTime.Now.AddDays(-20), UpdatedAt = DateTime.Now.AddDays(-19),
+            ReturnStatus = "คืน", ReturnAddress = "DHL Hub สีลม",
+            CreatedAt = DateTime.Now.AddDays(-20), UpdatedAt = DateTime.Now.AddDays(-3),
         };
         _context.WithdrawBatches.Add(tk5Batch);
         _context.SaveChanges();
         _context.TicketPartLines.Add(Line(tk5.TicketId, tk5Batch.WithdrawBatchId, p5, 1, "Withdraw"));
-        _context.TicketPartLines.Add(Line(tk5.TicketId, null, p5, 1, "Return"));
+        _context.TicketPartLines.Add(Line(tk5.TicketId, tk5Batch.WithdrawBatchId, p5, 1, "Return"));
         _context.SaveChanges();
         _stock.AdjustStock(p5.PartNo, locDhl.Id, -1, "Good",
             "Issue", "WithdrawBatch", tk5Batch.WithdrawBatchId.ToString(), techs[4].Item1, "เบิกให้ช่าง " + techs[4].Item1);

@@ -133,8 +133,8 @@ const api = {
     substitutePart:   (ticketId, batchId, lineId, partNo) => apiFetch(`/Ticket/${ticketId}/withdraw-batches/${batchId}/lines/${lineId}/substitute`, { method: 'PUT', body: JSON.stringify({ partNo }) }),
     // Binary response (an .xlsx file), not JSON — bypasses apiFetch's res.json() and hands back
     // the raw Blob + the filename the server suggested, for the caller to trigger a save with.
-    // Withdraw candidates are batch ids now; return candidates stay ticket ids.
-    exportDhlExcel: async (ticketIds, withdrawBatchIds) => {
+    // Both withdraw and return candidates are batch ids now ("คืนตามใบเบิก").
+    exportDhlExcel: async (withdrawBatchIds, returnBatchIds) => {
       const token = localStorage.getItem('authToken');
       const res = await fetch(API_BASE + '/Ticket/export-dhl-excel', {
         method: 'POST',
@@ -142,7 +142,7 @@ const api = {
           'Content-Type': 'application/json',
           ...(token ? { 'Authorization': 'Bearer ' + token } : {}),
         },
-        body: JSON.stringify({ ticketIds, withdrawBatchIds }),
+        body: JSON.stringify({ withdrawBatchIds, returnBatchIds }),
       });
       if (!res.ok) {
         const body = await res.json().catch(() => ({}));
@@ -153,14 +153,15 @@ const api = {
       const fileName = match ? match[1] : 'DHL-Export.xlsx';
       return { blob: await res.blob(), fileName };
     },
-    // Return leg — still Ticket-scoped, unchanged.
-    cancel:       (id)           => apiFetch(`/Ticket/${id}/cancel`,    { method: 'PUT' }),
-    submitReturn: (id, dto)      => apiFetch(`/Ticket/${id}/return`,    { method: 'PUT',  body: JSON.stringify(dto) }),
-    approveReturn:(id)           => apiFetch(`/Ticket/${id}/approve-return`, { method: 'PUT' }),
-    rejectReturn: (id, reason)   => apiFetch(`/Ticket/${id}/reject-return`, { method: 'PUT', body: JSON.stringify({ reason }) }),
-    sendEmailConfirmedReturn: (id) => apiFetch(`/Ticket/${id}/send-email-return`, { method: 'PUT' }),
-    ship:         (id)           => apiFetch(`/Ticket/${id}/ship`,      { method: 'PUT' }),
-    confirmReturn:(id)           => apiFetch(`/Ticket/${id}/confirm-return`, { method: 'PUT' }),
+    // Return leg — batch-scoped now ("คืนตามใบเบิก"): several batches under one Ticket can each
+    // have their own return in flight, fully independent of one another.
+    cancelReturn:  (ticketId, batchId)       => apiFetch(`/Ticket/${ticketId}/withdraw-batches/${batchId}/cancel-return`, { method: 'PUT' }),
+    submitReturn:  (ticketId, batchId, dto)  => apiFetch(`/Ticket/${ticketId}/withdraw-batches/${batchId}/return`, { method: 'PUT', body: JSON.stringify(dto) }),
+    approveReturn: (ticketId, batchId)       => apiFetch(`/Ticket/${ticketId}/withdraw-batches/${batchId}/approve-return`, { method: 'PUT' }),
+    rejectReturn:  (ticketId, batchId, reason) => apiFetch(`/Ticket/${ticketId}/withdraw-batches/${batchId}/reject-return`, { method: 'PUT', body: JSON.stringify({ reason }) }),
+    sendEmailConfirmedReturn: (ticketId, batchId) => apiFetch(`/Ticket/${ticketId}/withdraw-batches/${batchId}/send-email-return`, { method: 'PUT' }),
+    shipReturn:    (ticketId, batchId)       => apiFetch(`/Ticket/${ticketId}/withdraw-batches/${batchId}/ship-return`, { method: 'PUT' }),
+    confirmReturn: (ticketId, batchId)       => apiFetch(`/Ticket/${ticketId}/withdraw-batches/${batchId}/confirm-return`, { method: 'PUT' }),
     uploadAttachment: (file) => { const fd = new FormData(); fd.append('file', file); return apiUpload('/Ticket/upload', fd); },
     remove: (id) => apiFetch(`/Ticket/${id}`, { method: 'DELETE' }),
     // รายงานอะไหล่ขาด — live "รออะไหล่" batches + trend of parts that caused auto-rejects.
@@ -238,6 +239,9 @@ const api = {
   },
   techSupport: {
     getAll: () => apiFetch('/TechSupport'),
+  },
+  jobTicket: {
+    forTechnician: (empId) => apiFetch(`/JobTicket/technician?empId=${encodeURIComponent(empId)}`),
   },
   dailyReport: {
     preview: (file) => { const fd = new FormData(); fd.append('file', file); return apiUpload('/DailyReport/preview', fd); },

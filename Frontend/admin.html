@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Admin Dashboard — ATM Inventory</title>
-    <link rel="stylesheet" href="shared/styles.css?v=71">
+    <link rel="stylesheet" href="shared/styles.css?v=74">
     <style>
         /* Page-specific overrides */
         .section-head { display:flex; align-items:center; gap:10px; margin-bottom:20px; }
@@ -170,10 +170,10 @@
     </div><!-- /main-content -->
 </div><!-- /app-layout -->
 
-<script src="shared/translations.js?v=71"></script>
-<script src="shared/toast.js?v=71"></script>
-<script src="shared/api.js?v=71"></script>
-<script src="shared/layout.js?v=71"></script>
+<script src="shared/translations.js?v=74"></script>
+<script src="shared/toast.js?v=74"></script>
+<script src="shared/api.js?v=74"></script>
+<script src="shared/layout.js?v=74"></script>
 <script>
     /* ── Init ── */
     initLayout();
@@ -210,11 +210,12 @@
     }
 
     function renderActionCards(tickets) {
-        // Withdraw-side counts batches (a Ticket can carry several independent ใบเบิก, each
-        // needing its own attention); return-side stays Ticket-scoped.
-        const pendingApproval = tickets.flatMap(t => t.withdrawBatches || [])
+        // Both legs count batches now — return is batch-scoped too ("คืนตามใบเบิก"), each of a
+        // Ticket's WithdrawBatches carrying its own independent return leg.
+        const allBatches = tickets.flatMap(t => t.withdrawBatches || []);
+        const pendingApproval = allBatches
             .filter(b => b.status === 'รอ' || b.status === 'รออะไหล่' || b.status === 'รอส่งเมล DHL').length;
-        const pendingReturn = tickets.filter(t => t.status === 'เดินทาง').length;
+        const pendingReturn = allBatches.filter(b => b.returnStatus === 'เดินทาง').length;
         setActionCard('pendingApprovalCard', 'pendingApprovalCount', pendingApproval);
         setActionCard('pendingReturnCard', 'pendingReturnCount', pendingReturn);
     }
@@ -279,12 +280,13 @@
             </div>`).join('');
     }
 
-    // "Eligible" = a ticket that actually took stock out at some point — either currently
-    // holding it via some batch (เบิก) or already past that on the return leg (any non-null
-    // Ticket.status). Reject/Cancel on the withdraw leg never touched stock, so they don't count.
+    // "Eligible" = a WithdrawBatch that actually took stock out at some point — either currently
+    // holding it (เบิก) or already past that on its own return leg (any non-null returnStatus).
+    // Reject/Cancel on the withdraw leg never touched stock, so those batches don't count.
     function renderReturnRate(tickets) {
-        const eligible = tickets.filter(t => (t.withdrawBatches || []).some(b => b.status === 'เบิก') || t.status !== null);
-        const completed = eligible.filter(t => t.status === 'คืน');
+        const allBatches = tickets.flatMap(t => t.withdrawBatches || []);
+        const eligible = allBatches.filter(b => b.status === 'เบิก' || b.returnStatus !== null);
+        const completed = eligible.filter(b => b.returnStatus === 'คืน');
         const pct = eligible.length ? Math.round((completed.length / eligible.length) * 100) : 0;
 
         document.getElementById('returnrate-body').innerHTML = `

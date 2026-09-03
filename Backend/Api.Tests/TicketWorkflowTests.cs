@@ -332,7 +332,7 @@ public class TicketWorkflowTests
         Assert.Equal(3, stock.GoodQty);
     }
 
-    // ── Return leg (Ticket-scoped, unchanged from before Level B) ──────────
+    // ── Return leg ("คืนตามใบเบิก" — batch-scoped, several batches can each return independently) ──
 
     [Fact]
     public void FullReturnFlow_RequiresAdminApprovalBeforeShip_ThenConfirmMovesStockToWarehouse()
@@ -340,34 +340,34 @@ public class TicketWorkflowTests
         var (controller, context) = TicketControllerFixture.Create();
         var (ticket, batch) = TicketControllerFixture.CreateReceivedTicket(controller, context, "T3", qty: 1);
 
-        controller.SubmitReturn(ticket.TicketId, new SubmitLinesDto
+        controller.SubmitReturn(ticket.TicketId, batch.WithdrawBatchId, new SubmitLinesDto
         {
             Lines = new() { new LineDto { PartNo = TicketControllerFixture.PartNo, Quantity = 1, Condition = "Good" } },
             Address = "Return Addr"
         });
-        Assert.Equal("รอ", context.Tickets.First(t => t.TicketId == ticket.TicketId).Status);
+        Assert.Equal("รอ", context.WithdrawBatches.First(b => b.WithdrawBatchId == batch.WithdrawBatchId).ReturnStatus);
 
         // Tech cannot ship before Admin approves the return.
-        var shipBeforeApproval = controller.MarkShipped(ticket.TicketId);
+        var shipBeforeApproval = controller.MarkShipped(ticket.TicketId, batch.WithdrawBatchId);
         Assert.IsType<BadRequestObjectResult>(shipBeforeApproval);
 
-        controller.ApproveReturn(ticket.TicketId);
-        Assert.Equal("อนุมัติคืน", context.Tickets.First(t => t.TicketId == ticket.TicketId).Status);
+        controller.ApproveReturn(ticket.TicketId, batch.WithdrawBatchId);
+        Assert.Equal("อนุมัติคืน", context.WithdrawBatches.First(b => b.WithdrawBatchId == batch.WithdrawBatchId).ReturnStatus);
 
         // Tech still can't ship until Admin confirms the DHL pickup email actually went out.
-        var shipBeforeEmail = controller.MarkShipped(ticket.TicketId);
+        var shipBeforeEmail = controller.MarkShipped(ticket.TicketId, batch.WithdrawBatchId);
         Assert.IsType<BadRequestObjectResult>(shipBeforeEmail);
 
-        controller.SendEmailConfirmedReturn(ticket.TicketId);
-        Assert.Equal("กำลังเดินทางรับคืน", context.Tickets.First(t => t.TicketId == ticket.TicketId).Status);
+        controller.SendEmailConfirmedReturn(ticket.TicketId, batch.WithdrawBatchId);
+        Assert.Equal("กำลังเดินทางรับคืน", context.WithdrawBatches.First(b => b.WithdrawBatchId == batch.WithdrawBatchId).ReturnStatus);
 
-        var shipAfterApproval = controller.MarkShipped(ticket.TicketId);
+        var shipAfterApproval = controller.MarkShipped(ticket.TicketId, batch.WithdrawBatchId);
         Assert.IsType<OkObjectResult>(shipAfterApproval);
-        Assert.Equal("เดินทาง", context.Tickets.First(t => t.TicketId == ticket.TicketId).Status);
+        Assert.Equal("เดินทาง", context.WithdrawBatches.First(b => b.WithdrawBatchId == batch.WithdrawBatchId).ReturnStatus);
 
-        controller.ConfirmReturnArrived(ticket.TicketId);
-        var final = context.Tickets.First(t => t.TicketId == ticket.TicketId);
-        Assert.Equal("คืน", final.Status);
+        controller.ConfirmReturnArrived(ticket.TicketId, batch.WithdrawBatchId);
+        var final = context.WithdrawBatches.First(b => b.WithdrawBatchId == batch.WithdrawBatchId);
+        Assert.Equal("คืน", final.ReturnStatus);
 
         // Fixture seeds 100 at WH-RAT; withdrawing 1 then returning 1 Good nets back to 100.
         var mainWh = context.Locations.First(l => l.Code == "WH-RAT");
@@ -381,21 +381,21 @@ public class TicketWorkflowTests
         var (controller, context) = TicketControllerFixture.Create();
         var (ticket, batch) = TicketControllerFixture.CreateReceivedTicket(controller, context, "T4", qty: 1);
 
-        controller.SubmitReturn(ticket.TicketId, new SubmitLinesDto
+        controller.SubmitReturn(ticket.TicketId, batch.WithdrawBatchId, new SubmitLinesDto
         {
             Lines = new() { new LineDto { PartNo = TicketControllerFixture.PartNo, Quantity = 1, Condition = "Lost" } },
             Address = "Return Addr"
         });
-        controller.ApproveReturn(ticket.TicketId);
-        controller.SendEmailConfirmedReturn(ticket.TicketId);
-        controller.MarkShipped(ticket.TicketId);
-        controller.ConfirmReturnArrived(ticket.TicketId);
+        controller.ApproveReturn(ticket.TicketId, batch.WithdrawBatchId);
+        controller.SendEmailConfirmedReturn(ticket.TicketId, batch.WithdrawBatchId);
+        controller.MarkShipped(ticket.TicketId, batch.WithdrawBatchId);
+        controller.ConfirmReturnArrived(ticket.TicketId, batch.WithdrawBatchId);
 
         // Withdrawing 1 (100 -> 99) and a Lost return adds nothing back — stays at 99.
         var mainWh = context.Locations.First(l => l.Code == "WH-RAT");
         var stock = context.PartStocks.First(s => s.LocationId == mainWh.Id);
         Assert.Equal(99, stock.GoodQty);
-        Assert.Equal("คืน", context.Tickets.First(t => t.TicketId == ticket.TicketId).Status);
+        Assert.Equal("คืน", context.WithdrawBatches.First(b => b.WithdrawBatchId == batch.WithdrawBatchId).ReturnStatus);
     }
 
     [Fact]
@@ -404,7 +404,7 @@ public class TicketWorkflowTests
         var (controller, context) = TicketControllerFixture.Create();
         var (ticket, batch) = TicketControllerFixture.CreateReceivedTicket(controller, context, "T5", qty: 3);
 
-        controller.SubmitReturn(ticket.TicketId, new SubmitLinesDto
+        controller.SubmitReturn(ticket.TicketId, batch.WithdrawBatchId, new SubmitLinesDto
         {
             Lines = new()
             {
@@ -414,10 +414,10 @@ public class TicketWorkflowTests
             },
             Address = "Return Addr"
         });
-        controller.ApproveReturn(ticket.TicketId);
-        controller.SendEmailConfirmedReturn(ticket.TicketId);
-        controller.MarkShipped(ticket.TicketId);
-        controller.ConfirmReturnArrived(ticket.TicketId);
+        controller.ApproveReturn(ticket.TicketId, batch.WithdrawBatchId);
+        controller.SendEmailConfirmedReturn(ticket.TicketId, batch.WithdrawBatchId);
+        controller.MarkShipped(ticket.TicketId, batch.WithdrawBatchId);
+        controller.ConfirmReturnArrived(ticket.TicketId, batch.WithdrawBatchId);
 
         // Withdrew 3 (100 -> 97); returned 1 Good (97 -> 98), 1 Bad, 1 Lost (no change).
         var mainWh = context.Locations.First(l => l.Code == "WH-RAT");
@@ -434,21 +434,55 @@ public class TicketWorkflowTests
         var (controller, context) = TicketControllerFixture.Create();
         var (ticket, batch) = TicketControllerFixture.CreateReceivedTicket(controller, context, "T6", qty: 1);
 
-        var result = controller.SubmitReturn(ticket.TicketId, new SubmitLinesDto
+        var result = controller.SubmitReturn(ticket.TicketId, batch.WithdrawBatchId, new SubmitLinesDto
         {
             Lines = new() { new LineDto { PartNo = TicketControllerFixture.PartNo, Quantity = 1, Condition = "Broken" } },
             Address = "Return Addr"
         });
 
         Assert.IsType<BadRequestObjectResult>(result);
-        // No return has ever started on this Ticket — its (return-only) Status stays null; the
-        // batch itself is untouched at เบิก.
-        Assert.Null(context.Tickets.First(t => t.TicketId == ticket.TicketId).Status);
-        Assert.Equal("เบิก", context.WithdrawBatches.First(b => b.WithdrawBatchId == batch.WithdrawBatchId).Status);
+        // No return has ever started on this batch — ReturnStatus stays null; the batch itself is
+        // untouched at เบิก.
+        var updated = context.WithdrawBatches.First(b => b.WithdrawBatchId == batch.WithdrawBatchId);
+        Assert.Null(updated.ReturnStatus);
+        Assert.Equal("เบิก", updated.Status);
     }
 
     [Fact]
-    public void SubmitReturn_BeforeAnyBatchIsReceived_ReturnsBadRequest()
+    public void SubmitReturn_WithPartNotOnThisBatch_ReturnsBadRequest()
+    {
+        // "คืนตามใบเบิก" — strictly no off-ticket lines any more. A PartNo this batch never
+        // withdrew is rejected outright, not silently flagged as "off-ticket" and accepted.
+        var (controller, context) = TicketControllerFixture.Create();
+        TicketControllerFixture.SeedEquivalentPart(context);
+        var (ticket, batch) = TicketControllerFixture.CreateReceivedTicket(controller, context, "T6B", qty: 1);
+
+        var result = controller.SubmitReturn(ticket.TicketId, batch.WithdrawBatchId, new SubmitLinesDto
+        {
+            Lines = new() { new LineDto { PartNo = TicketControllerFixture.EquivalentPartNo, Quantity = 1, Condition = "Good" } },
+            Address = "Return Addr"
+        });
+
+        Assert.IsType<BadRequestObjectResult>(result);
+    }
+
+    [Fact]
+    public void SubmitReturn_MoreThanWasWithdrawn_ReturnsBadRequest()
+    {
+        var (controller, context) = TicketControllerFixture.Create();
+        var (ticket, batch) = TicketControllerFixture.CreateReceivedTicket(controller, context, "T6C", qty: 1);
+
+        var result = controller.SubmitReturn(ticket.TicketId, batch.WithdrawBatchId, new SubmitLinesDto
+        {
+            Lines = new() { new LineDto { PartNo = TicketControllerFixture.PartNo, Quantity = 2, Condition = "Good" } },
+            Address = "Return Addr"
+        });
+
+        Assert.IsType<BadRequestObjectResult>(result);
+    }
+
+    [Fact]
+    public void SubmitReturn_BeforeBatchIsReceived_ReturnsBadRequest()
     {
         var (controller, context) = TicketControllerFixture.Create();
         controller.SyncFromAservice(new SyncTicketDto { ExternalTicketNo = "T7", TechName = "Tech" });
@@ -458,9 +492,10 @@ public class TicketWorkflowTests
             Lines = new() { new LineDto { PartNo = TicketControllerFixture.PartNo, Quantity = 1 } },
             Address = "Addr"
         });
-        // Batch auto-approves (default stock) but is not yet emailed/received — no batch at เบิก.
+        // Batch auto-approves (default stock) but is not yet emailed/received — not at เบิก yet.
+        var batch = context.WithdrawBatches.First(b => b.TicketId == ticket.TicketId);
 
-        var result = controller.SubmitReturn(ticket.TicketId, new SubmitLinesDto
+        var result = controller.SubmitReturn(ticket.TicketId, batch.WithdrawBatchId, new SubmitLinesDto
         {
             Lines = new() { new LineDto { PartNo = TicketControllerFixture.PartNo, Quantity = 1, Condition = "Good" } },
             Address = "Return Addr"
@@ -595,7 +630,7 @@ public class TicketWorkflowTests
         var (controller, context) = TicketControllerFixture.Create();
         var (ticket, batch) = TicketControllerFixture.CreateReceivedTicket(controller, context, "T15b", qty: 3);
 
-        controller.SubmitReturn(ticket.TicketId, new SubmitLinesDto
+        controller.SubmitReturn(ticket.TicketId, batch.WithdrawBatchId, new SubmitLinesDto
         {
             Lines = new()
             {
@@ -605,10 +640,10 @@ public class TicketWorkflowTests
             },
             Address = "Return Addr"
         });
-        controller.ApproveReturn(ticket.TicketId);
-        controller.SendEmailConfirmedReturn(ticket.TicketId);
-        controller.MarkShipped(ticket.TicketId);
-        controller.ConfirmReturnArrived(ticket.TicketId);
+        controller.ApproveReturn(ticket.TicketId, batch.WithdrawBatchId);
+        controller.SendEmailConfirmedReturn(ticket.TicketId, batch.WithdrawBatchId);
+        controller.MarkShipped(ticket.TicketId, batch.WithdrawBatchId);
+        controller.ConfirmReturnArrived(ticket.TicketId, batch.WithdrawBatchId);
 
         // All 3 units left the tech's hands regardless of what condition they came back in
         // (Good/Bad go to the warehouse, Lost is a write-off) — none of that changes that the
@@ -623,9 +658,9 @@ public class TicketWorkflowTests
     {
         var (controller, context) = TicketControllerFixture.Create();
         var (ticket, batch) = TicketControllerFixture.CreateReceivedTicket(controller, context, "T8", qty: 1);
-        // Ticket has a received batch, no return submitted yet — nothing to approve.
+        // Batch is เบิก, no return submitted yet — nothing to approve.
 
-        var result = controller.ApproveReturn(ticket.TicketId);
+        var result = controller.ApproveReturn(ticket.TicketId, batch.WithdrawBatchId);
 
         Assert.IsType<BadRequestObjectResult>(result);
     }
@@ -635,16 +670,16 @@ public class TicketWorkflowTests
     {
         var (controller, context) = TicketControllerFixture.Create();
         var (ticket, batch) = TicketControllerFixture.CreateReceivedTicket(controller, context, "T9", qty: 1);
-        controller.SubmitReturn(ticket.TicketId, new SubmitLinesDto
+        controller.SubmitReturn(ticket.TicketId, batch.WithdrawBatchId, new SubmitLinesDto
         {
             Lines = new() { new LineDto { PartNo = TicketControllerFixture.PartNo, Quantity = 1, Condition = "Good" } },
             Address = "Return Addr"
         });
-        controller.ApproveReturn(ticket.TicketId);
-        controller.SendEmailConfirmedReturn(ticket.TicketId);
-        controller.MarkShipped(ticket.TicketId);
+        controller.ApproveReturn(ticket.TicketId, batch.WithdrawBatchId);
+        controller.SendEmailConfirmedReturn(ticket.TicketId, batch.WithdrawBatchId);
+        controller.MarkShipped(ticket.TicketId, batch.WithdrawBatchId);
 
-        var secondShip = controller.MarkShipped(ticket.TicketId);
+        var secondShip = controller.MarkShipped(ticket.TicketId, batch.WithdrawBatchId);
 
         Assert.IsType<BadRequestObjectResult>(secondShip);
     }
@@ -708,21 +743,21 @@ public class TicketWorkflowTests
     }
 
     [Fact]
-    public void CancelTicket_OnAlreadyReturnedTicket_ReturnsBadRequest()
+    public void CancelReturn_OnAlreadyReturnedBatch_ReturnsBadRequest()
     {
         var (controller, context) = TicketControllerFixture.Create();
         var (ticket, batch) = TicketControllerFixture.CreateReceivedTicket(controller, context, "T12", qty: 1);
-        controller.SubmitReturn(ticket.TicketId, new SubmitLinesDto
+        controller.SubmitReturn(ticket.TicketId, batch.WithdrawBatchId, new SubmitLinesDto
         {
             Lines = new() { new LineDto { PartNo = TicketControllerFixture.PartNo, Quantity = 1, Condition = "Good" } },
             Address = "Return Addr"
         });
-        controller.ApproveReturn(ticket.TicketId);
-        controller.SendEmailConfirmedReturn(ticket.TicketId);
-        controller.MarkShipped(ticket.TicketId);
-        controller.ConfirmReturnArrived(ticket.TicketId);
+        controller.ApproveReturn(ticket.TicketId, batch.WithdrawBatchId);
+        controller.SendEmailConfirmedReturn(ticket.TicketId, batch.WithdrawBatchId);
+        controller.MarkShipped(ticket.TicketId, batch.WithdrawBatchId);
+        controller.ConfirmReturnArrived(ticket.TicketId, batch.WithdrawBatchId);
 
-        var result = controller.CancelTicket(ticket.TicketId);
+        var result = controller.CancelReturn(ticket.TicketId, batch.WithdrawBatchId);
 
         Assert.IsType<BadRequestObjectResult>(result);
     }
@@ -777,11 +812,12 @@ public class TicketWorkflowTests
     }
 
     [Fact]
-    public void SubmitReturn_SourcesLinesFromWhicheverBatchesAreเบิก_NotJustOne()
+    public void SubmitReturn_OnOneBatch_DoesNotAffectAnotherBatchsOwnReturnLeg()
     {
-        // With two received batches under one Ticket, a return can be submitted against parts
-        // from either (or both) — this is what replaces the old client-side "combine sibling
-        // Tickets into one return" hack.
+        // "คืนตามใบเบิก" — with two received batches under one Ticket, each returns fully
+        // independently: submitting (and progressing) a return on batch A must not touch batch
+        // B's return leg (still null/not started) at all, and a batch can't source lines from a
+        // sibling batch's withdraw (see SubmitReturn_WithPartNotOnThisBatch_ReturnsBadRequest).
         var (controller, context) = TicketControllerFixture.Create();
         var (ticket, firstBatch) = TicketControllerFixture.CreateReceivedTicket(controller, context, "ASV-300", qty: 1);
         controller.SubmitWithdraw(ticket.TicketId, new SubmitLinesDto
@@ -794,14 +830,16 @@ public class TicketWorkflowTests
         controller.SendEmailConfirmedBatch(ticket.TicketId, secondBatch.WithdrawBatchId);
         controller.ReceiveBatch(ticket.TicketId, secondBatch.WithdrawBatchId);
 
-        var result = controller.SubmitReturn(ticket.TicketId, new SubmitLinesDto
+        var result = controller.SubmitReturn(ticket.TicketId, firstBatch.WithdrawBatchId, new SubmitLinesDto
         {
-            Lines = new() { new LineDto { PartNo = TicketControllerFixture.PartNo, Quantity = 2, Condition = "Good" } },
+            Lines = new() { new LineDto { PartNo = TicketControllerFixture.PartNo, Quantity = 1, Condition = "Good" } },
             Address = "Return Addr"
         });
 
         Assert.IsType<OkObjectResult>(result);
-        Assert.Equal("รอ", context.Tickets.First(t => t.TicketId == ticket.TicketId).Status);
+        Assert.Equal("รอ", context.WithdrawBatches.First(b => b.WithdrawBatchId == firstBatch.WithdrawBatchId).ReturnStatus);
+        // Second batch's return leg is completely untouched by the first batch's return.
+        Assert.Null(context.WithdrawBatches.First(b => b.WithdrawBatchId == secondBatch.WithdrawBatchId).ReturnStatus);
     }
 
     // ── Return leg: Reject/Cancel, DHL email confirmation, off-ticket lines ─────
@@ -811,20 +849,20 @@ public class TicketWorkflowTests
     {
         var (controller, context) = TicketControllerFixture.Create();
         var (ticket, batch) = TicketControllerFixture.CreateReceivedTicket(controller, context, "RT-REJ-1", qty: 1);
-        controller.SubmitReturn(ticket.TicketId, new SubmitLinesDto
+        controller.SubmitReturn(ticket.TicketId, batch.WithdrawBatchId, new SubmitLinesDto
         {
             Lines = new() { new LineDto { PartNo = TicketControllerFixture.PartNo, Quantity = 1, Condition = "Good" } },
             Address = "Return Addr"
         });
 
-        var result = controller.RejectReturn(ticket.TicketId, new RejectDto { Reason = "Wrong condition noted" });
+        var result = controller.RejectReturn(ticket.TicketId, batch.WithdrawBatchId, new RejectDto { Reason = "Wrong condition noted" });
 
         Assert.IsType<OkObjectResult>(result);
-        var updated = context.Tickets.First(t => t.TicketId == ticket.TicketId);
-        Assert.Equal("เบิก", updated.Status); // reverted — tech still has the part, can resubmit
-        Assert.Equal("Wrong condition noted", updated.RejectReason);
+        var updated = context.WithdrawBatches.First(b => b.WithdrawBatchId == batch.WithdrawBatchId);
+        Assert.Null(updated.ReturnStatus); // reverted — tech still has the part, can resubmit
+        Assert.Equal("Wrong condition noted", updated.ReturnRejectReason);
         Assert.Null(updated.ReturnAddress);
-        Assert.Empty(context.TicketPartLines.Where(l => l.TicketId == ticket.TicketId && l.LineType == "Return"));
+        Assert.Empty(context.TicketPartLines.Where(l => l.WithdrawBatchId == batch.WithdrawBatchId && l.LineType == "Return"));
     }
 
     [Fact]
@@ -832,22 +870,22 @@ public class TicketWorkflowTests
     {
         var (controller, context) = TicketControllerFixture.Create();
         var (ticket, batch) = TicketControllerFixture.CreateReceivedTicket(controller, context, "RT-REJ-2", qty: 1);
-        controller.SubmitReturn(ticket.TicketId, new SubmitLinesDto
+        controller.SubmitReturn(ticket.TicketId, batch.WithdrawBatchId, new SubmitLinesDto
         {
             Lines = new() { new LineDto { PartNo = TicketControllerFixture.PartNo, Quantity = 1, Condition = "Good" } },
             Address = "Return Addr"
         });
-        controller.RejectReturn(ticket.TicketId, new RejectDto { Reason = "Fix this" });
+        controller.RejectReturn(ticket.TicketId, batch.WithdrawBatchId, new RejectDto { Reason = "Fix this" });
 
-        controller.SubmitReturn(ticket.TicketId, new SubmitLinesDto
+        controller.SubmitReturn(ticket.TicketId, batch.WithdrawBatchId, new SubmitLinesDto
         {
             Lines = new() { new LineDto { PartNo = TicketControllerFixture.PartNo, Quantity = 1, Condition = "Good" } },
             Address = "Return Addr v2"
         });
 
-        var updated = context.Tickets.First(t => t.TicketId == ticket.TicketId);
-        Assert.Equal("รอ", updated.Status);
-        Assert.Null(updated.RejectReason);
+        var updated = context.WithdrawBatches.First(b => b.WithdrawBatchId == batch.WithdrawBatchId);
+        Assert.Equal("รอ", updated.ReturnStatus);
+        Assert.Null(updated.ReturnRejectReason);
     }
 
     [Fact]
@@ -855,96 +893,94 @@ public class TicketWorkflowTests
     {
         var (controller, context) = TicketControllerFixture.Create();
         var (ticket, batch) = TicketControllerFixture.CreateReceivedTicket(controller, context, "RT-EMAIL-1", qty: 1);
-        controller.SubmitReturn(ticket.TicketId, new SubmitLinesDto
+        controller.SubmitReturn(ticket.TicketId, batch.WithdrawBatchId, new SubmitLinesDto
         {
             Lines = new() { new LineDto { PartNo = TicketControllerFixture.PartNo, Quantity = 1, Condition = "Good" } },
             Address = "Return Addr"
         });
-        controller.ApproveReturn(ticket.TicketId);
+        controller.ApproveReturn(ticket.TicketId, batch.WithdrawBatchId);
 
-        var result = controller.SendEmailConfirmedReturn(ticket.TicketId);
+        var result = controller.SendEmailConfirmedReturn(ticket.TicketId, batch.WithdrawBatchId);
 
         Assert.IsType<OkObjectResult>(result);
-        var updated = context.Tickets.First(t => t.TicketId == ticket.TicketId);
-        Assert.Equal("กำลังเดินทางรับคืน", updated.Status);
+        var updated = context.WithdrawBatches.First(b => b.WithdrawBatchId == batch.WithdrawBatchId);
+        Assert.Equal("กำลังเดินทางรับคืน", updated.ReturnStatus);
         Assert.NotNull(updated.ReturnEmailSentAt);
     }
 
     [Fact]
-    public void CancelTicket_OnceReturnEmailedToDhl_IsLocked()
+    public void CancelReturn_OnceEmailedToDhl_IsLocked()
     {
         var (controller, context) = TicketControllerFixture.Create();
         var (ticket, batch) = TicketControllerFixture.CreateReceivedTicket(controller, context, "RT-EMAIL-2", qty: 1);
-        controller.SubmitReturn(ticket.TicketId, new SubmitLinesDto
+        controller.SubmitReturn(ticket.TicketId, batch.WithdrawBatchId, new SubmitLinesDto
         {
             Lines = new() { new LineDto { PartNo = TicketControllerFixture.PartNo, Quantity = 1, Condition = "Good" } },
             Address = "Return Addr"
         });
-        controller.ApproveReturn(ticket.TicketId);
-        controller.SendEmailConfirmedReturn(ticket.TicketId);
+        controller.ApproveReturn(ticket.TicketId, batch.WithdrawBatchId);
+        controller.SendEmailConfirmedReturn(ticket.TicketId, batch.WithdrawBatchId);
 
-        var result = controller.CancelTicket(ticket.TicketId);
+        var result = controller.CancelReturn(ticket.TicketId, batch.WithdrawBatchId);
 
         Assert.IsType<BadRequestObjectResult>(result);
-        Assert.Equal("กำลังเดินทางรับคืน", context.Tickets.First(t => t.TicketId == ticket.TicketId).Status);
+        Assert.Equal("กำลังเดินทางรับคืน", context.WithdrawBatches.First(b => b.WithdrawBatchId == batch.WithdrawBatchId).ReturnStatus);
     }
 
     [Fact]
-    public void CancelTicket_OnceReturnShipped_IsStillLocked()
+    public void CancelReturn_OnceShipped_IsStillLocked()
     {
         // Regression: เดินทาง on the return leg only happens after กำลังเดินทางรับคืน (the DHL-email
         // lock point), so it must stay locked — cancelling here must not be allowed to undo stock
         // that was never touched by return-side actions in the first place.
         var (controller, context) = TicketControllerFixture.Create();
         var (ticket, batch) = TicketControllerFixture.CreateReceivedTicket(controller, context, "RT-EMAIL-4", qty: 1);
-        controller.SubmitReturn(ticket.TicketId, new SubmitLinesDto
+        controller.SubmitReturn(ticket.TicketId, batch.WithdrawBatchId, new SubmitLinesDto
         {
             Lines = new() { new LineDto { PartNo = TicketControllerFixture.PartNo, Quantity = 1, Condition = "Good" } },
             Address = "Return Addr"
         });
-        controller.ApproveReturn(ticket.TicketId);
-        controller.SendEmailConfirmedReturn(ticket.TicketId);
-        controller.MarkShipped(ticket.TicketId);
+        controller.ApproveReturn(ticket.TicketId, batch.WithdrawBatchId);
+        controller.SendEmailConfirmedReturn(ticket.TicketId, batch.WithdrawBatchId);
+        controller.MarkShipped(ticket.TicketId, batch.WithdrawBatchId);
 
-        var result = controller.CancelTicket(ticket.TicketId);
+        var result = controller.CancelReturn(ticket.TicketId, batch.WithdrawBatchId);
 
         Assert.IsType<BadRequestObjectResult>(result);
-        Assert.Equal("เดินทาง", context.Tickets.First(t => t.TicketId == ticket.TicketId).Status);
+        Assert.Equal("เดินทาง", context.WithdrawBatches.First(b => b.WithdrawBatchId == batch.WithdrawBatchId).ReturnStatus);
     }
 
     [Fact]
-    public void CancelTicket_OnApprovedReturnBeforeEmail_IsStillAllowed()
+    public void CancelReturn_OnApprovedReturnBeforeEmail_IsStillAllowed()
     {
         // Not locked yet — Admin approved internally but hasn't told DHL anything.
         var (controller, context) = TicketControllerFixture.Create();
         var (ticket, batch) = TicketControllerFixture.CreateReceivedTicket(controller, context, "RT-EMAIL-3", qty: 1);
-        controller.SubmitReturn(ticket.TicketId, new SubmitLinesDto
+        controller.SubmitReturn(ticket.TicketId, batch.WithdrawBatchId, new SubmitLinesDto
         {
             Lines = new() { new LineDto { PartNo = TicketControllerFixture.PartNo, Quantity = 1, Condition = "Good" } },
             Address = "Return Addr"
         });
-        controller.ApproveReturn(ticket.TicketId);
+        controller.ApproveReturn(ticket.TicketId, batch.WithdrawBatchId);
 
-        var result = controller.CancelTicket(ticket.TicketId);
+        var result = controller.CancelReturn(ticket.TicketId, batch.WithdrawBatchId);
 
         Assert.IsType<OkObjectResult>(result);
-        Assert.Equal("Cancel", context.Tickets.First(t => t.TicketId == ticket.TicketId).Status);
+        Assert.Equal("Cancel", context.WithdrawBatches.First(b => b.WithdrawBatchId == batch.WithdrawBatchId).ReturnStatus);
     }
 
     [Fact]
-    public void GetAllTickets_FlagsReturnLineNotOnOriginalWithdrawAsOffTicket()
+    public void GetAllTickets_ExposesReturnLinesUnderTheirOwnBatch()
     {
+        // "off-ticket" returns are no longer possible at all (SubmitReturn rejects them server-side
+        // — see SubmitReturn_WithPartNotOnThisBatch_ReturnsBadRequest), so this now just confirms
+        // GetAllTickets surfaces the submitted Return line nested under its own batch's returnLines.
         var (controller, context) = TicketControllerFixture.Create();
         var (ticket, batch) = TicketControllerFixture.CreateReceivedTicket(controller, context, "RT-OFF-1", qty: 1);
-        TicketControllerFixture.SeedEquivalentPart(context); // gives us a second real Part to use as the "extra" one
 
-        controller.SubmitReturn(ticket.TicketId, new SubmitLinesDto
+        controller.SubmitReturn(ticket.TicketId, batch.WithdrawBatchId, new SubmitLinesDto
         {
-            Lines = new()
-            {
-                new LineDto { PartNo = TicketControllerFixture.PartNo, Quantity = 1, Condition = "Good" },              // matches the withdraw
-                new LineDto { PartNo = TicketControllerFixture.EquivalentPartNo, Quantity = 1, Condition = "Good" },    // never withdrawn on this ticket
-            },
+            Lines = new() { new LineDto { PartNo = TicketControllerFixture.PartNo, Quantity = 1, Condition = "Good" } },
             Address = "Return Addr"
         });
 
@@ -952,13 +988,13 @@ public class TicketWorkflowTests
         var json = System.Text.Json.JsonSerializer.Serialize(ok.Value);
         using var doc = System.Text.Json.JsonDocument.Parse(json);
         var ticketJson = doc.RootElement.EnumerateArray().First(t => t.GetProperty("TicketId").GetInt32() == ticket.TicketId);
-        var returnLines = ticketJson.GetProperty("lines").EnumerateArray()
-            .Where(l => l.GetProperty("LineType").GetString() == "Return").ToList();
+        var batchJson = ticketJson.GetProperty("withdrawBatches").EnumerateArray().First(b => b.GetProperty("WithdrawBatchId").GetInt32() == batch.WithdrawBatchId);
+        var returnLines = batchJson.GetProperty("returnLines").EnumerateArray().ToList();
 
-        var matching = returnLines.First(l => l.GetProperty("PartNo").GetString() == TicketControllerFixture.PartNo);
-        var offTicket = returnLines.First(l => l.GetProperty("PartNo").GetString() == TicketControllerFixture.EquivalentPartNo);
-        Assert.False(matching.GetProperty("isOffTicket").GetBoolean());
-        Assert.True(offTicket.GetProperty("isOffTicket").GetBoolean());
+        Assert.Single(returnLines);
+        Assert.Equal(TicketControllerFixture.PartNo, returnLines[0].GetProperty("PartNo").GetString());
+        Assert.False(returnLines[0].GetProperty("isOffTicket").GetBoolean());
+        Assert.Equal("รอ", batchJson.GetProperty("ReturnStatus").GetString());
     }
 
     // ── Substitute — show the tech's original request after Admin swaps it ────

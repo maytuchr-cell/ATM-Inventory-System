@@ -178,7 +178,7 @@
                 <label class="form-label" for="emailInput" data-i18n="login.label">Email Address</label>
                 <div class="input-wrap">
                     <svg class="input-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"/></svg>
-                    <input type="email" id="emailInput" class="form-input" required
+                    <input type="text" id="emailInput" class="form-input" required
                         data-i18n-ph="login.ph" placeholder="you@atm.com" autofocus>
                 </div>
             </div>
@@ -249,6 +249,7 @@
                 localStorage.setItem("authToken", data.token);
                 localStorage.setItem("userRole", data.role);
                 localStorage.setItem("userEmail", data.email);
+                localStorage.setItem("userName", data.name || data.email);
                 // Admin-side roles land on the admin console; technicians on the workspace.
                 const adminRoles = ["systemadmin", "staff", "auditor", "admin"];
                 const isAdminSide = adminRoles.includes((data.role || "").toLowerCase());

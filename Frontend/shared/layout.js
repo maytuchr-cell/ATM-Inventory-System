@@ -153,6 +153,7 @@
     localStorage.removeItem('authToken');
     localStorage.removeItem('userRole');
     localStorage.removeItem('userEmail');
+    localStorage.removeItem('userName');
     window.location.href = isAdminSide ? 'login.html' : 'login-tech.html';
   }
 
@@ -163,6 +164,7 @@
 
     const role  = localStorage.getItem('userRole') || 'tech';
     const email = localStorage.getItem('userEmail') || '';
+    const displayName = localStorage.getItem('userName') || email;
     const page  = location.pathname.split('/').pop() || 'index.html';
 
     // Role flags (4 roles: SystemAdmin / Staff / Auditor / Tech; "admin" kept for legacy)
@@ -231,7 +233,7 @@
     const roleLabel = role === 'admin'
       ? (typeof t === 'function' ? t('admin.role') : 'Administrator')
       : (typeof t === 'function' ? t('tech.role')  : 'Technician');
-    const initials = email ? email[0].toUpperCase() : '?';
+    const initials = displayName ? displayName[0].toUpperCase() : '?';
 
     root.innerHTML = `
       <aside class="sidebar ${isCollapsed ? 'collapsed' : ''}">
@@ -254,7 +256,7 @@
           <div class="user-row">
             <div class="user-avatar">${initials}</div>
             <div class="user-info">
-              <div class="user-email">${email}</div>
+              <div class="user-email">${displayName}</div>
               <div class="user-role">${roleLabel}</div>
             </div>
           </div>

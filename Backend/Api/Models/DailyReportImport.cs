@@ -42,7 +42,11 @@ public class DailyReportImportRow
     // ReturnConfirmed | RepairCompleted | StillInRepair | Unmatched — see DailyReportController.
     public string MatchType { get; set; } = string.Empty;
 
-    public int? TicketId { get; set; }   // set when MatchType = ReturnConfirmed
+    public int? TicketId { get; set; }        // set when MatchType = ReturnConfirmed
+    public int? WithdrawBatchId { get; set; } // which ใบเบิก's return leg this matched — the return
+                                               // leg is batch-scoped now, so this (not TicketId) is
+                                               // what disambiguates when a Ticket has several
+                                               // batches returning the same PartNo.
     public int? PartUnitId { get; set; } // set when a PartUnit was created/updated for this row
 
     public bool Undone { get; set; }

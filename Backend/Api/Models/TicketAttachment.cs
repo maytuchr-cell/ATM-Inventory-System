@@ -7,7 +7,8 @@ public class TicketAttachment
     public int TicketId { get; set; }
     public Ticket? Ticket { get; set; }
 
-    // Set for Phase=="Withdraw" rows once the Level B rewrite lands — see TicketPartLine.WithdrawBatchId.
+    // Which ใบเบิก (WithdrawBatch) this photo belongs to — set for both Phase=="Withdraw" and
+    // Phase=="Return" now that the return leg is batch-scoped, see TicketPartLine.WithdrawBatchId.
     public int? WithdrawBatchId { get; set; }
     public WithdrawBatch? WithdrawBatch { get; set; }
 

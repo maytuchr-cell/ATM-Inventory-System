@@ -1,5 +1,6 @@
 using System.Text;
 using System.Text.Json;
+using System.Linq;
 
 namespace Api.Services;
 
@@ -15,15 +16,196 @@ namespace Api.Services;
 public class KmmAuthService
 {
     private readonly HttpClient _http;
+    private readonly IConfiguration _config;
 
-    public KmmAuthService(HttpClient http)
+    public KmmAuthService(HttpClient http, IConfiguration config)
     {
         _http = http;
         _http.Timeout = TimeSpan.FromSeconds(60);
+        _config = config;
     }
 
     public record LoginOutcome(bool Reachable, bool Success, string? Name, string? Detail, string? Token);
     public record EngineerInfo(bool Found, string? Name, string? RawJson);
+    public record JobTicketInfo(string JobNo, string? AtmCode, string? AtmName, string? AtmAddress, string? ProblemDetail, string? MainProblem, string? ServiceType, string? AserviceStatus, string? ZoneName, DateTime? OpenDatetime, DateTime? AppointDatetime);
+
+    // Cached token for the shared "service account" (KmmApi:ServiceUsername/ServicePassword) used
+    // by endpoints that aren't tied to a specific tech's own login (e.g. GetTechSupportListAsync).
+    // Re-logs in whenever there's no cached token or the last call got a 401, rather than tracking
+    // real JWT expiry (API_KMM doesn't document one) — cheap enough since this is called rarely.
+    private string? _serviceToken;
+
+    // GET /Employee/Techsupport — list of technical advisors, used to replace TechSupportController's
+    // mock data. Logs in with the shared service account (KmmApi:ServiceUsername/ServicePassword)
+    // to get a Bearer token, since every API_KMM endpoint requires one per its Swagger spec.
+    public async Task<List<string>> GetTechSupportListAsync(CancellationToken ct = default)
+    {
+        var names = await FetchTechSupportAsync(ct);
+        if (names != null) return names;
+
+        // Retry once with a fresh token in case the cached one had gone stale/invalid.
+        _serviceToken = null;
+        names = await FetchTechSupportAsync(ct);
+        return names ?? new List<string>();
+    }
+
+    private async Task<List<string>?> FetchTechSupportAsync(CancellationToken ct)
+    {
+        if (!await EnsureServiceTokenAsync(ct)) return null;
+
+        try
+        {
+            using var req = new HttpRequestMessage(HttpMethod.Get, "/Employee/Techsupport");
+            req.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", _serviceToken);
+            using var res = await _http.SendAsync(req, ct);
+            var json = await res.Content.ReadAsStringAsync(ct);
+            Console.WriteLine($"🔎 KMM /Employee/Techsupport -> HTTP {(int)res.StatusCode}, body: {json}");
+
+            if (res.StatusCode == System.Net.HttpStatusCode.Unauthorized) return null; // caller retries with fresh token
+            if (!res.IsSuccessStatusCode || string.IsNullOrWhiteSpace(json)) return new List<string>();
+
+            using var doc = JsonDocument.Parse(json);
+            var result = new List<string>();
+            if (doc.RootElement.ValueKind == JsonValueKind.Array)
+            {
+                foreach (var item in doc.RootElement.EnumerateArray())
+                {
+                    if (item.ValueKind == JsonValueKind.String)
+                    {
+                        result.Add(item.GetString()!);
+                    }
+                    else if (item.ValueKind == JsonValueKind.Object)
+                    {
+                        // Real shape: { employeeInfo: { emp_name, emp_surname, ... }, role, zone }.
+                        if (item.TryGetProperty("employeeInfo", out var info) && info.ValueKind == JsonValueKind.Object)
+                        {
+                            var first = info.TryGetProperty("emp_name", out var fn) && fn.ValueKind == JsonValueKind.String ? fn.GetString() : null;
+                            var last = info.TryGetProperty("emp_surname", out var ln) && ln.ValueKind == JsonValueKind.String ? ln.GetString() : null;
+                            var fullName = string.Join(" ", new[] { first, last }.Where(s => !string.IsNullOrWhiteSpace(s)));
+                            if (!string.IsNullOrWhiteSpace(fullName)) { result.Add(fullName); continue; }
+                        }
+                        foreach (var key in new[] { "name", "Name", "techsupport_name", "full_name", "emp_name" })
+                            if (item.TryGetProperty(key, out var n) && n.ValueKind == JsonValueKind.String)
+                            { result.Add(n.GetString()!); break; }
+                    }
+                }
+            }
+            return result;
+        }
+        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or OperationCanceledException)
+        {
+            Console.WriteLine($"🔎 KMM /Employee/Techsupport failed: {ex.Message}");
+            return null;
+        }
+    }
+
+    // GET /JobTicket/Technician?emp_id=... — every currently-open job ticket assigned to one
+    // technician. Used to let a tech pick their case from a dropdown instead of typing the Case
+    // No./ATM code/problem description by hand (see nrCaseNo etc. in tech.html). Same shared
+    // service-account token as GetTechSupportListAsync.
+    public async Task<List<JobTicketInfo>> GetJobTicketsAsync(string empId, CancellationToken ct = default)
+    {
+        var tickets = await FetchJobTicketsAsync(empId, ct);
+        if (tickets != null) return tickets;
+
+        _serviceToken = null;
+        tickets = await FetchJobTicketsAsync(empId, ct);
+        return tickets ?? new List<JobTicketInfo>();
+    }
+
+    private async Task<List<JobTicketInfo>?> FetchJobTicketsAsync(string empId, CancellationToken ct)
+    {
+        if (!await EnsureServiceTokenAsync(ct)) return null;
+
+        try
+        {
+            using var req = new HttpRequestMessage(HttpMethod.Get, $"/JobTicket/Technician?emp_id={Uri.EscapeDataString(empId)}");
+            req.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", _serviceToken);
+            using var res = await _http.SendAsync(req, ct);
+            var json = await res.Content.ReadAsStringAsync(ct);
+            Console.WriteLine($"🔎 KMM /JobTicket/Technician?emp_id={empId} -> HTTP {(int)res.StatusCode}, body length={json.Length}");
+
+            if (res.StatusCode == System.Net.HttpStatusCode.Unauthorized) return null;
+            if (!res.IsSuccessStatusCode || string.IsNullOrWhiteSpace(json)) return new List<JobTicketInfo>();
+
+            using var doc = JsonDocument.Parse(json);
+            var result = new List<JobTicketInfo>();
+            if (doc.RootElement.ValueKind != JsonValueKind.Array) return result;
+
+            foreach (var item in doc.RootElement.EnumerateArray())
+            {
+                if (item.ValueKind != JsonValueKind.Object) continue;
+                if (!item.TryGetProperty("jobDetail", out var jd) || jd.ValueKind != JsonValueKind.Object) continue;
+
+                string? Str(JsonElement obj, string key) => obj.TryGetProperty(key, out var v) && v.ValueKind == JsonValueKind.String ? v.GetString() : null;
+
+                var jobNo = Str(jd, "job_no");
+                if (string.IsNullOrWhiteSpace(jobNo)) continue;
+
+                string? atmCode = null, atmName = null, atmAddress = null;
+                if (item.TryGetProperty("device", out var dev) && dev.ValueKind == JsonValueKind.Object)
+                {
+                    atmCode = Str(dev, "term_id");
+                    atmName = Str(dev, "term_name");
+                    atmAddress = Str(dev, "term_addr");
+                }
+                string? zoneName = null;
+                if (item.TryGetProperty("zone", out var zone) && zone.ValueKind == JsonValueKind.Object)
+                    zoneName = Str(zone, "zone_name_th");
+
+                DateTime? openDt = null;
+                if (item.TryGetProperty("stepOpenJob", out var step) && step.ValueKind == JsonValueKind.Object
+                    && step.TryGetProperty("open_datetime", out var od) && od.ValueKind == JsonValueKind.String
+                    && DateTime.TryParse(od.GetString(), out var parsed))
+                    openDt = parsed;
+
+                // stepAssignJob.appoint_datetime is the CIT/engineer's scheduled appointment time —
+                // used as "วันที่ต้องการอะไหล่" (parts-needed-by) since parts should arrive by then.
+                DateTime? appointDt = null;
+                if (item.TryGetProperty("stepAssignJob", out var assign) && assign.ValueKind == JsonValueKind.Object
+                    && assign.TryGetProperty("appoint_datetime", out var ad) && ad.ValueKind == JsonValueKind.String
+                    && DateTime.TryParse(ad.GetString(), out var appointParsed))
+                    appointDt = appointParsed;
+
+                result.Add(new JobTicketInfo(
+                    JobNo: jobNo!,
+                    AtmCode: atmCode,
+                    AtmName: atmName,
+                    AtmAddress: atmAddress,
+                    ProblemDetail: Str(jd, "problem_detail"),
+                    MainProblem: Str(jd, "main_problem"),
+                    ServiceType: Str(jd, "service_type"),
+                    AserviceStatus: Str(jd, "aservice_status"),
+                    ZoneName: zoneName,
+                    OpenDatetime: openDt,
+                    AppointDatetime: appointDt));
+            }
+            return result;
+        }
+        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or OperationCanceledException)
+        {
+            Console.WriteLine($"🔎 KMM /JobTicket/Technician failed: {ex.Message}");
+            return null;
+        }
+    }
+
+    // Shared service-account token acquisition for endpoints not tied to a specific tech's own
+    // login (Techsupport list, JobTicket-by-technician). Logs in once, caches, re-logs-in on demand.
+    private async Task<bool> EnsureServiceTokenAsync(CancellationToken ct)
+    {
+        if (_serviceToken != null) return true;
+
+        var username = _config["KmmApi:ServiceUsername"];
+        var password = _config["KmmApi:ServicePassword"];
+        if (string.IsNullOrWhiteSpace(username) || string.IsNullOrWhiteSpace(password))
+            return false;
+
+        var login = await LoginAsync(username, password, ct);
+        if (!login.Success || string.IsNullOrWhiteSpace(login.Token))
+            return false;
+        _serviceToken = login.Token;
+        return true;
+    }
 
     // POST /Auth/Login — {username, password} -> {status, detail, token}. Reachable=false means
     // we couldn't even get a response (network/timeout) — the caller should fall back to a local
@@ -75,12 +257,21 @@ public class KmmAuthService
 
             using var doc = JsonDocument.Parse(json);
             var root = doc.RootElement;
-            // Response shape isn't documented beyond "200 OK" in the Swagger we have — try a few
-            // likely field names for the display name, fall back to null (still "Found").
+            // Real shape (confirmed via live call): { employeeInfo: { emp_name, emp_surname, ... },
+            // role, zone } — same nested shape as /Employee/Techsupport. Keep the flat-field guesses
+            // as a fallback in case a differently-shaped response ever comes back.
             string? name = null;
-            foreach (var key in new[] { "name", "Name", "engineer_name", "full_name", "emp_name" })
-                if (root.ValueKind == JsonValueKind.Object && root.TryGetProperty(key, out var n) && n.ValueKind == JsonValueKind.String)
-                { name = n.GetString(); break; }
+            if (root.ValueKind == JsonValueKind.Object && root.TryGetProperty("employeeInfo", out var info) && info.ValueKind == JsonValueKind.Object)
+            {
+                var first = info.TryGetProperty("emp_name", out var fn) && fn.ValueKind == JsonValueKind.String ? fn.GetString() : null;
+                var last = info.TryGetProperty("emp_surname", out var ln) && ln.ValueKind == JsonValueKind.String ? ln.GetString() : null;
+                name = string.Join(" ", new[] { first, last }.Where(s => !string.IsNullOrWhiteSpace(s)));
+                if (string.IsNullOrWhiteSpace(name)) name = null;
+            }
+            if (name == null)
+                foreach (var key in new[] { "name", "Name", "engineer_name", "full_name", "emp_name" })
+                    if (root.ValueKind == JsonValueKind.Object && root.TryGetProperty(key, out var n) && n.ValueKind == JsonValueKind.String)
+                    { name = n.GetString(); break; }
 
             return new EngineerInfo(Found: true, Name: name, RawJson: json);
         }

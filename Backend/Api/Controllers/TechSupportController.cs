@@ -1,19 +1,29 @@
 using Microsoft.AspNetCore.Mvc;
+using Api.Services;
 
 namespace Api.Controllers;
 
 // The list of technical advisors a tech can consult before submitting a withdraw request.
-// Currently mock data — the real list is planned to come from the KMM mobile app's own roster
-// via an external API later. When that's wired up, only this one method needs to change; nothing
-// else in the app (Ticket.TechSupportName, tech.html's dropdown) needs to know where the names
-// came from.
+// Backed by API_KMM's GET /Employee/Techsupport (via a shared service-account login, see
+// KmmAuthService.GetTechSupportListAsync) — falls back to a small mock list if API_KMM is
+// unreachable or returns nothing, so the dropdown never ends up empty.
 [ApiController]
 [Route("[controller]")]
 public class TechSupportController : ControllerBase
 {
-    [HttpGet]
-    public IActionResult GetAll()
+    private readonly KmmAuthService _kmm;
+
+    public TechSupportController(KmmAuthService kmm)
     {
-        return Ok(new[] { "Tech A", "Tech B" });
+        _kmm = kmm;
+    }
+
+    [HttpGet]
+    public async Task<IActionResult> GetAll()
+    {
+        var names = await _kmm.GetTechSupportListAsync();
+        if (names.Count == 0)
+            return Ok(new[] { "Tech A", "Tech B" });
+        return Ok(names);
     }
 }

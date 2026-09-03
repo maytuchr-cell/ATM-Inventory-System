@@ -81,6 +81,7 @@ public class DailyReportController : ControllerBase
                 CaseNo = r.CaseNo,
                 MatchType = r.MatchType,
                 TicketId = r.TicketId,
+                WithdrawBatchId = r.WithdrawBatchId,
                 PartUnitId = r.PartUnitId
             });
         }
@@ -124,19 +125,19 @@ public class DailyReportController : ControllerBase
 
         try
         {
-            if (row.MatchType == "ReturnConfirmed" && row.TicketId.HasValue)
+            if (row.MatchType == "ReturnConfirmed" && row.WithdrawBatchId.HasValue)
             {
-                var ticket = _context.Tickets.FirstOrDefault(t => t.TicketId == row.TicketId);
-                var line = _context.TicketPartLines.FirstOrDefault(l => l.TicketId == row.TicketId && l.LineType == "Return" && l.PartNo == row.PartNo);
-                if (ticket == null || line == null)
-                    return BadRequest(new { message = "ไม่พบ Ticket/รายการที่เกี่ยวข้องแล้ว — อาจถูกลบหรือแก้ไขไปหลังจาก import" });
+                var batch = _context.WithdrawBatches.FirstOrDefault(b => b.WithdrawBatchId == row.WithdrawBatchId);
+                var line = _context.TicketPartLines.FirstOrDefault(l => l.WithdrawBatchId == row.WithdrawBatchId && l.LineType == "Return" && l.PartNo == row.PartNo);
+                if (batch == null || line == null)
+                    return BadRequest(new { message = "ไม่พบใบเบิก/รายการที่เกี่ยวข้องแล้ว — อาจถูกลบหรือแก้ไขไปหลังจาก import" });
 
                 // Put it back where it was: tech's on-hand bucket, minus whichever central bucket it landed in.
                 _stock.AdjustStock(row.PartNo, techLoc?.Id ?? 0, row.Qty, "Good", "UndoImport", "DailyReportRow", id.ToString(), userName, $"ย้อนกลับแถว import #{id}", serialNo: row.SerialNo);
                 _stock.AdjustStock(row.PartNo, mainWh?.Id ?? 0, -row.Qty, row.DhlStatus == "GOOD" ? "Good" : "Repair", "UndoImport", "DailyReportRow", id.ToString(), userName, $"ย้อนกลับแถว import #{id}", serialNo: row.SerialNo);
 
                 line.ConfirmedQty = Math.Max(0, line.ConfirmedQty - row.Qty);
-                if (ticket.Status == "คืน") ticket.Status = "เดินทาง"; // reopen — no longer fully confirmed
+                if (batch.ReturnStatus == "คืน") batch.ReturnStatus = "เดินทาง"; // reopen — no longer fully confirmed
 
                 if (row.PartUnitId.HasValue)
                 {
@@ -283,6 +284,7 @@ public class DailyReportController : ControllerBase
         public string? CaseNo { get; set; }
         public string MatchType { get; set; } = string.Empty;
         public int? TicketId { get; set; }
+        public int? WithdrawBatchId { get; set; }
         public string? ExternalTicketNo { get; set; }
         public int? PartUnitId { get; set; }
         public string? Note { get; set; }
@@ -320,8 +322,9 @@ public class DailyReportController : ControllerBase
 
         var openReturnLines = _context.TicketPartLines
             .Include(l => l.Ticket)
-            .Where(l => l.LineType == "Return" && l.Ticket!.Status == "เดินทาง" && l.Ticket.ReturnAddress != null && l.ConfirmedQty < l.Quantity)
-            .OrderBy(l => l.Ticket!.UpdatedAt)
+            .Include(l => l.WithdrawBatch)
+            .Where(l => l.LineType == "Return" && l.WithdrawBatch!.ReturnStatus == "เดินทาง" && l.WithdrawBatch.ReturnAddress != null && l.ConfirmedQty < l.Quantity)
+            .OrderBy(l => l.WithdrawBatch!.UpdatedAt)
             .ToList();
         var remaining = openReturnLines.ToDictionary(l => l.TicketPartLineId, l => l.Quantity - l.ConfirmedQty);
 
@@ -386,8 +389,8 @@ public class DailyReportController : ControllerBase
                 int? unitId = null;
                 if (commit)
                 {
-                    _stock.AdjustStock(row.PartNo, techLoc?.Id ?? 0, -row.Qty, "Good", "Return", "Ticket", line.TicketId.ToString(), userName, $"คืนผ่าน Daily Report SN {row.SerialNo}", serialNo: row.SerialNo);
-                    _stock.AdjustStock(row.PartNo, mainWh?.Id ?? 0, row.Qty, row.Status == "GOOD" ? "Good" : "Repair", "Return", "Ticket", line.TicketId.ToString(), userName, $"คืนผ่าน Daily Report SN {row.SerialNo}", serialNo: row.SerialNo);
+                    _stock.AdjustStock(row.PartNo, techLoc?.Id ?? 0, -row.Qty, "Good", "Return", "WithdrawBatch", line.WithdrawBatchId?.ToString(), userName, $"คืนผ่าน Daily Report SN {row.SerialNo}", serialNo: row.SerialNo);
+                    _stock.AdjustStock(row.PartNo, mainWh?.Id ?? 0, row.Qty, row.Status == "GOOD" ? "Good" : "Repair", "Return", "WithdrawBatch", line.WithdrawBatchId?.ToString(), userName, $"คืนผ่าน Daily Report SN {row.SerialNo}", serialNo: row.SerialNo);
 
                     if (!string.IsNullOrWhiteSpace(row.SerialNo) && partsByNo.TryGetValue(row.PartNo, out var part))
                     {
@@ -405,13 +408,16 @@ public class DailyReportController : ControllerBase
                     }
 
                     line.ConfirmedQty += row.Qty;
+                    // "All confirmed" is scoped to THIS batch's own Return lines now — a Ticket can
+                    // have several batches each returning independently, so finishing one must not
+                    // touch any other batch's return leg.
                     var allLinesConfirmed = _context.TicketPartLines
-                        .Where(l => l.TicketId == line.TicketId && l.LineType == "Return")
+                        .Where(l => l.WithdrawBatchId == line.WithdrawBatchId && l.LineType == "Return")
                         .All(l => l.TicketPartLineId == line.TicketPartLineId ? line.ConfirmedQty >= l.Quantity : l.ConfirmedQty >= l.Quantity);
-                    if (allLinesConfirmed && line.Ticket != null)
+                    if (allLinesConfirmed && line.WithdrawBatch != null)
                     {
-                        line.Ticket.Status = "คืน";
-                        line.Ticket.UpdatedAt = DateTime.Now;
+                        line.WithdrawBatch.ReturnStatus = "คืน";
+                        line.WithdrawBatch.UpdatedAt = DateTime.Now;
                     }
                     _context.SaveChanges();
                 }
@@ -422,7 +428,7 @@ public class DailyReportController : ControllerBase
                 {
                     RowIndex = row.RowIndex, PartNo = row.PartNo, PartName = row.PartName, SerialNo = row.SerialNo, Qty = row.Qty,
                     DhlStatus = row.Status, Problem = row.Problem, MatchType = "ReturnConfirmed", CaseNo = row.CaseNo,
-                    TicketId = line.TicketId, ExternalTicketNo = line.Ticket?.ExternalTicketNo, PartUnitId = unitId,
+                    TicketId = line.TicketId, WithdrawBatchId = line.WithdrawBatchId, ExternalTicketNo = line.Ticket?.ExternalTicketNo, PartUnitId = unitId,
                     Note = matchNote
                 });
                 continue;

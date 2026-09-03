@@ -7,9 +7,8 @@ public class TicketPartLine
     public int TicketId { get; set; }
     public Ticket? Ticket { get; set; }
 
-    // Set for LineType=="Withdraw" rows once the Level B rewrite lands — which ใบเบิก (WithdrawBatch)
-    // this line belongs to. LineType=="Return" rows leave this null and are addressed by TicketId
-    // directly (the return leg stays Ticket-scoped, not batch-scoped).
+    // Which ใบเบิก (WithdrawBatch) this line belongs to — set for BOTH LineType=="Withdraw" rows
+    // and LineType=="Return" rows now that the return leg is batch-scoped ("คืนตามใบเบิก").
     public int? WithdrawBatchId { get; set; }
     public WithdrawBatch? WithdrawBatch { get; set; }
 

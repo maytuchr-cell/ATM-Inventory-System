@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Tech Workspace — ATM Inventory</title>
-    <link rel="stylesheet" href="shared/styles.css?v=71">
+    <link rel="stylesheet" href="shared/styles.css?v=74">
     <style>
         .section-head { display:flex; align-items:center; gap:10px; margin-bottom:20px; }
         .section-accent { width:4px; height:22px; background:var(--orange); border-radius:2px; }
@@ -429,7 +429,7 @@
 <div class="tk-overlay" id="returnOverlay">
     <div class="tk-modal">
         <div class="tk-modal-header">
-            <span class="tk-modal-title">คืนอะไหล่</span>
+            <span class="tk-modal-title">คืนตามใบเบิก</span>
             <button class="tk-modal-close" onclick="closeReturnModal()">
                 <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
             </button>
@@ -445,13 +445,9 @@
             <span class="tk-section-label">ประวัติการเบิก (อ้างอิงเท่านั้น)</span>
             <div class="tk-readonly-box" id="rtHistory" style="margin-bottom:18px;"></div>
 
-            <span class="tk-section-label">อะไหล่ที่ตรงกับใบเบิก</span>
+            <span class="tk-section-label">อะไหล่ที่ต้องคืน (ตามใบเบิกนี้เท่านั้น)</span>
             <div id="rtLinesMatched"></div>
-            <div style="font-size:11.5px;color:var(--text-muted);margin-top:6px;">* คืนน้อยกว่าจำนวนที่เบิกไปได้ (กรณีของหายหรือใช้ไปแล้ว) หรือลบแถวออกได้ถ้าไม่คืนชิ้นนั้นเลย</div>
-
-            <span class="tk-section-label" style="margin-top:18px;display:block;">อะไหล่นอกเหนือใบเบิก <span class="text-muted" style="font-weight:400;">(ของที่ช่างถืออยู่แต่ไม่ได้อยู่ในใบเบิกนี้)</span></span>
-            <div id="rtLinesExtra"></div>
-            <button type="button" class="btn-add-line" onclick="addLine('return')">+ เพิ่มอะไหล่นอกเหนือใบเบิก</button>
+            <div style="font-size:11.5px;color:var(--text-muted);margin-top:6px;">* คืนน้อยกว่าจำนวนที่เบิกไปได้ (กรณีของหายหรือใช้ไปแล้ว) หรือลบแถวออกได้ถ้าไม่คืนชิ้นนั้นเลย — คืนได้เฉพาะอะไหล่ในใบเบิกนี้เท่านั้น</div>
 
             <span class="tk-section-label" style="margin-top:18px;display:block;">ที่อยู่ (จุดส่งคืน)</span>
             <button type="button" class="btn-add-line" style="margin-bottom:8px;" onclick="openAddressPicker('rtAddress')">📍 เลือกที่บันทึกไว้</button>
@@ -573,10 +569,10 @@
     </div>
 </div>
 
-<script src="shared/translations.js?v=71"></script>
-<script src="shared/toast.js?v=71"></script>
-<script src="shared/api.js?v=71"></script>
-<script src="shared/layout.js?v=71"></script>
+<script src="shared/translations.js?v=74"></script>
+<script src="shared/toast.js?v=74"></script>
+<script src="shared/api.js?v=74"></script>
+<script src="shared/layout.js?v=74"></script>
 <script>
     // Auth guard — runs before anything else renders. No token means nobody actually signed in
     // through login-tech.html (or login.html); bounce there immediately instead of quietly
@@ -587,6 +583,8 @@
 
     /* Status: รอ / เดินทาง / เบิก / คืน / Reject / Cancel   (null = ยังไม่เริ่มเบิก) */
     const currentEmail = localStorage.getItem('userEmail') || 'tech@atm.com';
+    // Display-only — currentEmail stays the identity key used to filter/sync tickets.
+    const currentName = localStorage.getItem('userName') || currentEmail;
     let cachedParts   = [];
     let cachedTickets = [];
     let activeTicketId = null;
@@ -595,15 +593,16 @@
     // withdraw and any "เบิกเพิ่ม" after).
     let activeBatchId = null;
     let activeReturnTicketId = null;
+    let activeReturnBatchId = null;
     let wdLineCount = 0, rtLineCount = 0, nrLineCount = 0;
 
     /* ── Mobile top-bar menu (theme/language/logout) — see the HTML comment on #tmb-bar for why
        this exists instead of reusing the sidebar's hamburger on phones. ── */
     function renderMobileMenu() {
-        const initials = currentEmail ? currentEmail[0].toUpperCase() : '?';
+        const initials = currentName ? currentName[0].toUpperCase() : '?';
         document.getElementById('tmb-avatar-circle').textContent = initials;
         document.getElementById('tmb-menu-avatar').textContent = initials;
-        document.getElementById('tmb-menu-email').textContent = currentEmail;
+        document.getElementById('tmb-menu-email').textContent = currentName;
         const isDark = (localStorage.getItem('theme') || 'light') === 'dark';
         document.getElementById('tmb-theme-label').textContent = isDark ? 'สลับเป็นธีมสว่าง' : 'สลับเป็นธีมมืด';
         const isEn = (localStorage.getItem('lang') || 'th') === 'en';
@@ -625,13 +624,38 @@
         await fetchParts();
         await fetchTechSupportList();
         await fetchTickets();
+        await syncKmmJobTickets();
         // Admin approves/rejects/etc. from a completely separate screen with no real-time push
         // to this one — poll so the tech sees it without having to hit refresh manually. Skipped
-        // while a form is open so it can't disrupt whatever the tech is mid-filling.
+        // while a form is open so it can't disrupt whatever the tech is mid-filling. Re-checking
+        // KMM here too is what makes a newly-opened Aservice ticket show up without a page reload.
         setInterval(() => {
-            if (!document.querySelector('.tk-overlay.open')) fetchTickets(true);
+            if (!document.querySelector('.tk-overlay.open')) fetchTickets(true).then(() => syncKmmJobTickets());
         }, 15000);
     });
+
+    // Every open job ticket this tech has in KMM (/JobTicket/Technician) that doesn't already
+    // exist locally (matched by ExternalTicketNo === job_no) gets auto-synced in via the same
+    // POST /Ticket/sync Aservice would call — so it shows up in "Ticket ของฉัน" with a "เบิก" button
+    // on its own, without the tech ever touching "ขอเบิกอะไหล่ใหม่". kmmJobByCaseNo is kept around
+    // so openWithdrawModal can pull ATM code/problem description onto the withdraw form.
+    let kmmJobByCaseNo = {};
+    async function syncKmmJobTickets() {
+        let jobs = [];
+        try { jobs = await api.jobTicket.forTechnician(currentEmail); } catch { return; }
+        kmmJobByCaseNo = {};
+        jobs.forEach(j => { kmmJobByCaseNo[j.jobNo] = j; });
+
+        const existingNos = new Set(cachedTickets.map(t => t.externalTicketNo));
+        const missing = jobs.filter(j => !existingNos.has(j.jobNo));
+        if (!missing.length) return;
+        for (const j of missing) {
+            try {
+                await api.tickets.sync({ externalTicketNo: j.jobNo, techName: currentName, techEmail: currentEmail, techDept: j.zoneName || '' });
+            } catch { /* one job failing to sync shouldn't block the rest */ }
+        }
+        await fetchTickets(true);
+    }
     function onLangChange() { renderTicketsTable(); }
 
     async function fetchParts() {
@@ -714,14 +738,16 @@
     function matchesTicketStatusFilter(tk) {
         if (!ticketStatusFilterValue) return true;
         if (tk.displayStatus === ticketStatusFilterValue) return true;
-        return (tk.withdrawBatches || []).some(b => b.status === ticketStatusFilterValue);
+        return (tk.withdrawBatches || []).some(b => b.status === ticketStatusFilterValue || b.returnStatus === ticketStatusFilterValue);
     }
     function updateTicketStatusFilterOptions(rows) {
         const select = document.getElementById('ticketStatusFilter');
         const statuses = new Set();
         rows.forEach(tk => {
-            (tk.withdrawBatches || []).forEach(b => { if (b.status) statuses.add(b.status); });
-            if (tk.status) statuses.add(tk.status);
+            (tk.withdrawBatches || []).forEach(b => {
+                if (b.status) statuses.add(b.status);
+                if (b.returnStatus) statuses.add(b.returnStatus);
+            });
         });
         const current = select.value;
         select.innerHTML = '<option value="">ทุกสถานะ</option>' +
@@ -741,12 +767,12 @@
             : `<span class="text-muted">—</span>`;
     }
     // History tab needs both legs together in one cell — grouped by WithdrawBatch (so it's clear
-    // which items belong to which ใบเบิก, e.g. "ใบที่ 1: ฐาน ×1" vs "ใบที่ 2: เสา ×2") rather than
-    // one flat mixed list, then the Ticket's own Return lines (คืน) at the end.
+    // which items belong to which ใบเบิก, e.g. "ใบที่ 1: ฐาน ×1" vs "ใบที่ 2: เสา ×2"), each batch's
+    // own Return lines (คืน) shown right under its Withdraw lines since a return is scoped to that
+    // one batch now ("คืนตามใบเบิก") rather than shared across the whole Ticket.
     function allLinesSummaryHtml(tk) {
         const batches = tk.withdrawBatches || [];
-        const returnLines = tk.lines;
-        if (!batches.length && !returnLines.length) return `<span class="text-muted">—</span>`;
+        if (!batches.length) return `<span class="text-muted">—</span>`;
 
         const lineHtml = (l, tag) => `<div style="font-size:12px;">${l.partName} <span class="text-muted">×${l.quantity}</span> <span style="font-size:10px;color:var(--text-muted)">(${tag}${l.condition ? ' — ' + CONDITION_LABEL[l.condition] : ''})</span>${l.isOffTicket ? ' <span style="font-size:10px;color:var(--orange);">🆕 นอกใบเบิก</span>' : ''}
             ${l.originalPartName ? `<div style="font-size:10px;color:var(--orange);margin-top:1px;">🔄 ขอไป: ${l.originalPartName} — Admin เปลี่ยนเป็นอะไหล่เทียบเคียงนี้แทน</div>` : ''}</div>`;
@@ -757,11 +783,10 @@
                 html += `<div style="font-size:10px;font-weight:700;color:var(--text-muted);text-transform:uppercase;margin-top:${i ? 6 : 0}px;">ใบที่ ${i + 1}${b.withdrawSlipNo ? ' — ' + b.withdrawSlipNo : ''}</div>`;
             }
             html += b.lines.length ? b.lines.map(l => lineHtml(l, 'เบิก')).join('') : `<span class="text-muted">—</span>`;
+            if ((b.returnLines || []).length) {
+                html += b.returnLines.map(l => lineHtml(l, 'คืน')).join('');
+            }
         });
-        if (returnLines.length) {
-            html += `<div style="font-size:10px;font-weight:700;color:var(--text-muted);text-transform:uppercase;margin-top:6px;">คืนแล้ว</div>`;
-            html += returnLines.map(l => lineHtml(l, 'คืน')).join('');
-        }
         return html;
     }
     // Most recent activity across the Ticket itself and every one of its batches — used for
@@ -789,7 +814,13 @@
             const eta = deliveryEtaHtml(batch.emailSentAt);
             return `<button class="btn-return" onclick="closeTicketDetail();confirmReceiveBatch(${tk.ticketId},${batch.withdrawBatchId})">✅ ยืนยันรับของ</button>${eta}`;
         } else if (batch.status === 'เบิก') {
-            return `<span class="text-muted" style="font-size:12px;">รับของแล้ว</span>`;
+            // "คืนตามใบเบิก" — this batch's own return leg. null means no return started on THIS
+            // batch yet (a sibling batch's return, if any, is completely independent and never
+            // blocks this one).
+            if (batch.returnStatus == null) {
+                return `<button class="btn-return" onclick="closeTicketDetail();openReturnModal(${tk.ticketId},${batch.withdrawBatchId})">📥 คืนตามใบเบิก</button>`;
+            }
+            return computeReturnActionForBatch(tk, batch);
         } else if (batch.status === 'Reject') {
             return `<button class="btn-withdraw" onclick="closeTicketDetail();openWithdrawModal(${tk.ticketId},${batch.withdrawBatchId})">📝 แก้ไขและส่งใหม่</button>`;
         } else if (batch.status === 'Cancel') {
@@ -797,26 +828,20 @@
         }
         return `<span class="text-muted">—</span>`;
     }
-    // Action for the Ticket's return leg — surfaced in the detail modal's ใบคืน tab. The
-    // "เริ่มคืน" trigger lives here (not on any one batch) since a return can pull parts from
-    // several received batches at once.
-    function computeReturnAction(tk) {
-        if (tk.status === null) {
-            const hasReceivedBatch = (tk.withdrawBatches || []).some(b => b.status === 'เบิก');
-            return hasReceivedBatch
-                ? `<button class="btn-return" onclick="closeTicketDetail();openReturnModal(${tk.ticketId})">📥 คืน</button>`
-                : `<span class="text-muted" style="font-size:12px;">ยังไม่มีอะไหล่ที่รับแล้วให้คืน</span>`;
-        } else if (tk.status === 'รอ') {
+    // Action for ONE batch's return leg ("คืนตามใบเบิก") — surfaced both on its withdraw-tab card
+    // (via computeBatchAction, once a return has started) and on its own card in the ใบคืน tab.
+    function computeReturnActionForBatch(tk, batch) {
+        if (batch.returnStatus === 'รอ') {
             return `<span class="text-muted" style="font-size:12px;">รอ Admin ยืนยัน</span>`;
-        } else if (tk.status === 'อนุมัติคืน') {
+        } else if (batch.returnStatus === 'อนุมัติคืน') {
             return `<span class="text-muted" style="font-size:12px;">Admin อนุมัติแล้ว — รอ Admin ส่งเมล DHL</span>`;
-        } else if (tk.status === 'กำลังเดินทางรับคืน') {
-            return `<button class="btn-ship" onclick="closeTicketDetail();markShipped(${tk.ticketId})">🚚 จัดส่งแล้ว</button>`;
-        } else if (tk.status === 'เดินทาง') {
+        } else if (batch.returnStatus === 'กำลังเดินทางรับคืน') {
+            return `<button class="btn-ship" onclick="closeTicketDetail();markShipped(${tk.ticketId},${batch.withdrawBatchId})">🚚 จัดส่งแล้ว</button>`;
+        } else if (batch.returnStatus === 'เดินทาง') {
             return `<span class="text-muted" style="font-size:12px;">รอถึง DHL</span>`;
-        } else if (tk.status === 'คืน') {
+        } else if (batch.returnStatus === 'คืน') {
             return `<span class="text-muted" style="font-size:12px;">คืนสำเร็จแล้ว</span>`;
-        } else if (tk.status === 'Cancel') {
+        } else if (batch.returnStatus === 'Cancel') {
             return `<span class="text-muted" style="font-size:12px;">ยกเลิกแล้ว</span>`;
         }
         return `<span class="text-muted">—</span>`;
@@ -876,22 +901,28 @@
             ? batchesHtml + addlBtn
             : `<button class="btn-withdraw" onclick="closeTicketDetail();openWithdrawModal(${tk.ticketId})">📤 เบิก</button>`;
 
-        const returnLines = tk.lines; // Return-phase lines only, per API shape
-        document.getElementById('detailTabReturn').innerHTML = (tk.returnAddress ? `
-            <div class="tk-readonly-box">
-                <div class="tk-readonly-grid">
-                    <div class="tk-readonly-field"><label>สถานะฝั่งคืน</label><span>${STATUS_BADGE[tk.status]?.label || tk.status}</span></div>
-                    <div class="tk-readonly-field"><label>ที่อยู่จัดส่งคืน</label><span>${tk.returnAddress}</span></div>
-                </div>
-            </div>
-            <span class="tk-detail-section-label">อะไหล่ที่ตรงกับใบเบิก</span>
-            ${linesSummaryHtml(returnLines.filter(l => !l.isOffTicket))}
-            <span class="tk-detail-section-label">อะไหล่นอกเหนือใบเบิก</span>
-            ${linesSummaryHtml(returnLines.filter(l => l.isOffTicket))}
-            <span class="tk-detail-section-label">รูปภาพแนบ</span>
-            ${detailAttachmentGalleryHtml(tk.attachments)}
-        ` : `<div class="text-muted" style="padding:20px 0;text-align:center;">ยังไม่มีการคืนอะไหล่</div>`)
-            + `<div class="tk-modal-actions" style="justify-content:flex-start;">${computeReturnAction(tk)}</div>`;
+        // One card per batch that has ANY return activity ("คืนตามใบเบิก" — each batch's return
+        // leg is fully independent). A received batch with no return started yet doesn't appear
+        // here at all — its "📥 คืนตามใบเบิก" trigger lives on its withdraw-tab card instead.
+        const returningBatches = batches.filter(b => b.returnStatus != null);
+        document.getElementById('detailTabReturn').innerHTML = returningBatches.length
+            ? returningBatches.map(batch => {
+                const rb = STATUS_BADGE[batch.returnStatus] || STATUS_BADGE[null];
+                return `
+                <div class="tk-readonly-box" style="margin-bottom:14px;">
+                    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
+                        <span class="badge ${rb.cls}"><span class="badge-dot"></span>${rb.label}</span>
+                        <span class="text-muted" style="font-size:11px;">${batch.withdrawSlipNo || ''}</span>
+                    </div>
+                    <div class="tk-readonly-grid" style="margin-bottom:10px;">
+                        <div class="tk-readonly-field"><label>ที่อยู่จัดส่งคืน</label><span>${batch.returnAddress || '—'}</span></div>
+                    </div>
+                    ${linesSummaryHtml(batch.returnLines || [])}
+                    <div style="margin-top:8px;">${detailAttachmentGalleryHtml(batch.returnAttachments)}</div>
+                    <div style="margin-top:10px;">${computeReturnActionForBatch(tk, batch)}</div>
+                </div>`;
+            }).join('')
+            : `<div class="text-muted" style="padding:20px 0;text-align:center;">ยังไม่มีการคืนอะไหล่</div>`;
 
         switchDetailTab('withdraw');
         document.getElementById('detailOverlay').classList.add('open');
@@ -907,18 +938,19 @@
     // same-named withdraw status like "เดินทาง") if a return is in flight.
     function statusBreakdownHtml(tk) {
         const counts = {};
+        const returnCounts = {};
         (tk.withdrawBatches || []).forEach(b => {
-            if (!b.status) return;
-            counts[b.status] = (counts[b.status] || 0) + 1;
+            if (b.status) counts[b.status] = (counts[b.status] || 0) + 1;
+            if (b.returnStatus) returnCounts[b.returnStatus] = (returnCounts[b.returnStatus] || 0) + 1;
         });
         const badges = Object.entries(counts).map(([status, count]) => {
             const b = STATUS_BADGE[status] || STATUS_BADGE[null];
             return `<span class="badge ${b.cls}"><span class="badge-dot"></span>${b.label}${count > 1 ? ` ×${count}` : ''}</span>`;
         });
-        if (tk.status) {
-            const rb = STATUS_BADGE[tk.status] || STATUS_BADGE[null];
-            badges.push(`<span class="badge ${rb.cls}"><span class="badge-dot"></span>${rb.label} (คืน)</span>`);
-        }
+        Object.entries(returnCounts).forEach(([status, count]) => {
+            const rb = STATUS_BADGE[status] || STATUS_BADGE[null];
+            badges.push(`<span class="badge ${rb.cls}"><span class="badge-dot"></span>${rb.label} (คืน)${count > 1 ? ` ×${count}` : ''}</span>`);
+        });
         if (!badges.length) {
             const nb = STATUS_BADGE[null];
             badges.push(`<span class="badge ${nb.cls}"><span class="badge-dot"></span>${nb.label}</span>`);
@@ -1088,6 +1120,8 @@
         if (!e.target.closest('.tk-part-picker')) closeAllPartDropdowns(null);
     });
 
+    // "return" is deliberately not a kind here — คืนตามใบเบิก only ever pre-fills rows straight
+    // from the batch being returned (see openReturnModal), never lets the tech add an arbitrary one.
     function addLine(kind) {
         if (kind === 'withdraw') {
             wdLineCount++;
@@ -1095,9 +1129,6 @@
         } else if (kind === 'new') {
             nrLineCount++;
             document.getElementById('nrLines').insertAdjacentHTML('beforeend', lineRowHtml('nr', nrLineCount));
-        } else {
-            rtLineCount++;
-            document.getElementById('rtLinesExtra').insertAdjacentHTML('beforeend', lineRowHtml('rt', rtLineCount));
         }
     }
     function removeLine(prefix, idx) {
@@ -1157,6 +1188,14 @@
     }
 
     function todayIso() { return new Date().toISOString().slice(0, 10); }
+    // KMM's appoint_datetime comes back as a UTC ISO string ("...Z") — a <input type="datetime-local">
+    // needs local wall-clock time, so this converts rather than just slicing the string.
+    function toLocalDatetimeInputValue(isoUtc) {
+        const d = new Date(isoUtc);
+        if (isNaN(d)) return '';
+        const pad = n => String(n).padStart(2, '0');
+        return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+    }
 
     // "Repair" ties this withdraw to a specific Case No.; "Keep" is buffer stock the tech just
     // holds onto, not tied to any job — so Case No. is only required for Repair. Only the New
@@ -1185,13 +1224,16 @@
         document.getElementById('wdTechDept').textContent = tk.techDept;
         document.getElementById('wdCreatedAt').textContent = new Date(tk.createdAt).toLocaleString('th-TH');
         document.getElementById('wdWithdrawDate').value = (batch?.withdrawDate || '').slice(0, 10) || todayIso();
-        document.getElementById('wdEmployeeCode').value = batch?.employeeCode || '';
+        document.getElementById('wdEmployeeCode').value = batch?.employeeCode || currentEmail || '';
         document.getElementById('wdCaseNo').value = tk.externalTicketNo;
         document.getElementById('wdUsageStatus').value = batch?.usageStatus || 'Repair';
         document.getElementById('wdTechSupport').value = batch?.techSupportName || '';
-        document.getElementById('wdNeededByDate').value = batch?.neededByDate ? batch.neededByDate.slice(0, 16) : '';
-        document.getElementById('wdAtmCode').value = batch?.status === 'Reject' ? (batch.atmCode || '') : '';
-        document.getElementById('wdFeId').value = batch?.status === 'Reject' ? (batch.feId || '') : '';
+        const kmmJob = kmmJobByCaseNo[tk.externalTicketNo];
+        document.getElementById('wdNeededByDate').value = batch?.neededByDate
+            ? batch.neededByDate.slice(0, 16)
+            : (kmmJob?.appointDatetime ? toLocalDatetimeInputValue(kmmJob.appointDatetime) : '');
+        document.getElementById('wdAtmCode').value = batch?.status === 'Reject' ? (batch.atmCode || '') : (kmmJob?.atmCode || '');
+        document.getElementById('wdFeId').value = batch?.status === 'Reject' ? (batch.feId || '') : (kmmJob?.zoneName || '');
 
         const rejectBox = document.getElementById('wdRejectBox');
         if (batch?.status === 'Reject' && batch.rejectReason) {
@@ -1202,7 +1244,7 @@
         }
 
         document.getElementById('wdAddress').value = batch?.status === 'Reject' ? (batch.withdrawAddress || '') : '';
-        document.getElementById('wdDescription').value = batch?.status === 'Reject' ? (batch.withdrawDescription || '') : '';
+        document.getElementById('wdDescription').value = batch?.status === 'Reject' ? (batch.withdrawDescription || '') : (kmmJob?.problemDetail || '');
         document.getElementById('wdLines').innerHTML = '';
         wdLineCount = 0;
         const priorLines = batch?.status === 'Reject' ? (batch.lines || []) : [];
@@ -1347,42 +1389,35 @@
         } catch (e) { showToast?.(e.message || t('toast.error'), 'error'); }
     }
 
-    /* ── Return form — one Ticket at a time now (no more combining sibling Tickets). Pre-fills
-       from every WithdrawBatch currently at เบิก under this Ticket. ── */
-    function openReturnModal(ticketId) {
+    /* ── Return form — คืนตามใบเบิก: strictly scoped to ONE WithdrawBatch at a time (no more
+       combining several received batches, no more manually-added "off-ticket" items). Every line
+       is pre-filled straight from that batch's own withdrawn lines and the tech can only reduce
+       quantity or drop a row (partial return), never add a part that wasn't in this ใบเบิก. ── */
+    function openReturnModal(ticketId, batchId) {
         const tk = cachedTickets.find(t => t.ticketId === ticketId);
         if (!tk) return;
+        const batch = (tk.withdrawBatches || []).find(b => b.withdrawBatchId === batchId);
+        if (!batch) return;
         activeReturnTicketId = ticketId;
-        document.getElementById('rtTicketNo').textContent = tk.externalTicketNo;
+        activeReturnBatchId = batchId;
+        document.getElementById('rtTicketNo').textContent = `${tk.externalTicketNo}${batch.withdrawSlipNo ? ' — ' + batch.withdrawSlipNo : ''}`;
         document.getElementById('rtTechName').textContent = tk.techName;
 
-        const receivedBatches = (tk.withdrawBatches || []).filter(b => b.status === 'เบิก');
-        const combined = receivedBatches.length > 1;
-        const historyHtml = receivedBatches.map(batch => {
-            const lines = batch.lines.length
-                ? batch.lines.map(l => `<div class="tk-history-line"><span>${l.partName}</span><span class="fw-600">×${l.quantity}</span></div>`).join('')
-                : `<span class="text-muted">—</span>`;
-            return combined
-                ? `<div style="margin-bottom:8px;"><div class="text-muted" style="font-size:10.5px;font-weight:700;text-transform:uppercase;margin-bottom:2px;">${batch.withdrawSlipNo || ''}</div>${lines}</div>`
-                : lines;
-        }).join('');
-        document.getElementById('rtHistory').innerHTML = historyHtml || `<span class="text-muted">—</span>`;
+        const historyHtml = batch.lines.length
+            ? batch.lines.map(l => `<div class="tk-history-line"><span>${l.partName}</span><span class="fw-600">×${l.quantity}</span></div>`).join('')
+            : `<span class="text-muted">—</span>`;
+        document.getElementById('rtHistory').innerHTML = historyHtml;
 
         document.getElementById('rtAddress').value = '';
         document.getElementById('rtLinesMatched').innerHTML = '';
-        document.getElementById('rtLinesExtra').innerHTML = '';
         rtLineCount = 0;
-        // pre-fill one row per withdrawn part across every received batch, defaulting qty to what
-        // was withdrawn (partial return allowed). These go in the "ตรงกับใบเบิก" group — anything
-        // the tech adds manually via "+ เพิ่มอะไหล่นอกเหนือใบเบิก" lands in the separate extra
-        // group instead (see addLine()).
-        receivedBatches.forEach(batch => {
-            batch.lines.forEach(l => {
-                rtLineCount++;
-                document.getElementById('rtLinesMatched').insertAdjacentHTML('beforeend', lineRowHtml('rt', rtLineCount, l.partNo, l.quantity));
-            });
+        // One row per line this batch actually withdrew, defaulting qty to what was withdrawn
+        // (partial return allowed by lowering it or deleting the row) — no way to add a part that
+        // wasn't part of this ใบเบิก.
+        batch.lines.forEach(l => {
+            rtLineCount++;
+            document.getElementById('rtLinesMatched').insertAdjacentHTML('beforeend', lineRowHtml('rt', rtLineCount, l.partNo, l.quantity));
         });
-        if (!rtLineCount) addLine('return');
         photoFiles.rt = [];
         renderPhotoPreview('rt');
         document.getElementById('returnOverlay').classList.add('open');
@@ -1390,6 +1425,7 @@
     function closeReturnModal() {
         document.getElementById('returnOverlay').classList.remove('open');
         activeReturnTicketId = null;
+        activeReturnBatchId = null;
     }
     async function submitReturn() {
         const lines = collectLines('rt', rtLineCount);
@@ -1398,7 +1434,7 @@
         if (!address) { showToast?.('กรุณากรอกที่อยู่', 'error'); return; }
         try {
             const attachments = await uploadPendingPhotos('rt');
-            await api.tickets.submitReturn(activeReturnTicketId, { lines, address, attachments });
+            await api.tickets.submitReturn(activeReturnTicketId, activeReturnBatchId, { lines, address, attachments });
             photoFiles.rt = [];
             closeReturnModal();
             await fetchTickets();
@@ -1409,30 +1445,36 @@
         }
     }
 
-    async function markShipped(id) {
+    async function markShipped(ticketId, batchId) {
         try {
-            await api.tickets.ship(id);
+            await api.tickets.shipReturn(ticketId, batchId);
             await fetchTickets();
         } catch (e) { showToast?.(e.message || t('toast.error'), 'error'); }
     }
 
-    /* ── New Withdrawal Request (tech-initiated) ──
-       There's no Aservice-synced Ticket to attach this to yet, so behind the scenes this
-       creates one (POST /Ticket/sync with a self-generated ExternalTicketNo) and immediately
-       submits the withdraw request on it — presented to the tech as one single form. */
+    /* ── New Withdrawal Request (tech-initiated, self-service) ──
+       For a case that has NO Aservice/KMM ticket at all — a genuinely ad-hoc withdraw. Any real
+       KMM job ticket instead appears automatically in "Ticket ของฉัน" via syncKmmJobTickets()
+       below and is withdrawn from there (openWithdrawModal), not through this form. This one
+       still creates its own Ticket (POST /Ticket/sync with a self-generated ExternalTicketNo)
+       and submits the withdraw together — presented to the tech as one single form. */
     function openNewRequestModal() {
-        // Prefill from the tech's own last ticket, if any, so they don't retype name/dept every time.
+        // Prefill from the tech's own KMM profile — currentName/currentEmail (=emp_id) come from
+        // login, so this no longer depends on having a previous ticket cached.
         const last = cachedTickets.find(t => t.techName);
-        document.getElementById('nrTechName').value = last?.techName || '';
-        document.getElementById('nrTechDept').value = last?.techDept || '';
+        // FE ID is the same thing as Zone — reuse whatever zone we know for this tech (from their
+        // most recent KMM-synced ticket) instead of leaving it for the tech to type.
+        const zone = last?.techDept || '';
+        document.getElementById('nrTechName').value = currentName || last?.techName || '';
+        document.getElementById('nrTechDept').value = zone;
         document.getElementById('nrWithdrawDate').value = todayIso();
-        document.getElementById('nrEmployeeCode').value = '';
+        document.getElementById('nrEmployeeCode').value = currentEmail || '';
         document.getElementById('nrCaseNo').value = '';
         document.getElementById('nrUsageStatus').value = 'Repair';
         document.getElementById('nrTechSupport').value = '';
         document.getElementById('nrNeededByDate').value = '';
         document.getElementById('nrAtmCode').value = '';
-        document.getElementById('nrFeId').value = '';
+        document.getElementById('nrFeId').value = zone;
         onUsageStatusChange('nr');
         document.getElementById('nrAddress').value = '';
         document.getElementById('nrDescription').value = '';

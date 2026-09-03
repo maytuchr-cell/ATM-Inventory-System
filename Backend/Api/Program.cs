@@ -249,6 +249,11 @@ using (var scope = app.Services.CreateScope())
                 context.Database.ExecuteSqlRaw("ALTER TABLE DailyReportImportRows ADD COLUMN CaseNo TEXT NULL;");
                 Console.WriteLine("✅ Migration: added DailyReportImportRows.CaseNo");
             }
+            if (!driCols.Contains("WithdrawBatchId"))
+            {
+                context.Database.ExecuteSqlRaw("ALTER TABLE DailyReportImportRows ADD COLUMN WithdrawBatchId INTEGER NULL;");
+                Console.WriteLine("✅ Migration: added DailyReportImportRows.WithdrawBatchId (return leg is batch-scoped now)");
+            }
         }
         catch (Exception mex) { Console.WriteLine($"⚠ DailyReportImport migration skipped: {mex.Message}"); }
 
@@ -460,6 +465,17 @@ using (var scope = app.Services.CreateScope())
             {
                 context.Database.ExecuteSqlRaw("ALTER TABLE WithdrawBatches ADD COLUMN WaitingSinceAt TEXT NULL;");
                 Console.WriteLine("✅ Migration: added WithdrawBatches.WaitingSinceAt");
+            }
+            // Return leg moved from Ticket-scoped to batch-scoped ("คืนตามใบเบิก" — see WithdrawBatch.cs).
+            if (!wbCols.Contains("ReturnStatus"))
+            {
+                context.Database.ExecuteSqlRaw("ALTER TABLE WithdrawBatches ADD COLUMN ReturnStatus TEXT NULL;");
+                context.Database.ExecuteSqlRaw("ALTER TABLE WithdrawBatches ADD COLUMN ReturnRejectReason TEXT NULL;");
+                context.Database.ExecuteSqlRaw("ALTER TABLE WithdrawBatches ADD COLUMN ReturnApproverName TEXT NULL;");
+                context.Database.ExecuteSqlRaw("ALTER TABLE WithdrawBatches ADD COLUMN ReturnApprovedAt TEXT NULL;");
+                context.Database.ExecuteSqlRaw("ALTER TABLE WithdrawBatches ADD COLUMN ReturnAddress TEXT NULL;");
+                context.Database.ExecuteSqlRaw("ALTER TABLE WithdrawBatches ADD COLUMN ReturnEmailSentAt TEXT NULL;");
+                Console.WriteLine("✅ Migration: added WithdrawBatches.Return* (batch-scoped return leg)");
             }
 
             var tplCols2 = new HashSet<string>(StringComparer.OrdinalIgnoreCase);

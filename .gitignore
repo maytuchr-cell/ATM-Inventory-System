@@ -36,6 +36,9 @@ Thumbs.db
 # Part images — stored externally at D:\ATMAssets\parts\ (not in repo)
 Backend/Api/wwwroot/uploads/
 
+# Local-only secrets (KMM service account, etc.) — never commit real credentials
+Backend/Api/appsettings.Development.json
+
 # IDE
 .vs/
 *.user

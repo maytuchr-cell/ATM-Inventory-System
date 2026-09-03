@@ -3,8 +3,11 @@ namespace Api.Models;
 // One "ใบเบิก" — an independent withdraw request under a Ticket (Case No.). A Ticket can carry
 // multiple WithdrawBatches (the tech can request more parts under the same Case No. while an
 // earlier request is still open — "เบิกเพิ่ม"), each running its own รอ→รออะไหล่→รอส่งเมล DHL→
-// เดินทาง→เบิก lifecycle independently. The return leg stays on Ticket itself (see Ticket.cs) —
-// a return can pull parts from any of this Ticket's เบิก-status batches.
+// เดินทาง→เบิก lifecycle independently. The return leg ALSO lives here now, one per batch (Return*
+// fields below) — "คืนตามใบเบิก" means each ใบเบิก returns on its own, independently of any other
+// batch under the same Ticket, so several batches can each have their own return in flight at
+// once. (Ticket.Status/ReturnAddress/etc are vestigial leftovers from when the return leg was
+// Ticket-scoped — no longer written to, kept only because SQLite can't cheaply drop columns.)
 public class WithdrawBatch
 {
     public int WithdrawBatchId { get; set; }
@@ -66,4 +69,14 @@ public class WithdrawBatch
 
     public ICollection<TicketPartLine> Lines { get; set; } = new List<TicketPartLine>();
     public ICollection<TicketAttachment> Attachments { get; set; } = new List<TicketAttachment>();
+
+    // ── Return leg, scoped to this ใบเบิก only ("คืนตามใบเบิก") ──
+    // null / รอ / อนุมัติคืน / กำลังเดินทางรับคืน / เดินทาง / คืน / Reject / Cancel — null means no
+    // return has been submitted against this batch yet (only possible once Status == "เบิก").
+    public string? ReturnStatus { get; set; }
+    public string? ReturnRejectReason { get; set; }
+    public string? ReturnApproverName { get; set; }
+    public DateTime? ReturnApprovedAt { get; set; }
+    public string? ReturnAddress { get; set; }
+    public DateTime? ReturnEmailSentAt { get; set; }
 }

@@ -47,8 +47,9 @@ public class DailyReportControllerTests
         return (tickets, dailyReport, context, mainWh, techLoc);
     }
 
-    /// <summary>Drives a Ticket all the way to เดินทาง on the return leg (ready for DHL to confirm).</summary>
-    private static Ticket CreateShippedReturnTicket(TicketController tickets, AppDbContext context, string externalNo, int qty = 1)
+    /// <summary>Drives a Ticket's one WithdrawBatch all the way to เดินทาง on its own return leg
+    /// ("คืนตามใบเบิก" — ready for DHL to confirm).</summary>
+    private static (Ticket Ticket, WithdrawBatch Batch) CreateShippedReturnTicket(TicketController tickets, AppDbContext context, string externalNo, int qty = 1)
     {
         tickets.SyncFromAservice(new SyncTicketDto { ExternalTicketNo = externalNo, TechName = "Tech" });
         var ticket = context.Tickets.First(t => t.ExternalTicketNo == externalNo);
@@ -60,11 +61,11 @@ public class DailyReportControllerTests
         tickets.ApproveBatch(ticket.TicketId, batch.WithdrawBatchId);
         tickets.SendEmailConfirmedBatch(ticket.TicketId, batch.WithdrawBatchId);
         tickets.ReceiveBatch(ticket.TicketId, batch.WithdrawBatchId);
-        tickets.SubmitReturn(ticket.TicketId, new SubmitLinesDto { Lines = new() { new LineDto { PartNo = PartNo, Quantity = qty, Condition = "Good" } }, Address = "Return Addr" });
-        tickets.ApproveReturn(ticket.TicketId);
-        tickets.SendEmailConfirmedReturn(ticket.TicketId);
-        tickets.MarkShipped(ticket.TicketId);
-        return context.Tickets.First(t => t.TicketId == ticket.TicketId);
+        tickets.SubmitReturn(ticket.TicketId, batch.WithdrawBatchId, new SubmitLinesDto { Lines = new() { new LineDto { PartNo = PartNo, Quantity = qty, Condition = "Good" } }, Address = "Return Addr" });
+        tickets.ApproveReturn(ticket.TicketId, batch.WithdrawBatchId);
+        tickets.SendEmailConfirmedReturn(ticket.TicketId, batch.WithdrawBatchId);
+        tickets.MarkShipped(ticket.TicketId, batch.WithdrawBatchId);
+        return (context.Tickets.First(t => t.TicketId == ticket.TicketId), context.WithdrawBatches.First(b => b.WithdrawBatchId == batch.WithdrawBatchId));
     }
 
     private static IFormFile BuildDailyReportFile(params (string PartNo, string PartName, string Serial, int Qty, string Status, string? Problem)[] rows)
@@ -136,13 +137,13 @@ public class DailyReportControllerTests
     public void Preview_MatchesOpenReturnTicket_ButDoesNotPersist()
     {
         var (tickets, dailyReport, context, mainWh, _) = Create();
-        var ticket = CreateShippedReturnTicket(tickets, context, "DR-1");
+        var (ticket, batch) = CreateShippedReturnTicket(tickets, context, "DR-1");
         var file = BuildDailyReportFile((PartNo, "Test Part", "SN-001", 1, "GOOD", null));
 
         var result = dailyReport.Preview(file);
 
         var ok = Assert.IsType<OkObjectResult>(result);
-        Assert.Equal("เดินทาง", context.Tickets.First(t => t.TicketId == ticket.TicketId).Status); // untouched
+        Assert.Equal("เดินทาง", context.WithdrawBatches.First(b => b.WithdrawBatchId == batch.WithdrawBatchId).ReturnStatus); // untouched
         Assert.Equal(99, context.PartStocks.First(s => s.LocationId == mainWh.Id).GoodQty); // 100 - 1 (withdrawn), untouched by preview
     }
 
@@ -150,14 +151,14 @@ public class DailyReportControllerTests
     public void Confirm_GoodRow_ConfirmsReturnAndAddsToGoodStock()
     {
         var (tickets, dailyReport, context, mainWh, techLoc) = Create();
-        var ticket = CreateShippedReturnTicket(tickets, context, "DR-2");
+        var (ticket, batch) = CreateShippedReturnTicket(tickets, context, "DR-2");
         var file = BuildDailyReportFile((PartNo, "Test Part", "SN-002", 1, "GOOD", null));
 
         var result = dailyReport.Confirm(file);
 
         Assert.IsType<OkObjectResult>(result);
-        var ticketAfter = context.Tickets.First(t => t.TicketId == ticket.TicketId);
-        Assert.Equal("คืน", ticketAfter.Status);
+        var batchAfter = context.WithdrawBatches.First(b => b.WithdrawBatchId == batch.WithdrawBatchId);
+        Assert.Equal("คืน", batchAfter.ReturnStatus);
         Assert.Equal(100, context.PartStocks.First(s => s.LocationId == mainWh.Id).GoodQty); // 100 - 1 (withdrawn) + 1 (returned)
         Assert.True(context.PartUnits.Any(u => u.SerialNo == "SN-002" && u.Status == "InStock"));
 
@@ -224,7 +225,7 @@ public class DailyReportControllerTests
     public void UndoRow_ReturnConfirmed_RevertsStockAndReopensTicket()
     {
         var (tickets, dailyReport, context, mainWh, techLoc) = Create();
-        var ticket = CreateShippedReturnTicket(tickets, context, "DR-6");
+        var (ticket, batch) = CreateShippedReturnTicket(tickets, context, "DR-6");
 
         var confirmResult = Assert.IsType<OkObjectResult>(dailyReport.Confirm(BuildDailyReportFile((PartNo, "Test Part", "SN-006", 1, "GOOD", null))));
         // Anonymous response type is internal to the Api assembly — read it back via JSON rather
@@ -239,7 +240,7 @@ public class DailyReportControllerTests
 
         Assert.IsType<OkObjectResult>(undoResult);
         Assert.Equal(99, context.PartStocks.First(s => s.LocationId == mainWh.Id).GoodQty); // back to withdrawn-only baseline
-        Assert.Equal("เดินทาง", context.Tickets.First(t => t.TicketId == ticket.TicketId).Status);
+        Assert.Equal("เดินทาง", context.WithdrawBatches.First(b => b.WithdrawBatchId == batch.WithdrawBatchId).ReturnStatus);
         Assert.True(context.DailyReportImportRows.First(r => r.Id == row.Id).Undone);
     }
 
@@ -252,15 +253,15 @@ public class DailyReportControllerTests
         // (so plain FIFO would pick it), but the Daily Report row's Case No. actually belongs to
         // Ticket "NEWER". Case No. must win over the FIFO guess.
         var (tickets, dailyReport, context, mainWh, _) = Create();
-        var older = CreateShippedReturnTicket(tickets, context, "OLDER");
-        var newer = CreateShippedReturnTicket(tickets, context, "NEWER");
+        var (older, olderBatch) = CreateShippedReturnTicket(tickets, context, "OLDER");
+        var (newer, newerBatch) = CreateShippedReturnTicket(tickets, context, "NEWER");
 
         var file = BuildDailyReportFileWithCaseNo((PartNo, "Test Part", "SN-CASE-001", 1, "GOOD", null, "NEWER"));
         var result = dailyReport.Confirm(file);
 
         Assert.IsType<OkObjectResult>(result);
-        Assert.Equal("คืน", context.Tickets.First(t => t.TicketId == newer.TicketId).Status); // the actual match
-        Assert.Equal("เดินทาง", context.Tickets.First(t => t.TicketId == older.TicketId).Status); // untouched, despite being "older"
+        Assert.Equal("คืน", context.WithdrawBatches.First(b => b.WithdrawBatchId == newerBatch.WithdrawBatchId).ReturnStatus); // the actual match
+        Assert.Equal("เดินทาง", context.WithdrawBatches.First(b => b.WithdrawBatchId == olderBatch.WithdrawBatchId).ReturnStatus); // untouched, despite being "older"
     }
 
     [Fact]
@@ -269,13 +270,13 @@ public class DailyReportControllerTests
         // A row carries a Case No. that doesn't correspond to any open return line — must not
         // silently fall back to guessing by Part No. against some unrelated open ticket.
         var (tickets, dailyReport, context, mainWh, _) = Create();
-        var ticket = CreateShippedReturnTicket(tickets, context, "DR-CASE-2");
+        var (ticket, batch) = CreateShippedReturnTicket(tickets, context, "DR-CASE-2");
         var file = BuildDailyReportFileWithCaseNo((PartNo, "Test Part", "SN-CASE-002", 1, "GOOD", null, "NO-SUCH-CASE"));
 
         var result = dailyReport.Confirm(file);
 
         Assert.IsType<OkObjectResult>(result);
-        Assert.Equal("เดินทาง", context.Tickets.First(t => t.TicketId == ticket.TicketId).Status); // untouched
+        Assert.Equal("เดินทาง", context.WithdrawBatches.First(b => b.WithdrawBatchId == batch.WithdrawBatchId).ReturnStatus); // untouched
         Assert.Equal(99, context.PartStocks.First(s => s.LocationId == mainWh.Id).GoodQty); // untouched
     }
 
@@ -284,13 +285,13 @@ public class DailyReportControllerTests
     {
         // Older-format files (no Case No. column at all) must keep working exactly as before.
         var (tickets, dailyReport, context, mainWh, _) = Create();
-        var ticket = CreateShippedReturnTicket(tickets, context, "DR-NOCASE");
+        var (ticket, batch) = CreateShippedReturnTicket(tickets, context, "DR-NOCASE");
         var file = BuildDailyReportFile((PartNo, "Test Part", "SN-NOCASE-001", 1, "GOOD", null));
 
         var result = dailyReport.Confirm(file);
 
         Assert.IsType<OkObjectResult>(result);
-        Assert.Equal("คืน", context.Tickets.First(t => t.TicketId == ticket.TicketId).Status);
+        Assert.Equal("คืน", context.WithdrawBatches.First(b => b.WithdrawBatchId == batch.WithdrawBatchId).ReturnStatus);
     }
 
     private class FakeEnv : IWebHostEnvironment

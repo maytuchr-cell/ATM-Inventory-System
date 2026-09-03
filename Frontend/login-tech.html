@@ -237,6 +237,7 @@
                 localStorage.setItem("authToken", data.token);
                 localStorage.setItem("userRole", data.role);
                 localStorage.setItem("userEmail", data.email);
+                localStorage.setItem("userName", data.name || data.email);
                 window.location.href = "tech.html";
             } catch (err) {
                 showError('เชื่อมต่อเซิร์ฟเวอร์ไม่ได้ กรุณาลองใหม่');

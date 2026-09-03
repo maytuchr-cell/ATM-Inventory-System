@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>History — ATM Inventory</title>
-  <link rel="stylesheet" href="shared/styles.css?v=71">
+  <link rel="stylesheet" href="shared/styles.css?v=74">
   <style>
     /* Filter bar */
     .filter-grid { display:grid; grid-template-columns:1fr 1fr auto; gap:16px; align-items:end; margin-bottom:20px; padding:20px; background:var(--bg-subtle); border-radius:10px; border:1px solid var(--border); }
@@ -144,10 +144,10 @@
   </div>
 </div>
 
-<script src="shared/translations.js?v=71"></script>
-<script src="shared/toast.js?v=71"></script>
-<script src="shared/api.js?v=71"></script>
-<script src="shared/layout.js?v=71"></script>
+<script src="shared/translations.js?v=74"></script>
+<script src="shared/toast.js?v=74"></script>
+<script src="shared/api.js?v=74"></script>
+<script src="shared/layout.js?v=74"></script>
 <script>
   const CONDITION_LABEL = { Good: 'ของดี', Bad: 'ของเสีย', Lost: 'สูญหาย' };
   let allTickets = [];
@@ -157,9 +157,9 @@
 
   async function fetchHistory() {
     try {
-      // A Ticket with no return leg started (Status still null) can still have withdraw
-      // activity worth showing in history now that the withdraw leg lives on WithdrawBatch.
-      allTickets = (await api.tickets.getAll()).filter(tk => tk.status !== null || (tk.withdrawBatches || []).length > 0);
+      // Any Ticket with at least one WithdrawBatch is worth showing — both legs live on the
+      // batch now ("คืนตามใบเบิก"), so there's no separate Ticket-level Status to check any more.
+      allTickets = (await api.tickets.getAll()).filter(tk => (tk.withdrawBatches || []).length > 0);
       renderTable(allTickets);
     } catch {
       document.getElementById('historyTableBody').innerHTML =
@@ -168,12 +168,11 @@
   }
 
   // Grouped by WithdrawBatch (so it's clear which items belong to which ใบเบิก, e.g.
-  // "ใบที่ 1: ฐาน ×1" vs "ใบที่ 2: เสา ×2") rather than one flat mixed list, then the Ticket's
-  // own Return lines (คืน) at the end.
+  // "ใบที่ 1: ฐาน ×1" vs "ใบที่ 2: เสา ×2"), each batch's own Return lines (คืน) shown right
+  // under its Withdraw lines since a return is scoped to that one batch now ("คืนตามใบเบิก").
   function groupedPartsSummaryHtml(tk) {
     const batches = tk.withdrawBatches || [];
-    const returnLines = tk.lines;
-    if (!batches.length && !returnLines.length) return `<span class="sub-text">—</span>`;
+    if (!batches.length) return `<span class="sub-text">—</span>`;
 
     const lineHtml = (l, tag) => `<div style="font-size:12px;">${l.partName} <span class="sub-text" style="display:inline">×${l.quantity}</span> <span style="font-size:10px;color:var(--text-muted)">(${tag}${l.condition ? ' — ' + CONDITION_LABEL[l.condition] : ''})</span>${l.isOffTicket ? ' <span style="font-size:10px;color:var(--orange);">🆕 นอกใบเบิก</span>' : ''}</div>`;
 
@@ -183,11 +182,10 @@
         html += `<div style="font-size:10px;font-weight:700;color:var(--text-muted);text-transform:uppercase;margin-top:${i ? 6 : 0}px;">ใบที่ ${i + 1}${b.withdrawSlipNo ? ' — ' + b.withdrawSlipNo : ''}</div>`;
       }
       html += b.lines.length ? b.lines.map(l => lineHtml(l, 'เบิก')).join('') : `<span class="sub-text">—</span>`;
+      if ((b.returnLines || []).length) {
+        html += b.returnLines.map(l => lineHtml(l, 'คืน')).join('');
+      }
     });
-    if (returnLines.length) {
-      html += `<div style="font-size:10px;font-weight:700;color:var(--text-muted);text-transform:uppercase;margin-top:6px;">คืนแล้ว</div>`;
-      html += returnLines.map(l => lineHtml(l, 'คืน')).join('');
-    }
     return html;
   }
 
@@ -252,7 +250,6 @@
     const none = `<span class="detail-empty">ไม่ระบุ</span>`;
     const fmt  = d => d ? new Date(d).toLocaleString('th-TH') : '—';
 
-    const returnLines = tk.lines; // Return-phase lines only, per API shape
     const lineListHtml = list => list.length
       ? list.map(l => `<div style="display:flex;justify-content:space-between;padding:4px 0;border-bottom:1px solid var(--border);"><span>${l.partName}${l.condition ? ` <span style="color:var(--text-muted);font-size:11px;">(${CONDITION_LABEL[l.condition]})</span>` : ''}${l.isOffTicket ? ' <span style="font-size:10px;color:var(--orange);">🆕 นอกใบเบิก</span>' : ''}</span><span class="fw-600">×${l.quantity}</span></div>`).join('')
       : `<span class="detail-empty">—</span>`;
@@ -276,6 +273,25 @@
           ${batch.rejectReason ? `<div class="detail-empty" style="margin-top:8px;font-style:normal;color:var(--text-primary);">เหตุผลที่ Reject: ${batch.rejectReason}</div>` : ''}
         </div>`;
     };
+    // One read-only card per batch with any return activity — each batch's return leg is
+    // fully independent ("คืนตามใบเบิก").
+    const returnCardHtml = batch => {
+      const rBadge = STATUS_BADGE[batch.returnStatus] || STATUS_BADGE["รอ"];
+      return `
+        <div class="detail-section" style="background:var(--bg-subtle);border:1px solid var(--border);border-radius:10px;padding:14px;">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
+            <span class="badge ${rBadge.cls}"><span class="badge-dot"></span>${rBadge.label}</span>
+            <span style="font-size:11px;color:var(--text-muted);">${batch.withdrawSlipNo || ''}</span>
+          </div>
+          <div class="detail-grid" style="margin-bottom:10px;">
+            <div class="detail-field full"><label>ที่อยู่จัดส่งคืน</label><span>${batch.returnAddress || none}</span></div>
+          </div>
+          ${lineListHtml(batch.returnLines || [])}
+          ${(batch.returnAttachments || []).length ? `<div style="margin-top:8px;">${attachmentGalleryHtml(batch.returnAttachments)}</div>` : ''}
+          ${batch.returnRejectReason ? `<div class="detail-empty" style="margin-top:8px;font-style:normal;color:var(--text-primary);">เหตุผลที่ Reject: ${batch.returnRejectReason}</div>` : ''}
+        </div>`;
+    };
+    const returningBatches = (tk.withdrawBatches || []).filter(b => b.returnStatus != null);
 
     document.getElementById('detailTitle').textContent = `${tk.externalTicketNo} — ${tk.techName}`;
 
@@ -300,15 +316,8 @@
       <hr class="detail-divider">
 
       <div class="detail-section">
-        <div class="detail-section-title">รายการอะไหล่ — คืน</div>
-        ${tk.returnAddress ? `
-        <div class="detail-grid" style="margin-bottom:10px;">
-          <div class="detail-field"><label>สถานะฝั่งคืน</label><span>${STATUS_BADGE[tk.status]?.label || tk.status || none}</span></div>
-          <div class="detail-field"><label>ที่อยู่จัดส่งคืน</label><span>${tk.returnAddress}</span></div>
-        </div>` : ''}
-        ${lineListHtml(returnLines)}
-        ${(tk.attachments || []).length ? `<div style="margin-top:8px;">${attachmentGalleryHtml(tk.attachments)}</div>` : ''}
-        ${tk.rejectReason ? `<div class="detail-empty" style="margin-top:8px;font-style:normal;color:var(--text-primary);">เหตุผลที่ Reject: ${tk.rejectReason}</div>` : ''}
+        <div class="detail-section-title">📥 ใบคืน (${returningBatches.length})</div>
+        ${returningBatches.length ? returningBatches.map(returnCardHtml).join('<div style="height:10px;"></div>') : `<span class="detail-empty">ยังไม่มีการคืนอะไหล่</span>`}
       </div>
     `;
 
@@ -326,7 +335,7 @@
     const filtered = allTickets.filter(tk => {
       const hay = `${tk.externalTicketNo} ${tk.techName} ${tk.techDept}`.toLowerCase();
       const matchSearch = !search || hay.includes(search);
-      const matchStatus = !status || tk.status === status;
+      const matchStatus = !status || tk.displayStatus === status;
       return matchSearch && matchStatus;
     });
 
