@@ -217,7 +217,12 @@
       "Bash(python \"C:/Users/Admin/AppData/Roaming/Claude/local-agent-mode-sessions/skills-plugin/f27064c1-0d35-469d-9496-4e269e9f305b/868bcfe3-11c4-4e6c-851a-ad478dabea7e/skills/docx/scripts/office/soffice.py\" --headless --convert-to pdf \"D:/ATM-Inventory-System-Deploy-Checklist.docx\")",
       "Bash(python \"C:/Users/Admin/AppData/Roaming/Claude/local-agent-mode-sessions/skills-plugin/f27064c1-0d35-469d-9496-4e269e9f305b/868bcfe3-11c4-4e6c-851a-ad478dabea7e/skills/docx/scripts/office/soffice.py\" --headless --convert-to pdf --outdir \"D:/ATM-Inventory-System\" \"D:/ATM-Inventory-System-Deploy-Checklist.docx\")",
       "Bash(cp \"C:/Users/Admin/AppData/Roaming/Claude/local-agent-mode-sessions/skills-plugin/f27064c1-0d35-469d-9496-4e269e9f305b/868bcfe3-11c4-4e6c-851a-ad478dabea7e/skills/docx/scripts/office/soffice.py\" \"C:/Users/Admin/AppData/Local/Temp/claude/D--ATM-Inventory-System/5c2d3622-19ca-49c7-be23-6fc9ef683f20/scratchpad/soffice.py\")",
-      "Bash(python soffice.py --headless --convert-to pdf \"D:/ATM-Inventory-System-Deploy-Checklist.docx\")"
+      "Bash(python soffice.py --headless --convert-to pdf \"D:/ATM-Inventory-System-Deploy-Checklist.docx\")",
+      "Bash(git merge *)",
+      "Bash(time curl -s -i -X POST \"http://localhost:5128/Auth/login\" -H \"Content-Type: application/json\" -d '{\"email\":\"admin@atm.com\",\"password\":\"admin123\"}' --max-time 10)",
+      "Bash(curl -s -X POST \"http://localhost:5128/Ticket/sync\" -H \"Content-Type: application/json\" -d '{\"externalTicketNo\":\"TEST-SHORTAGE-TICKET\",\"techName\":\"Test Tech\",\"techEmail\":\"tech@atm.com\",\"techDept\":\"Test Zone\"}')",
+      "Bash(curl -s -X POST \"http://localhost:5128/Ticket/8/withdraw-batches\" -H \"Content-Type: application/json\" -d '{\"lines\":[{\"partNo\":\"TEST-SHORTAGE-001\",\"quantity\":5}],\"address\":\"Test address\"}')",
+      "Bash(curl -s \"http://localhost:5128/Ticket/shortage-report?days=30\")"
     ]
   }
 }

@@ -14,11 +14,6 @@
     .sr-count { font-size:13px; color:var(--text-secondary); }
     .sr-count strong { color:var(--text-primary); }
 
-    .sr-deadline { font-weight:700; }
-    .sr-deadline.crit { color:var(--red); }
-    .sr-deadline.warn { color:#b8860b; }
-    .sr-deadline.ok   { color:var(--text-secondary); }
-
     .sr-part-list { display:flex; flex-direction:column; gap:2px; }
     .sr-part-list span { font-size:12.5px; }
     .sr-part-list .short-qty { color:var(--red); font-weight:600; }
@@ -70,7 +65,6 @@
                     <th>ช่าง</th>
                     <th>อะไหล่ที่ขาด</th>
                     <th>รอมาแล้ว</th>
-                    <th>จะโดน auto-reject ใน</th>
                   </tr>
                 </thead>
                 <tbody id="sr-live-tbody"></tbody>
@@ -85,7 +79,7 @@
         <div class="card">
           <div class="card-body">
             <div class="sr-toolbar">
-              <span class="sr-count"><strong id="sr-trend-count">0</strong> ครั้งที่ auto-reject ในช่วงที่เลือก</span>
+              <span class="sr-count"><strong id="sr-trend-count">0</strong> ครั้งที่เคย auto-reject (ประวัติเก่า)</span>
               <select class="sr-days-select" id="sr-days-select" onchange="loadShortageReport()">
                 <option value="7">7 วันล่าสุด</option>
                 <option value="30" selected>30 วันล่าสุด</option>
@@ -104,8 +98,8 @@
               </table>
             </div>
             <div class="sr-note">
-              นับเฉพาะการ auto-reject อัตโนมัติ (รอเกิน 24 ชม.) เท่านั้น — ไม่รวม Reject ที่ Admin กดเอง เพราะเหตุผลที่พิมพ์เองไม่มีรูปแบบตายตัวให้นับได้แม่นยำ
-              ข้อมูลเริ่มนับตั้งแต่ฟีเจอร์นี้เปิดใช้งาน จึงไม่มีประวัติย้อนหลังก่อนหน้านั้น
+              ⚠ ฟีเจอร์ auto-reject อัตโนมัติ (รอเกิน 24 ชม.) ถูกปิดใช้งานแล้ว — Ticket ที่รออะไหล่จะรอจนกว่า Admin จะจัดการเอง
+              (เปลี่ยนเป็นอะไหล่เทียบเคียง, รอสต็อกเข้าแล้วกด "เช็คสต็อกอีกครั้ง", หรือ Reject/Cancel เอง) แท็บนี้แสดงแค่ประวัติเก่าก่อนปิดใช้งาน จะไม่มีรายการใหม่เพิ่มอีก
             </div>
           </div>
         </div>
@@ -136,13 +130,6 @@
             ${s.substitutePartName ? `<span class="sr-substitute">🔁 ใช้แทนได้: ${s.substitutePartName}</span>` : ''}`).join('')}</div>`;
     }
 
-    function deadlineClass(hoursUntilReject) {
-        if (hoursUntilReject == null) return 'ok';
-        if (hoursUntilReject <= 4) return 'crit';
-        if (hoursUntilReject <= 12) return 'warn';
-        return 'ok';
-    }
-
     async function loadShortageReport() {
         const days = document.getElementById('sr-days-select').value;
         try {
@@ -164,9 +151,8 @@
                     <td>${b.techName || '—'}${b.techDept ? `<div class="sub-text">${b.techDept}</div>` : ''}</td>
                     <td>${partsSummaryHtml(b.shortages)}</td>
                     <td>${b.hoursWaiting != null ? b.hoursWaiting + ' ชม.' : '—'}</td>
-                    <td class="sr-deadline ${deadlineClass(b.hoursUntilReject)}">${b.hoursUntilReject != null ? (b.hoursUntilReject > 0 ? b.hoursUntilReject + ' ชม.' : 'เกินกำหนดแล้ว') : '—'}</td>
                 </tr>`).join('')
-            : `<tr><td colspan="5" class="empty-state">ไม่มี Ticket ที่รออะไหล่อยู่ตอนนี้ 🎉</td></tr>`;
+            : `<tr><td colspan="4" class="empty-state">ไม่มี Ticket ที่รออะไหล่อยู่ตอนนี้ 🎉</td></tr>`;
     }
 
     function renderTrend(trend, eventCount) {

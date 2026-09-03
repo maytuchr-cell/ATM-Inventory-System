@@ -183,21 +183,21 @@ public class TicketWorkflowTests
             Address = "Addr"
         });
 
+        // No auto-reject regardless of substitute availability — always waits for Admin to act
+        // (substitute, wait for stock, or manually Reject/Cancel). See TryAutoApprove.
         Assert.IsType<OkObjectResult>(result);
         var batch = context.WithdrawBatches.First(b => b.TicketId == ticket.TicketId);
-        Assert.Equal("Reject", batch.Status);
-        Assert.Contains("Test Part", batch.RejectReason);
-        Assert.Contains("ไม่มีอะไหล่ทดแทน", batch.RejectReason);
-        Assert.Null(batch.WaitingSinceAt);
+        Assert.Equal("รออะไหล่", batch.Status);
+        Assert.NotNull(batch.WaitingSinceAt);
     }
 
     [Fact]
-    public void SubmitWithdraw_WithInsufficientStock_AndEquivalentAlsoOutOfStock_RejectsImmediately()
+    public void SubmitWithdraw_WithInsufficientStock_AndEquivalentAlsoOutOfStock_WaitsForAdmin()
     {
         var (controller, context) = TicketControllerFixture.Create();
         context.PartStocks.First(s => s.LocationId == context.Locations.First(l => l.Code == "WH-RAT").Id).GoodQty = 1;
         context.SaveChanges();
-        // Registered, but with nothing on hand either — still no viable substitute.
+        // Registered, but with nothing on hand either — still no viable substitute right now.
         TicketControllerFixture.SeedEquivalentPart(context, equivalentStock: 0);
 
         controller.SyncFromAservice(new SyncTicketDto { ExternalTicketNo = "NOSUB-2", TechName = "Tech" });
@@ -211,8 +211,7 @@ public class TicketWorkflowTests
 
         Assert.IsType<OkObjectResult>(result);
         var batch = context.WithdrawBatches.First(b => b.TicketId == ticket.TicketId);
-        Assert.Equal("Reject", batch.Status);
-        Assert.Contains("ไม่มีอะไหล่ทดแทน", batch.RejectReason);
+        Assert.Equal("รออะไหล่", batch.Status);
     }
 
     [Fact]
@@ -239,13 +238,16 @@ public class TicketWorkflowTests
     }
 
     [Fact]
-    public void GetAllTickets_RejectsWaitingForPartsBatch_AfterTimeout_WithShortageInReason()
+    public void GetAllTickets_LeavesWaitingForPartsBatch_NoMatterHowLongItWaits()
     {
+        // The 24h auto-reject-on-timeout was removed — "รออะไหล่" now waits indefinitely for
+        // Admin to act (substitute, wait for stock, or manually Reject/Cancel). This confirms
+        // GetAllTickets doesn't silently reject it even when backdated far past the old window.
         var (controller, context) = TicketControllerFixture.Create();
         var mainWh = context.Locations.First(l => l.Code == "WH-RAT");
         context.PartStocks.First(s => s.LocationId == mainWh.Id).GoodQty = 1;
         context.SaveChanges();
-        TicketControllerFixture.SeedEquivalentPart(context, equivalentStock: 10); // a viable substitute exists, so this waits instead of auto-rejecting
+        TicketControllerFixture.SeedEquivalentPart(context, equivalentStock: 10);
 
         controller.SyncFromAservice(new SyncTicketDto { ExternalTicketNo = "T1C", TechName = "Tech" });
         var ticket = context.Tickets.First(t => t.ExternalTicketNo == "T1C");
@@ -257,53 +259,29 @@ public class TicketWorkflowTests
         var batch = context.WithdrawBatches.First(b => b.TicketId == ticket.TicketId);
         Assert.Equal("รออะไหล่", batch.Status);
 
-        // Backdate past the 24h window, as if this had been sitting untouched since yesterday.
-        batch.WaitingSinceAt = DateTime.Now.AddDays(-2);
+        batch.WaitingSinceAt = DateTime.Now.AddDays(-30);
         context.SaveChanges();
 
-        controller.GetAllTickets(); // lazy timeout check runs here
-
-        var updated = context.WithdrawBatches.First(b => b.WithdrawBatchId == batch.WithdrawBatchId);
-        Assert.Equal("Reject", updated.Status);
-        Assert.Contains("Test Part", updated.RejectReason);
-        Assert.Contains("ขาด 1", updated.RejectReason);
-        Assert.Null(updated.WaitingSinceAt);
-    }
-
-    [Fact]
-    public void GetAllTickets_LeavesWaitingForPartsBatch_UntilTimeoutElapses()
-    {
-        var (controller, context) = TicketControllerFixture.Create();
-        var mainWh = context.Locations.First(l => l.Code == "WH-RAT");
-        context.PartStocks.First(s => s.LocationId == mainWh.Id).GoodQty = 1;
-        context.SaveChanges();
-        TicketControllerFixture.SeedEquivalentPart(context, equivalentStock: 10); // a viable substitute exists, so this waits instead of auto-rejecting
-
-        controller.SyncFromAservice(new SyncTicketDto { ExternalTicketNo = "T1D", TechName = "Tech" });
-        var ticket = context.Tickets.First(t => t.ExternalTicketNo == "T1D");
-        controller.SubmitWithdraw(ticket.TicketId, new SubmitLinesDto
-        {
-            Lines = new() { new LineDto { PartNo = TicketControllerFixture.PartNo, Quantity = 2 } },
-            Address = "123 Main St"
-        });
-        var batch = context.WithdrawBatches.First(b => b.TicketId == ticket.TicketId);
-
-        controller.GetAllTickets(); // well within the 24h window — must not reject yet
+        controller.GetAllTickets();
 
         var updated = context.WithdrawBatches.First(b => b.WithdrawBatchId == batch.WithdrawBatchId);
         Assert.Equal("รออะไหล่", updated.Status);
+        Assert.NotNull(updated.WaitingSinceAt);
     }
 
     [Fact]
-    public void GetShortageReport_ListsWaitingBatchLive_AndCountsAutoRejectsInTrend()
+    public void GetShortageReport_ListsAllWaitingBatchesLive_RegardlessOfHowLongTheyveWaited()
     {
+        // No more timeout-reject — both batches stay "รออะไหล่" and both show up live, no matter
+        // how long WaitingSinceAt says they've been sitting. Trend is now purely historical (old
+        // AUTO_REJECT_TIMEOUT audit entries from before that mechanism was removed) — empty here
+        // since neither batch generates one.
         var (controller, context) = TicketControllerFixture.Create();
         var mainWh = context.Locations.First(l => l.Code == "WH-RAT");
         context.PartStocks.First(s => s.LocationId == mainWh.Id).GoodQty = 1;
         context.SaveChanges();
-        TicketControllerFixture.SeedEquivalentPart(context, equivalentStock: 10); // a viable substitute exists, so these wait instead of auto-rejecting
+        TicketControllerFixture.SeedEquivalentPart(context, equivalentStock: 10);
 
-        // Batch A stays waiting — should show up in the live list.
         controller.SyncFromAservice(new SyncTicketDto { ExternalTicketNo = "SR-A", TechName = "Tech A" });
         var ticketA = context.Tickets.First(t => t.ExternalTicketNo == "SR-A");
         controller.SubmitWithdraw(ticketA.TicketId, new SubmitLinesDto
@@ -312,7 +290,6 @@ public class TicketWorkflowTests
             Address = "Addr A"
         });
 
-        // Batch B times out — should show up in the trend, not the live list.
         controller.SyncFromAservice(new SyncTicketDto { ExternalTicketNo = "SR-B", TechName = "Tech B" });
         var ticketB = context.Tickets.First(t => t.ExternalTicketNo == "SR-B");
         controller.SubmitWithdraw(ticketB.TicketId, new SubmitLinesDto
@@ -332,18 +309,14 @@ public class TicketWorkflowTests
         var trend = (IEnumerable<object>)value.GetType().GetProperty("trend")!.GetValue(value)!;
 
         var liveList = live.ToList();
-        Assert.Single(liveList);
-        var liveCaseNo = liveList[0].GetType().GetProperty("caseNo")!.GetValue(liveList[0]);
-        Assert.Equal("SR-A", liveCaseNo);
+        Assert.Equal(2, liveList.Count);
+        var liveCaseNos = liveList.Select(x => x.GetType().GetProperty("caseNo")!.GetValue(x)).ToList();
+        Assert.Contains("SR-A", liveCaseNos);
+        Assert.Contains("SR-B", liveCaseNos);
 
-        var trendList = trend.ToList();
-        Assert.Single(trendList);
-        var trendPart = trendList[0].GetType().GetProperty("partName")!.GetValue(trendList[0]);
-        Assert.Equal("Test Part", trendPart);
-        var trendCount = trendList[0].GetType().GetProperty("timesCausedReject")!.GetValue(trendList[0]);
-        Assert.Equal(1, trendCount);
+        Assert.Empty(trend.ToList());
 
-        Assert.Equal("Reject", context.WithdrawBatches.First(b => b.WithdrawBatchId == batchB.WithdrawBatchId).Status);
+        Assert.Equal("รออะไหล่", context.WithdrawBatches.First(b => b.WithdrawBatchId == batchB.WithdrawBatchId).Status);
     }
 
     [Fact]
