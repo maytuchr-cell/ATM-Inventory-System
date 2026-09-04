@@ -14,6 +14,23 @@ const API_BASE = (location.port === '3000')
 // Uploaded files are served by the same app at the same PathBase as the API.
 const IMG_BASE = API_BASE;
 
+// Token missing/expired — bounce to whichever login page matches this session's role
+// (mirrors shared/layout.js's signOut()), not always the Admin one. A Tech session
+// whose token expired must land on login-tech.html, or they can't log back in as
+// themselves from there.
+function redirectToLogin() {
+  const role = (localStorage.getItem('userRole') || '').toLowerCase();
+  const isAdminSide = ['systemadmin', 'staff', 'auditor', 'admin'].includes(role);
+  const target = isAdminSide ? 'login.html' : 'login-tech.html';
+  localStorage.removeItem('authToken');
+  localStorage.removeItem('userRole');
+  localStorage.removeItem('userEmail');
+  localStorage.removeItem('userName');
+  if (!location.pathname.endsWith('login.html') && !location.pathname.endsWith('login-tech.html')) {
+    location.href = target;
+  }
+}
+
 async function apiFetch(path, options = {}) {
   const url = API_BASE + path;
   const token = localStorage.getItem('authToken');
@@ -26,9 +43,7 @@ async function apiFetch(path, options = {}) {
     ...options
   });
   if (res.status === 401) {
-    // Token missing/expired — bounce to login
-    localStorage.removeItem('authToken');
-    if (!location.pathname.endsWith('login.html')) location.href = 'login.html';
+    redirectToLogin();
     const err = new Error('เซสชันหมดอายุ กรุณาเข้าสู่ระบบใหม่');
     err.status = 401;
     throw err;
@@ -54,8 +69,7 @@ async function apiUpload(path, formData) {
     body: formData
   });
   if (res.status === 401) {
-    localStorage.removeItem('authToken');
-    if (!location.pathname.endsWith('login.html')) location.href = 'login.html';
+    redirectToLogin();
     const err = new Error('เซสชันหมดอายุ กรุณาเข้าสู่ระบบใหม่');
     err.status = 401;
     throw err;

@@ -142,10 +142,6 @@ public class StockCountController : ControllerBase
                 settings.IsFrozen = false;
                 settings.ActiveStockCountId = null;
             }
-
-            // Release any Draft tickets held during the freeze back into the normal Pending queue.
-            foreach (var draft in _context.Tickets.Where(t => t.Status == "Draft"))
-                draft.Status = "Pending";
         }
 
         _context.SaveChanges();
