@@ -93,7 +93,7 @@ public class TicketController : ControllerBase
             .OrderBy(b => b.WaitingSinceAt)
             .ToList();
 
-        var mainWh = _context.Locations.FirstOrDefault(l => l.Code == "WH-RAT");
+        var mainWh = _context.Locations.FirstOrDefault(l => l.Code == "DHL-BKK");
         var stockByPartId = mainWh == null
             ? new Dictionary<int, int>()
             : _context.PartStocks.Where(s => s.LocationId == mainWh.Id).ToDictionary(s => s.PartId, s => s.GoodQty);
@@ -168,7 +168,7 @@ public class TicketController : ControllerBase
             .OrderBy(b => b.WaitingSinceAt)
             .ToList();
 
-        var mainWh = _context.Locations.FirstOrDefault(l => l.Code == "WH-RAT");
+        var mainWh = _context.Locations.FirstOrDefault(l => l.Code == "DHL-BKK");
         var stockByPartId = mainWh == null
             ? new Dictionary<int, int>()
             : _context.PartStocks.Where(s => s.LocationId == mainWh.Id).ToDictionary(s => s.PartId, s => s.GoodQty);
@@ -243,7 +243,7 @@ public class TicketController : ControllerBase
 
         // Central-warehouse on-hand per part — shown next to each Withdraw line so Admin can see
         // at a glance whether there's enough stock to approve, without opening Parts Master.
-        var mainWh = _context.Locations.FirstOrDefault(l => l.Code == "WH-RAT");
+        var mainWh = _context.Locations.FirstOrDefault(l => l.Code == "DHL-BKK");
         var stockByPartId = mainWh == null
             ? new Dictionary<int, int>()
             : _context.PartStocks.Where(s => s.LocationId == mainWh.Id).ToDictionary(s => s.PartId, s => s.GoodQty);
@@ -525,7 +525,7 @@ public class TicketController : ControllerBase
     // manually.
     private void TryAutoApprove(WithdrawBatch batch)
     {
-        var mainWh = _context.Locations.FirstOrDefault(l => l.Code == "WH-RAT");
+        var mainWh = _context.Locations.FirstOrDefault(l => l.Code == "DHL-BKK");
         var withdrawLines = _context.TicketPartLines.Where(l => l.WithdrawBatchId == batch.WithdrawBatchId).ToList();
 
         var required = withdrawLines
@@ -606,7 +606,7 @@ public class TicketController : ControllerBase
         // into another request. It does NOT land in OL-TECH yet (the part is still in transit);
         // ReceiveBatch only adds it there once the tech actually has it in hand. If the batch is
         // cancelled while เดินทาง... wait, cancel is locked at เดินทาง — see CancelBatch.
-        var mainWh = _context.Locations.FirstOrDefault(l => l.Code == "WH-RAT");
+        var mainWh = _context.Locations.FirstOrDefault(l => l.Code == "DHL-BKK");
         var withdrawLines = _context.TicketPartLines.Where(l => l.WithdrawBatchId == batchId).ToList();
         foreach (var line in withdrawLines)
         {
@@ -625,7 +625,7 @@ public class TicketController : ControllerBase
 
         // → "รอส่งเมล DHL", not straight to "เดินทาง" — Admin still has to confirm the DHL email
         // actually went out (SendEmailConfirmedBatch) before this counts as in transit. Stock left
-        // WH-RAT the moment this ran, same as before.
+        // DHL-BKK the moment this ran, same as before.
         batch.Status = "รอส่งเมล DHL";
         batch.ApproverName = User?.Identity?.Name ?? "admin";
         batch.ApprovedAt = DateTime.Now;
@@ -648,11 +648,11 @@ public class TicketController : ControllerBase
             return BadRequest(new { message = "Only a waiting batch can be rejected." });
         if (string.IsNullOrWhiteSpace(dto.Reason)) return BadRequest(new { message = "Reject reason is required." });
 
-        // ApproveBatch already deducted WH-RAT stock for a "รอส่งเมล DHL" batch — rejecting it now
+        // ApproveBatch already deducted DHL-BKK stock for a "รอส่งเมล DHL" batch — rejecting it now
         // needs to hand that back, same as CancelBatch does for the same status.
         if (batch.Status == "รอส่งเมล DHL")
         {
-            var mainWh = _context.Locations.FirstOrDefault(l => l.Code == "WH-RAT");
+            var mainWh = _context.Locations.FirstOrDefault(l => l.Code == "DHL-BKK");
             var withdrawLines = _context.TicketPartLines.Where(l => l.WithdrawBatchId == batchId).ToList();
             foreach (var line in withdrawLines)
             {
@@ -688,12 +688,12 @@ public class TicketController : ControllerBase
         if (batch.Status == "เดินทาง")
             return BadRequest(new { message = "ยกเลิกไม่ได้แล้ว — Admin ส่งเมลแจ้ง DHL ไปแล้ว" });
 
-        // Stock left WH-RAT the moment ApproveBatch ran (รอส่งเมล DHL) — cancelling from there has
+        // Stock left DHL-BKK the moment ApproveBatch ran (รอส่งเมล DHL) — cancelling from there has
         // stock sitting in limbo, put it back. Cancelling at รอ/รออะไหล่ never touched stock,
         // nothing to undo.
         if (batch.Status == "รอส่งเมล DHL")
         {
-            var mainWh = _context.Locations.FirstOrDefault(l => l.Code == "WH-RAT");
+            var mainWh = _context.Locations.FirstOrDefault(l => l.Code == "DHL-BKK");
             var withdrawLines = _context.TicketPartLines.Where(l => l.WithdrawBatchId == batchId).ToList();
             foreach (var line in withdrawLines)
             {
@@ -724,7 +724,7 @@ public class TicketController : ControllerBase
         var withdrawLines = _context.TicketPartLines.Where(l => l.WithdrawBatchId == batchId).ToList();
         var techLoc = _context.Locations.FirstOrDefault(l => l.LocationType == "OL_TECHNICIAN");
 
-        // The WH-RAT side already left the books at ApproveBatch — this only lands the part in the
+        // The DHL-BKK side already left the books at ApproveBatch — this only lands the part in the
         // tech's on-hand bucket now that they actually have it in hand. Pure addition, so there's
         // no negative-stock case to guard against here.
         foreach (var line in withdrawLines)
@@ -891,7 +891,7 @@ public class TicketController : ControllerBase
             return BadRequest(new { message = "Only an in-transit return can be confirmed." });
 
         var returnLines = _context.TicketPartLines.Where(l => l.WithdrawBatchId == batchId && l.LineType == "Return").ToList();
-        var mainWh = _context.Locations.FirstOrDefault(l => l.Code == "WH-RAT");
+        var mainWh = _context.Locations.FirstOrDefault(l => l.Code == "DHL-BKK");
         var techLoc = _context.Locations.FirstOrDefault(l => l.LocationType == "OL_TECHNICIAN");
         var techName = batch.Ticket?.TechName ?? "";
         var externalTicketNo = batch.Ticket?.ExternalTicketNo ?? "";

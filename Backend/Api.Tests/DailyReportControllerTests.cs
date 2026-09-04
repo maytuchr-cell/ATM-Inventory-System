@@ -29,7 +29,7 @@ public class DailyReportControllerTests
         var context = new AppDbContext(options);
 
         var part = new Part { PartNo = PartNo, PartName = "Test Part", IsActive = true };
-        var mainWh = new Location { Code = "WH-RAT", Name = "Ratchaburana Warehouse", LocationType = "RATCHABURANA", IsActive = true };
+        var mainWh = new Location { Code = "DHL-BKK", Name = "DHL Center Bangkok", LocationType = "DHL_CENTER", IsActive = true };
         var techLoc = new Location { Code = "OL-TECH", Name = "Technician Stock", LocationType = "OL_TECHNICIAN", IsActive = true };
         context.Parts.Add(part);
         context.Locations.AddRange(mainWh, techLoc);

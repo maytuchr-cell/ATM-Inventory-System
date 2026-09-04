@@ -10,7 +10,7 @@ namespace Api.Tests;
 /// <summary>
 /// Builds a TicketController wired to a fresh EF Core InMemory database per test, seeded with
 /// the parts/locations the withdraw/return flow depends on (active part, technician on-hand
-/// location "OL_TECHNICIAN", main warehouse "WH-RAT" — see TicketController.ReceiveTicket /
+/// location "OL_TECHNICIAN", main warehouse "DHL-BKK" — see TicketController.ReceiveTicket /
 /// ConfirmReturnArrived). Each test gets its own database name so tests never see each other's data.
 /// </summary>
 public static class TicketControllerFixture
@@ -25,7 +25,7 @@ public static class TicketControllerFixture
         var context = new AppDbContext(options);
 
         var part = new Part { PartNo = PartNo, PartName = "Test Part", IsActive = true };
-        var mainWh = new Location { Code = "WH-RAT", Name = "Ratchaburana Warehouse", LocationType = "RATCHABURANA", IsActive = true };
+        var mainWh = new Location { Code = "DHL-BKK", Name = "DHL Center Bangkok", LocationType = "DHL_CENTER", IsActive = true };
         context.Parts.Add(part);
         context.Locations.Add(new Location { Code = "OL-TECH", Name = "Technician Stock", LocationType = "OL_TECHNICIAN", IsActive = true });
         context.Locations.Add(mainWh);
@@ -51,7 +51,7 @@ public static class TicketControllerFixture
     /// </summary>
     public const string EquivalentPartNo = "TEST-PART-002";
 
-    /// <param name="equivalentStock">Good stock to seed for the equivalent part at WH-RAT — 0
+    /// <param name="equivalentStock">Good stock to seed for the equivalent part at DHL-BKK — 0
     /// (default) matches the old behavior of an equivalent with nothing on hand. Since
     /// TicketController.TryAutoApprove now immediately rejects a "รออะไหล่" batch when NO
     /// registered equivalent has enough stock to cover the shortfall, tests that need the batch to
@@ -73,7 +73,7 @@ public static class TicketControllerFixture
 
         if (equivalentStock > 0)
         {
-            var mainWh = context.Locations.First(l => l.Code == "WH-RAT");
+            var mainWh = context.Locations.First(l => l.Code == "DHL-BKK");
             context.PartStocks.Add(new PartStock { PartId = equivalent.Id, LocationId = mainWh.Id, GoodQty = equivalentStock, BadQty = 0 });
             context.SaveChanges();
         }

@@ -119,7 +119,7 @@ public class DailyReportController : ControllerBase
         if (row == null) return NotFound();
         if (row.Undone) return BadRequest(new { message = "แถวนี้ถูกย้อนกลับไปแล้ว" });
 
-        var mainWh = _context.Locations.FirstOrDefault(l => l.Code == "WH-RAT");
+        var mainWh = _context.Locations.FirstOrDefault(l => l.Code == "DHL-BKK");
         var techLoc = _context.Locations.FirstOrDefault(l => l.LocationType == "OL_TECHNICIAN");
         var userName = CurrentUser();
 
@@ -316,7 +316,7 @@ public class DailyReportController : ControllerBase
     // for the whole pass regardless of commit.
     private (List<RowResult> Rows, Summary Summary) Process(List<ParsedRow> rows, bool commit, string userName)
     {
-        var mainWh = _context.Locations.FirstOrDefault(l => l.Code == "WH-RAT");
+        var mainWh = _context.Locations.FirstOrDefault(l => l.Code == "DHL-BKK");
         var techLoc = _context.Locations.FirstOrDefault(l => l.LocationType == "OL_TECHNICIAN");
         var partsByNo = _context.Parts.ToDictionary(p => p.PartNo, p => p);
 

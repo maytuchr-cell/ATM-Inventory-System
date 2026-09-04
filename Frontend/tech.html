@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Tech Workspace — ATM Inventory</title>
-    <link rel="stylesheet" href="shared/styles.css?v=78">
+    <link rel="stylesheet" href="shared/styles.css?v=79">
     <style>
         .section-head { display:flex; align-items:center; gap:10px; margin-bottom:20px; }
         .section-accent { width:4px; height:22px; background:var(--orange); border-radius:2px; }
@@ -334,7 +334,7 @@
                 </div>
                 <div>
                     <label style="font-size:11px;color:var(--text-muted);display:block;margin-bottom:4px;">รหัสพนักงาน</label>
-                    <input id="wdEmployeeCode" type="text" placeholder="รหัสพนักงาน" class="select-part" style="margin-bottom:0;">
+                    <input id="wdEmployeeCode" type="text" placeholder="รหัสพนักงาน" class="select-part" style="margin-bottom:0;" readonly>
                 </div>
             </div>
             <div style="margin-bottom:10px;">
@@ -506,7 +506,7 @@
                 </div>
                 <div>
                     <label style="font-size:11px;color:var(--text-muted);display:block;margin-bottom:4px;">รหัสพนักงาน</label>
-                    <input id="nrEmployeeCode" type="text" placeholder="รหัสพนักงาน" class="select-part" style="margin-bottom:0;">
+                    <input id="nrEmployeeCode" type="text" placeholder="รหัสพนักงาน" class="select-part" style="margin-bottom:0;" readonly>
                 </div>
             </div>
             <div style="margin-bottom:10px;">
@@ -569,10 +569,10 @@
     </div>
 </div>
 
-<script src="shared/translations.js?v=78"></script>
-<script src="shared/toast.js?v=78"></script>
-<script src="shared/api.js?v=78"></script>
-<script src="shared/layout.js?v=78"></script>
+<script src="shared/translations.js?v=79"></script>
+<script src="shared/toast.js?v=79"></script>
+<script src="shared/api.js?v=79"></script>
+<script src="shared/layout.js?v=79"></script>
 <script>
     // Auth guard — runs before anything else renders. No token means nobody actually signed in
     // through login-tech.html (or login.html); bounce there immediately instead of quietly
@@ -1236,6 +1236,14 @@
             : (kmmJob?.appointDatetime ? toLocalDatetimeInputValue(kmmJob.appointDatetime) : '');
         document.getElementById('wdAtmCode').value = batch?.status === 'Reject' ? (batch.atmCode || '') : (kmmJob?.atmCode || '');
         document.getElementById('wdFeId').value = batch?.status === 'Reject' ? (batch.feId || '') : (kmmJob?.zoneName || '');
+        // ATM code / FE ID / problem description / needed-by date come straight from the tech's
+        // KMM job ticket and must not be hand-edited — except when fixing up a rejected batch for
+        // resubmission, where these are the tech's own previously-typed values, not KMM's.
+        const kmmLocked = batch?.status !== 'Reject';
+        document.getElementById('wdAtmCode').readOnly = kmmLocked;
+        document.getElementById('wdFeId').readOnly = kmmLocked;
+        document.getElementById('wdDescription').readOnly = kmmLocked;
+        document.getElementById('wdNeededByDate').readOnly = kmmLocked;
 
         const rejectBox = document.getElementById('wdRejectBox');
         if (batch?.status === 'Reject' && batch.rejectReason) {

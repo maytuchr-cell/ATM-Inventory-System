@@ -120,7 +120,7 @@ public class PartsController : ControllerBase
     private (Dictionary<int, int> Warehouse, Dictionary<int, int> Tech) StockByBucket(IEnumerable<int> partIds)
     {
         var ids = partIds.ToList();
-        var whId = _context.Locations.FirstOrDefault(l => l.Code == "WH-RAT")?.Id;
+        var whId = _context.Locations.FirstOrDefault(l => l.Code == "DHL-BKK")?.Id;
         var techId = _context.Locations.FirstOrDefault(l => l.LocationType == "OL_TECHNICIAN")?.Id;
 
         var rows = _context.PartStocks
@@ -334,7 +334,7 @@ public class PartsController : ControllerBase
         // StockMovement — the same path every other stock change takes. No stored total.
         if (dto.StockQuantity > 0)
         {
-            var mainWh = _context.Locations.FirstOrDefault(l => l.Code == "WH-RAT")
+            var mainWh = _context.Locations.FirstOrDefault(l => l.Code == "DHL-BKK")
                          ?? _context.Locations.FirstOrDefault();
             if (mainWh != null)
             {

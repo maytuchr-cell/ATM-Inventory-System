@@ -1486,7 +1486,7 @@ using (var scope = app.Services.CreateScope())
         // Seeding a zero row gives every part a known warehouse location to receive into.
         if (!context.PartStocks.Any())
         {
-            var mainWh = context.Locations.First(l => l.Code == "WH-RAT");
+            var mainWh = context.Locations.First(l => l.Code == "DHL-BKK");
             foreach (var part in context.Parts)
             {
                 context.PartStocks.Add(new PartStock
@@ -1669,7 +1669,7 @@ using (var scope = app.Services.CreateScope())
         // timeline page has real data to display out of the box.
         if (!context.GoodsReceipts.Any())
         {
-            var wh    = context.Locations.First(l => l.Code == "WH-RAT");
+            var wh    = context.Locations.First(l => l.Code == "DHL-BKK");
             var grg   = context.Locations.First(l => l.Code == "GRG-BKK");
             var scrap = context.Locations.First(l => l.Code == "SCRAP-01");
             var vendor = context.Vendors.First();

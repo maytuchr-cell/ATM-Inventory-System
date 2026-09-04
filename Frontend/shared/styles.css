@@ -485,3 +485,9 @@ tbody tr:last-child td { border-bottom: none; }
   border-radius: 8px; padding: 8px 14px; margin-bottom: 14px; font-size: 13px;
 }
 .readonly-mode .readonly-banner { display: block; }
+
+/* A field auto-filled from an external source (e.g. a KMM job ticket) that the user
+   shouldn't hand-edit — visually distinct from a normal writable input. */
+input[readonly].select-part, textarea[readonly].form-textarea {
+  background: var(--bg-subtle); color: var(--text-muted); cursor: not-allowed;
+}
