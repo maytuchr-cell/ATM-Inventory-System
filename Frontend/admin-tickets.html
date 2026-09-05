@@ -167,17 +167,19 @@
                     <table>
                         <thead>
                             <tr>
-                                <th style="width:11%">ใบเบิก</th>
-                                <th style="width:9%">Ticket</th>
-                                <th style="width:13%">ช่าง</th>
-                                <th style="width:19%">อะไหล่</th>
-                                <th style="width:14%">สถานะ</th>
-                                <th style="width:22%">การดำเนินการ</th>
-                                <th style="width:12%">รายละเอียด</th>
+                                <th style="width:9%">ใบเบิก</th>
+                                <th style="width:7%">Ticket</th>
+                                <th style="width:10%">ช่าง</th>
+                                <th style="width:14%">อะไหล่</th>
+                                <th style="width:10%">สถานะ</th>
+                                <th style="width:12%">กำหนดรับของ (SLA)</th>
+                                <th style="width:12%">วันที่คืนอะไหล่</th>
+                                <th style="width:16%">การดำเนินการ</th>
+                                <th style="width:10%">รายละเอียด</th>
                             </tr>
                         </thead>
                         <tbody id="ticketsTableBody">
-                            <tr><td colspan="7" class="empty-state">กำลังเชื่อมต่อเซิร์ฟเวอร์…</td></tr>
+                            <tr><td colspan="9" class="empty-state">กำลังเชื่อมต่อเซิร์ฟเวอร์…</td></tr>
                         </tbody>
                     </table>
                 </div>
@@ -196,7 +198,7 @@
                     <table>
                         <thead>
                             <tr>
-                                <th>ตั๋ว</th>
+                                <th>ใบคืน</th>
                                 <th>ช่าง</th>
                                 <th>อะไหล่ (คืน)</th>
                                 <th>ที่อยู่จัดส่งคืน</th>
@@ -220,7 +222,7 @@
                     <table>
                         <thead>
                             <tr>
-                                <th>ตั๋ว</th>
+                                <th>ใบคืน</th>
                                 <th>ช่าง</th>
                                 <th>อะไหล่ (คืน)</th>
                                 <th>ที่อยู่จัดส่งคืน</th>
@@ -236,22 +238,24 @@
             </div>
             </div><!-- /tabPanelReturns -->
 
-            <!-- Tab: ส่งออก DHL — multi-select tickets ready to notify DHL about (withdraw:
-                 รอส่งเมล DHL, return: อนุมัติคืน) and download one combined Excel file. -->
+            <!-- Tab: ส่งออก DHL — withdraw (รอส่งเมล DHL) and return (อนุมัติคืน) are two separate
+                 DHL forms with different sheet layouts and can't be emailed to DHL as one file, so
+                 each leg gets its own select-list and its own Download button — never a combined
+                 export. -->
             <div class="tab-panel" id="tabPanelDhlExport">
-            <div class="card">
+            <div class="card" style="margin-bottom:16px;">
                 <div class="section-head" style="flex-wrap:wrap;gap:8px;">
                     <div class="section-accent"></div>
-                    <span class="section-title">รายการรอส่ง DHL</span>
-                    <span class="section-count" id="dhlexport-count">—</span>
+                    <span class="section-title">📤 รอส่ง DHL — ขาเบิก</span>
+                    <span class="section-count" id="dhlexport-wd-count">—</span>
                     <div style="margin-left:auto;display:flex;gap:8px;align-items:center;">
                         <label style="font-size:12px;color:var(--text-secondary);display:flex;align-items:center;gap:5px;cursor:pointer;">
-                            <input type="checkbox" id="dhlexport-select-all" onchange="toggleSelectAllDhlExport(this.checked)">
+                            <input type="checkbox" id="dhlexport-wd-select-all" onchange="toggleSelectAllDhlExport('withdraw', this.checked)">
                             เลือกทั้งหมด
                         </label>
-                        <button class="btn-refresh" id="dhlexport-download-btn" onclick="downloadDhlExcel()" disabled>
+                        <button class="btn-refresh" id="dhlexport-wd-download-btn" onclick="downloadDhlExcel('withdraw')" disabled>
                             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-                            ดาวน์โหลด Excel (<span id="dhlexport-selected-count">0</span>)
+                            ดาวน์โหลด Excel — ขาเบิก (<span id="dhlexport-wd-selected-count">0</span>)
                         </button>
                     </div>
                 </div>
@@ -260,15 +264,47 @@
                         <thead>
                             <tr>
                                 <th style="width:5%"></th>
-                                <th style="width:12%">ประเภท</th>
-                                <th style="width:15%">Ticket</th>
-                                <th style="width:16%">ช่าง</th>
-                                <th style="width:32%">อะไหล่</th>
+                                <th style="width:18%">ใบเบิก</th>
+                                <th style="width:19%">ช่าง</th>
+                                <th style="width:38%">อะไหล่</th>
                                 <th style="width:20%">ที่อยู่</th>
                             </tr>
                         </thead>
-                        <tbody id="dhlexport-tbody">
-                            <tr><td colspan="6" class="empty-state">กำลังเชื่อมต่อเซิร์ฟเวอร์…</td></tr>
+                        <tbody id="dhlexport-wd-tbody">
+                            <tr><td colspan="5" class="empty-state">กำลังเชื่อมต่อเซิร์ฟเวอร์…</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+            <div class="card">
+                <div class="section-head" style="flex-wrap:wrap;gap:8px;">
+                    <div class="section-accent"></div>
+                    <span class="section-title">📥 รอส่ง DHL — ขาคืน</span>
+                    <span class="section-count" id="dhlexport-rt-count">—</span>
+                    <div style="margin-left:auto;display:flex;gap:8px;align-items:center;">
+                        <label style="font-size:12px;color:var(--text-secondary);display:flex;align-items:center;gap:5px;cursor:pointer;">
+                            <input type="checkbox" id="dhlexport-rt-select-all" onchange="toggleSelectAllDhlExport('return', this.checked)">
+                            เลือกทั้งหมด
+                        </label>
+                        <button class="btn-refresh" id="dhlexport-rt-download-btn" onclick="downloadDhlExcel('return')" disabled>
+                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                            ดาวน์โหลด Excel — ขาคืน (<span id="dhlexport-rt-selected-count">0</span>)
+                        </button>
+                    </div>
+                </div>
+                <div class="tbl-wrap">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th style="width:5%"></th>
+                                <th style="width:18%">ใบคืน</th>
+                                <th style="width:19%">ช่าง</th>
+                                <th style="width:38%">อะไหล่</th>
+                                <th style="width:20%">ที่อยู่</th>
+                            </tr>
+                        </thead>
+                        <tbody id="dhlexport-rt-tbody">
+                            <tr><td colspan="5" class="empty-state">กำลังเชื่อมต่อเซิร์ฟเวอร์…</td></tr>
                         </tbody>
                     </table>
                 </div>
@@ -387,7 +423,7 @@
         document.getElementById('tabPanelAll').classList.toggle('active', tab === 'all');
         document.getElementById('tabPanelReturns').classList.toggle('active', tab === 'returns');
         document.getElementById('tabPanelDhlExport').classList.toggle('active', tab === 'dhlexport');
-        if (tab === 'dhlexport') renderDhlExportList();
+        if (tab === 'dhlexport') { renderDhlExportList('withdraw'); renderDhlExportList('return'); }
     }
 
     async function fetchTickets(silent) {
@@ -399,13 +435,16 @@
             renderReturnsInProgress();
             renderReturnsHistory();
             updateDhlExportBadge();
-            if (document.getElementById('tabPanelDhlExport')?.classList.contains('active')) renderDhlExportList();
+            if (document.getElementById('tabPanelDhlExport')?.classList.contains('active')) {
+                renderDhlExportList('withdraw');
+                renderDhlExportList('return');
+            }
         } catch (e) {
             // A silent poll's failure (transient network blip) shouldn't blank out a table
             // the admin is actively looking at — only the explicit/first load shows the error.
             if (silent) return;
             document.getElementById('ticketsTableBody').innerHTML =
-                `<tr><td colspan="7" class="empty-state" style="color:var(--red)">${'⚠ ไม่สามารถเชื่อมต่อเซิร์ฟเวอร์ได้'}</td></tr>`;
+                `<tr><td colspan="9" class="empty-state" style="color:var(--red)">${'⚠ ไม่สามารถเชื่อมต่อเซิร์ฟเวอร์ได้'}</td></tr>`;
             document.getElementById('returns-onhand-tbody').innerHTML =
                 `<tr><td colspan="7" class="empty-state" style="color:var(--red)">${'⚠ ไม่สามารถเชื่อมต่อเซิร์ฟเวอร์ได้'}</td></tr>`;
             document.getElementById('returns-history-tbody').innerHTML =
@@ -415,86 +454,101 @@
         }
     }
 
-    /* ── ส่งออก DHL tab — multi-select tickets ready to notify DHL about, one combined Excel ──
+    /* ── ส่งออก DHL tab — withdraw and return are two separate DHL forms (different sheet
+       layouts) and can never be emailed to DHL as one combined file, so each leg gets its own
+       candidate list, its own selection Set, and its own Download button — downloadDhlExcel
+       always sends only withdrawBatchIds OR only returnBatchIds, never both at once.
        Selection is tracked in a Set (not read off checkbox DOM state) so it survives the 15s
        silent poll's re-render (see fetchTickets) without the admin's ticks disappearing mid-pick. */
-    let dhlExportSelected = new Set();
+    let dhlExportSelectedWithdraw = new Set();
+    let dhlExportSelectedReturn = new Set();
 
-    // Candidate rows are keyed "wd-{batchId}" for withdraw batches or "rt-{batchId}" for
-    // returns (also batch-scoped now — "คืนตามใบเบิก"), so the same Set can track both without
-    // id collisions.
-    function dhlExportCandidates() {
-        const withdrawRows = cachedTickets.flatMap(tk => (tk.withdrawBatches || [])
-            .filter(b => b.status === 'รอส่งเมล DHL')
-            .map(b => ({ key: `wd-${b.withdrawBatchId}`, kind: 'withdraw', ticketId: tk.ticketId, batchId: b.withdrawBatchId, tk, batch: b })));
-        const returnRows = cachedTickets.flatMap(tk => (tk.withdrawBatches || [])
+    function dhlExportCandidates(kind) {
+        if (kind === 'withdraw') {
+            return cachedTickets.flatMap(tk => (tk.withdrawBatches || [])
+                .filter(b => b.status === 'รอส่งเมล DHL')
+                .map(b => ({ batchId: b.withdrawBatchId, tk, batch: b })));
+        }
+        return cachedTickets.flatMap(tk => (tk.withdrawBatches || [])
             .filter(b => b.returnStatus === 'อนุมัติคืน')
-            .map(b => ({ key: `rt-${b.withdrawBatchId}`, kind: 'return', ticketId: tk.ticketId, batchId: b.withdrawBatchId, tk, batch: b })));
-        return [...withdrawRows, ...returnRows];
+            .map(b => ({ batchId: b.withdrawBatchId, tk, batch: b })));
     }
     function updateDhlExportBadge() {
-        document.getElementById('dhlexport-badge-count').textContent = dhlExportCandidates().length;
+        document.getElementById('dhlexport-badge-count').textContent =
+            dhlExportCandidates('withdraw').length + dhlExportCandidates('return').length;
     }
-    function renderDhlExportList() {
-        const rows = dhlExportCandidates();
+    function dhlExportState(kind) {
+        return kind === 'withdraw'
+            ? { selected: dhlExportSelectedWithdraw, set: s => dhlExportSelectedWithdraw = s, prefix: 'wd' }
+            : { selected: dhlExportSelectedReturn, set: s => dhlExportSelectedReturn = s, prefix: 'rt' };
+    }
+    function renderDhlExportList(kind) {
+        const { selected, set, prefix } = dhlExportState(kind);
+        const rows = dhlExportCandidates(kind);
         // Drop selections for rows that left the candidate list (e.g. Admin already sent the
         // email for one from a different tab/session).
-        dhlExportSelected = new Set([...dhlExportSelected].filter(key => rows.some(r => r.key === key)));
+        set(new Set([...selected].filter(id => rows.some(r => r.batchId === id))));
 
-        document.getElementById('dhlexport-count').textContent = rows.length + ' รายการ';
-        const tbody = document.getElementById('dhlexport-tbody');
+        document.getElementById(`dhlexport-${prefix}-count`).textContent = rows.length + ' รายการ';
+        const tbody = document.getElementById(`dhlexport-${prefix}-tbody`);
         if (!rows.length) {
-            tbody.innerHTML = `<tr><td colspan="6" class="empty-state">ไม่มีรายการรอส่ง DHL ในขณะนี้</td></tr>`;
+            tbody.innerHTML = `<tr><td colspan="5" class="empty-state">ไม่มีรายการรอส่ง DHL ในขณะนี้</td></tr>`;
         } else {
+            const isWithdraw = kind === 'withdraw';
             tbody.innerHTML = rows.map(row => {
-                const isWithdraw = row.kind === 'withdraw';
-                const typeLabel = isWithdraw ? '📤 เบิก' : '📥 คืน';
                 const lines = isWithdraw ? row.batch.lines : (row.batch.returnLines || []);
                 const partsHtml = lines.length
                     ? lines.map(l => `${l.partName} <span style="color:var(--text-muted)">×${l.quantity}</span>`).join('<br>')
                     : `<span style="color:var(--text-muted)">—</span>`;
                 const address = isWithdraw ? row.batch.withdrawAddress : row.batch.returnAddress;
-                const checked = dhlExportSelected.has(row.key) ? 'checked' : '';
+                const slipNo = isWithdraw ? row.batch.withdrawSlipNo : row.batch.returnSlipNo;
+                const checked = dhlExportState(kind).selected.has(row.batchId) ? 'checked' : '';
                 return `
                     <tr>
-                        <td><input type="checkbox" ${checked} onchange="toggleDhlExportCheckbox('${row.key}', this.checked)"></td>
-                        <td>${typeLabel}</td>
-                        <td><span class="id-chip ticket-id">${row.tk.externalTicketNo}</span></td>
+                        <td><input type="checkbox" ${checked} onchange="toggleDhlExportCheckbox('${kind}', ${row.batchId}, this.checked)"></td>
+                        <td><span class="id-chip ticket-id">${slipNo || 'ยังไม่ออกเลข'}</span></td>
                         <td class="fw-600">${row.tk.techName}</td>
                         <td>${partsHtml}</td>
                         <td style="font-size:12.5px;color:var(--text-secondary);">${address || '—'}</td>
                     </tr>`;
             }).join('');
         }
-        document.getElementById('dhlexport-select-all').checked = rows.length > 0 && dhlExportSelected.size === rows.length;
-        updateDhlExportSelectionUi();
+        document.getElementById(`dhlexport-${prefix}-select-all`).checked =
+            rows.length > 0 && dhlExportState(kind).selected.size === rows.length;
+        updateDhlExportSelectionUi(kind);
     }
-    function toggleDhlExportCheckbox(key, checked) {
-        if (checked) dhlExportSelected.add(key); else dhlExportSelected.delete(key);
-        document.getElementById('dhlexport-select-all').checked =
-            dhlExportCandidates().length > 0 && dhlExportSelected.size === dhlExportCandidates().length;
-        updateDhlExportSelectionUi();
+    function toggleDhlExportCheckbox(kind, batchId, checked) {
+        const { selected, prefix } = dhlExportState(kind);
+        if (checked) selected.add(batchId); else selected.delete(batchId);
+        document.getElementById(`dhlexport-${prefix}-select-all`).checked =
+            dhlExportCandidates(kind).length > 0 && selected.size === dhlExportCandidates(kind).length;
+        updateDhlExportSelectionUi(kind);
     }
-    function toggleSelectAllDhlExport(checked) {
-        dhlExportSelected = checked ? new Set(dhlExportCandidates().map(r => r.key)) : new Set();
-        renderDhlExportList();
+    function toggleSelectAllDhlExport(kind, checked) {
+        dhlExportState(kind).set(checked ? new Set(dhlExportCandidates(kind).map(r => r.batchId)) : new Set());
+        renderDhlExportList(kind);
     }
-    function updateDhlExportSelectionUi() {
-        document.getElementById('dhlexport-selected-count').textContent = dhlExportSelected.size;
-        document.getElementById('dhlexport-download-btn').disabled = dhlExportSelected.size === 0;
+    function updateDhlExportSelectionUi(kind) {
+        const { selected, prefix } = dhlExportState(kind);
+        document.getElementById(`dhlexport-${prefix}-selected-count`).textContent = selected.size;
+        document.getElementById(`dhlexport-${prefix}-download-btn`).disabled = selected.size === 0;
     }
-    async function downloadDhlExcel() {
-        if (!dhlExportSelected.size) return;
+    // kind is always 'withdraw' or 'return' — never both, since the two are separate DHL forms
+    // that can't be emailed as one combined file (see comment above).
+    async function downloadDhlExcel(kind) {
+        const { selected } = dhlExportState(kind);
+        if (!selected.size) return;
         try {
-            const withdrawBatchIds = [...dhlExportSelected].filter(k => k.startsWith('wd-')).map(k => parseInt(k.slice(3), 10));
-            const returnBatchIds = [...dhlExportSelected].filter(k => k.startsWith('rt-')).map(k => parseInt(k.slice(3), 10));
+            const ids = [...selected];
+            const withdrawBatchIds = kind === 'withdraw' ? ids : [];
+            const returnBatchIds = kind === 'return' ? ids : [];
             const { blob, fileName } = await api.tickets.exportDhlExcel(withdrawBatchIds, returnBatchIds);
             const url = URL.createObjectURL(blob);
             const a = document.createElement('a');
             a.href = url; a.download = fileName;
             document.body.appendChild(a); a.click(); a.remove();
             URL.revokeObjectURL(url);
-            showToast?.(`ดาวน์โหลด Excel แล้ว (${dhlExportSelected.size} รายการ)`, 'success');
+            showToast?.(`ดาวน์โหลด Excel แล้ว (${selected.size} รายการ)`, 'success');
         } catch (e) { showToast?.(e.message || 'เกิดข้อผิดพลาด กรุณาลองใหม่', 'error'); }
     }
 
@@ -510,9 +564,13 @@
     // Flatten every batch with an active/closed return leg out of cachedTickets, tagged with its
     // parent Ticket for display (case no., tech name).
     function returnBatchRows(filterFn) {
-        return cachedTickets.flatMap(tk => (tk.withdrawBatches || [])
+        const rows = cachedTickets.flatMap(tk => (tk.withdrawBatches || [])
             .filter(b => filterFn(b))
             .map(b => ({ tk, batch: b })));
+        // Newest ใบเบิก first — same reasoning as allRows above (cachedTickets groups by Ticket,
+        // not by batch recency).
+        rows.sort((a, b) => new Date(b.batch.createdAt) - new Date(a.batch.createdAt));
+        return rows;
     }
 
     function renderReturnsInProgress() {
@@ -568,13 +626,13 @@
             }
             return `
                 <tr>
-                    <td><span class="id-chip ticket-id">${tk.externalTicketNo}</span></td>
+                    <td><span class="id-chip ticket-id">${batch.returnSlipNo || 'ยังไม่ออกเลข'}</span></td>
                     <td class="fw-600">${tk.techName}</td>
                     <td>${returnLinesHtml(batch)}</td>
                     <td>${batch.returnAddress || '—'}</td>
                     <td>${badge}</td>
                     <td>${action}</td>
-                    <td><button class="btn-detail" onclick="showDetail(${tk.ticketId})">🔍 ดูรายละเอียด</button></td>
+                    <td><button class="btn-detail" onclick="showDetail(${tk.ticketId}, ${batch.withdrawBatchId})">🔍 ดูรายละเอียด</button></td>
                 </tr>`;
         }).join('');
     }
@@ -611,12 +669,12 @@
         const locale = getLang() === 'th' ? 'th-TH' : 'en-GB';
         tbody.innerHTML = rows.map(({ tk, batch }) => `
             <tr>
-                <td><span class="id-chip">${tk.externalTicketNo}</span></td>
+                <td><span class="id-chip">${batch.returnSlipNo || 'ยังไม่ออกเลข'}</span></td>
                 <td>${tk.techName || '—'}</td>
                 <td>${returnLinesHtml(batch)}</td>
                 <td>${batch.returnAddress || '—'}</td>
                 <td>${new Date(batch.updatedAt).toLocaleString(locale)}</td>
-                <td><button class="btn-detail" onclick="showDetail(${tk.ticketId})">🔍 ดูรายละเอียด</button></td>
+                <td><button class="btn-detail" onclick="showDetail(${tk.ticketId}, ${batch.withdrawBatchId})">🔍 ดูรายละเอียด</button></td>
             </tr>`).join('');
     }
 
@@ -651,13 +709,18 @@
 
         // One row per WithdrawBatch ("ใบเบิก") now, tagged with its parent Ticket — easier to
         // manage than one row per Ticket hiding N batches behind it. A Ticket with zero batches
-        // yet (synced but tech hasn't submitted a withdraw) still gets a placeholder row so it
-        // doesn't disappear from view entirely.
+        // yet (synced from KMM the moment a tech logs in, before they've decided to withdraw
+        // anything) has nothing for Admin to review or act on, so it's left out of this table
+        // entirely — otherwise a tech with several open KMM job tickets floods Admin's page with
+        // "ยังไม่เบิก" placeholder rows the instant they log in.
         const allRows = cachedTickets.flatMap(tk => {
             const batches = tk.withdrawBatches || [];
-            if (!batches.length) return [{ tk, batch: null }];
             return batches.map(batch => ({ tk, batch }));
         });
+        // Sort by the ใบเบิก (batch) itself, newest first — cachedTickets is grouped by Ticket,
+        // so without this an older Ticket's brand-new batch would still sort behind a newer
+        // Ticket's stale one.
+        allRows.sort((a, b) => new Date(b.batch.createdAt) - new Date(a.batch.createdAt));
 
         const rows = allRows.filter(({ tk, batch }) => {
             if (statusF && (batch ? batch.status : null) !== statusF) return false;
@@ -672,27 +735,14 @@
         const tbody = document.getElementById("ticketsTableBody");
         tbody.innerHTML = "";
         if (!allRows.length) {
-            tbody.innerHTML = `<tr><td colspan="7" class="empty-state">🎉 ${'ไม่มีคำขอเบิกในขณะนี้'}</td></tr>`;
+            tbody.innerHTML = `<tr><td colspan="9" class="empty-state">🎉 ${'ไม่มีคำขอเบิกในขณะนี้'}</td></tr>`;
             return;
         }
         if (!rows.length) {
-            tbody.innerHTML = `<tr><td colspan="7" class="empty-state">ไม่พบใบเบิกที่ตรงกับตัวกรอง</td></tr>`;
+            tbody.innerHTML = `<tr><td colspan="9" class="empty-state">ไม่พบใบเบิกที่ตรงกับตัวกรอง</td></tr>`;
             return;
         }
         rows.forEach(({ tk, batch }) => {
-            if (!batch) {
-                tbody.innerHTML += `
-                    <tr>
-                        <td><span style="color:var(--text-muted);font-size:12px;">ยังไม่เบิก</span></td>
-                        <td><span class="id-chip ticket-id">${tk.externalTicketNo}</span></td>
-                        <td class="fw-600">${tk.techName}<div class="fs-13" style="color:var(--text-secondary);font-weight:400;">${tk.techDept}</div></td>
-                        <td><span style="color:var(--text-muted);font-size:12px;">—</span></td>
-                        <td><span class="badge badge-muted"><span class="badge-dot"></span>ยังไม่เบิก</span></td>
-                        <td><span style="color:var(--text-muted)">—</span></td>
-                        <td><button class="btn-detail" onclick="showDetail(${tk.ticketId})">🔍 ดูรายละเอียด</button></td>
-                    </tr>`;
-                return;
-            }
 
             const bBadge = STATUS_BADGE[batch.status] || STATUS_BADGE["รอ"];
             const badge = `<span class="badge ${bBadge.cls}"><span class="badge-dot"></span>${bBadge.label}</span>`;
@@ -774,6 +824,15 @@
                 action = `<span style="color:var(--text-muted)">—</span>`;
             }
 
+            const etaHtml = batch.dhlDeliveryDeadline
+                ? `<span style="font-weight:600;color:var(--orange);font-size:12.5px;">${new Date(batch.dhlDeliveryDeadline).toLocaleString('th-TH', { dateStyle: 'short', timeStyle: 'short' })}</span>`
+                : `<span style="color:var(--text-muted);font-size:12px;">—</span>`;
+            // "คืน" is the return leg's terminal status (see ConfirmReturnArrived) — nothing
+            // updates the batch after that point, so updatedAt IS the actual return-completed date.
+            const returnedAtHtml = batch.returnStatus === 'คืน'
+                ? `<span style="font-weight:600;color:var(--green);font-size:12.5px;">${new Date(batch.updatedAt).toLocaleString('th-TH', { dateStyle: 'short', timeStyle: 'short' })}</span>`
+                : `<span style="color:var(--text-muted);font-size:12px;">—</span>`;
+
             tbody.innerHTML += `
                 <tr>
                     <td><span style="font-size:12.5px;">${batch.withdrawSlipNo || 'ยังไม่ออกเลข'}</span></td>
@@ -781,8 +840,10 @@
                     <td class="fw-600">${tk.techName}<div class="fs-13" style="color:var(--text-secondary);font-weight:400;">${tk.techDept}</div></td>
                     <td>${partsSummary}</td>
                     <td>${badge}</td>
+                    <td>${etaHtml}</td>
+                    <td>${returnedAtHtml}</td>
                     <td>${action}</td>
-                    <td><button class="btn-detail" onclick="showDetail(${tk.ticketId})">🔍 ดูรายละเอียด</button></td>
+                    <td><button class="btn-detail" onclick="showDetail(${tk.ticketId}, ${batch.withdrawBatchId})">🔍 ดูรายละเอียด</button></td>
                 </tr>`;
         });
     }
@@ -790,6 +851,7 @@
     // "รออะไหล่" recheck path — just re-runs the stock check, doesn't itself finalize approval,
     // so no SLA prompt here (see openApproveModal for the real approve step).
     async function approveBatch(ticketId, batchId) {
+        if (!confirm('เช็คสต็อกอีกครั้งสำหรับใบเบิกนี้?')) return;
         try {
             await api.tickets.approveBatch(ticketId, batchId);
             await fetchTickets();
@@ -954,7 +1016,11 @@
                  onclick="window.open('${IMG_BASE}${a.filePath}','_blank')">`).join('')}</div>`;
     }
 
-    function showDetail(id) {
+    // batchId, when given, scopes the modal to just that one ใบเบิก instead of every batch under
+    // the Ticket — clicking "ดูรายละเอียด" on a specific row in the ทุก Ticket/คืนอะไหล่ tables
+    // (each row is one batch, see renderTicketsTable/returnBatchRows) should show that row's own
+    // batch, not dump the Ticket's whole withdraw history on top of it.
+    function showDetail(id, batchId = null) {
         const tk = cachedTickets.find(t => t.ticketId === id);
         if (!tk) return;
 
@@ -997,6 +1063,7 @@
                         <div class="detail-field"><label>Status การใช้งาน</label><span>${batch.usageStatus === 'Keep' ? 'เก็บ (สต็อกสำรอง)' : batch.usageStatus === 'Repair' ? 'เบิกไปซ่อม' : none}</span></div>
                         <div class="detail-field"><label>Tech Support ที่ปรึกษา</label><span>${batch.techSupportName || 'ไม่มี'}</span></div>
                         <div class="detail-field full"><label>ที่อยู่จัดส่ง</label><span>${batch.withdrawAddress || none}</span></div>
+                        ${batch.dhlDeliveryDeadline ? `<div class="detail-field full"><label>📦 อะไหล่ต้องถึงช่างภายใน (ตาม SLA)</label><span style="font-weight:700;color:var(--orange);">${new Date(batch.dhlDeliveryDeadline).toLocaleString('th-TH', { dateStyle: 'medium', timeStyle: 'short' })}</span></div>` : ''}
                     </div>
                     ${linesHtml}
                     ${batch.withdrawDescription ? `<div style="margin-top:8px;font-size:13px;color:var(--text-primary);background:var(--bg-card);border:1px solid var(--border);border-radius:8px;padding:8px 10px;white-space:pre-wrap;">${batch.withdrawDescription}</div>` : ''}
@@ -1012,7 +1079,7 @@
                 <div class="detail-section" style="background:var(--bg-subtle);border:1px solid var(--border);border-radius:10px;padding:14px;">
                     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
                         <span class="badge ${rBadge.cls}"><span class="badge-dot"></span>${rBadge.label}</span>
-                        <span style="font-size:11px;color:var(--text-muted);">${batch.withdrawSlipNo || ''}</span>
+                        <span style="font-size:11px;color:var(--text-muted);">${batch.returnSlipNo || 'ยังไม่ออกเลข'}</span>
                     </div>
                     <div class="detail-grid" style="margin-bottom:10px;">
                         <div class="detail-field full"><label>ที่อยู่จัดส่งคืน</label><span>${batch.returnAddress || none}</span></div>
@@ -1022,7 +1089,12 @@
                     ${batch.returnRejectReason ? `<div class="detail-desc" style="margin-top:8px;">เหตุผลที่ Reject: ${batch.returnRejectReason}</div>` : ''}
                 </div>`;
         };
-        const returningBatches = (tk.withdrawBatches || []).filter(b => b.returnStatus != null);
+        // Scoped to one ใบเบิก when batchId is given — otherwise every batch under this Ticket,
+        // same as before.
+        const allBatches = tk.withdrawBatches || [];
+        const shownBatches = batchId ? allBatches.filter(b => b.withdrawBatchId === batchId) : allBatches;
+        const returningBatches = shownBatches.filter(b => b.returnStatus != null);
+        const withdrawSectionTitle = batchId ? `📋 ใบเบิก ${shownBatches[0]?.withdrawSlipNo || ''}` : `📋 ใบเบิก (${allBatches.length})`;
 
         document.getElementById('detailTitle').textContent =
             `${tk.externalTicketNo} — ${tk.techName}`;
@@ -1049,8 +1121,8 @@
             <hr class="detail-divider">
 
             <div class="detail-section">
-                <div class="detail-section-title">📋 ใบเบิก (${(tk.withdrawBatches || []).length})</div>
-                ${(tk.withdrawBatches || []).length ? (tk.withdrawBatches.map(batchCardHtml).join('<div style="height:10px;"></div>')) : `<span class="detail-empty">ยังไม่ได้ส่งคำขอเบิก</span>`}
+                <div class="detail-section-title">${withdrawSectionTitle}</div>
+                ${shownBatches.length ? ([...shownBatches].sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt)).map(batchCardHtml).join('<div style="height:10px;"></div>')) : `<span class="detail-empty">ยังไม่ได้ส่งคำขอเบิก</span>`}
             </div>
 
             <hr class="detail-divider">

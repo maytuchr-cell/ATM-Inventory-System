@@ -79,4 +79,10 @@ public class WithdrawBatch
     public DateTime? ReturnApprovedAt { get; set; }
     public string? ReturnAddress { get; set; }
     public DateTime? ReturnEmailSentAt { get; set; }
+
+    // Set once, at the moment a return is first submitted against this batch (SubmitReturn) —
+    // "RT-{year}-{5-digit running no.}", its own sequence separate from WithdrawSlipNo (the return
+    // leg is its own document, not a renumbering of the ใบเบิก). Kept across a Reject→resubmit
+    // cycle, same as WithdrawSlipNo never renumbers on a withdraw resubmit.
+    public string? ReturnSlipNo { get; set; }
 }

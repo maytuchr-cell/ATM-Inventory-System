@@ -65,6 +65,68 @@ public class TicketController : ControllerBase
         return best;
     }
 
+    // Computes the deadline DHL owes delivery to the tech by, from when Admin confirmed the DHL
+    // email went out (SendEmailConfirmedBatch → WithdrawBatch.EmailSentAt) and the batch's chosen
+    // SLA. Rules per DHL's own published SLA list (see Data/dhl_sla.csv):
+    //   Urgent 2 Hr / 2:40 Hr / 4 Hr — delivered that many hours after send, but only if sent
+    //     before the SLA's own cutoff time; sent after cutoff, DHL picks it up at the START of the
+    //     next business day instead (so the same duration is added from the next business day's
+    //     cutoff-equivalent hour, not from the actual send time).
+    //   NBD12 / NBD17 (Next Business Day) — delivered by 12:00 / 17:00 the next business day, as
+    //     long as sent before the 16:00 cutoff; sent after cutoff, the courier's last pickup for
+    //     that day is already gone, so it rolls one more business day out.
+    //   SBD (Same Business Day) — delivered before end of the same day, but only if sent before
+    //     its own 11:00 cutoff; sent after cutoff, it simply can't be same-day and rolls to the
+    //     next business day (with no further sub-deadline of its own).
+    //   Express — DHL's own SLA list carries no published cutoff/duration for it, so there is
+    //     nothing to compute; returns null (shown as "-" wherever this is displayed).
+    // Business day = skips Saturday/Sunday only — no Thai public-holiday calendar is wired in, so
+    // a deadline that lands on a holiday will read one day earlier than DHL actually delivers.
+    private static DateTime? ComputeDhlDeliveryDeadline(DateTime? emailSentAt, string? sla)
+    {
+        if (emailSentAt == null || string.IsNullOrWhiteSpace(sla)) return null;
+        var sent = emailSentAt.Value;
+
+        static DateTime NextBusinessDay(DateTime d)
+        {
+            var next = d.Date.AddDays(1);
+            while (next.DayOfWeek is DayOfWeek.Saturday or DayOfWeek.Sunday) next = next.AddDays(1);
+            return next;
+        }
+
+        DateTime Urgent(TimeSpan cutoff, TimeSpan duration)
+        {
+            var cutoffToday = sent.Date + cutoff;
+            var baseline = sent <= cutoffToday ? sent : NextBusinessDay(sent) + cutoff;
+            return baseline + duration;
+        }
+
+        DateTime Nbd(TimeSpan cutoff, TimeSpan deliverByTime)
+        {
+            var cutoffToday = sent.Date + cutoff;
+            var day = sent <= cutoffToday ? NextBusinessDay(sent) : NextBusinessDay(NextBusinessDay(sent));
+            return day.Date + deliverByTime;
+        }
+
+        if (sla.StartsWith("Urgent 2:40", StringComparison.OrdinalIgnoreCase))
+            return Urgent(new TimeSpan(15, 30, 0), new TimeSpan(2, 40, 0));
+        if (sla.StartsWith("Urgent 2 Hr", StringComparison.OrdinalIgnoreCase))
+            return Urgent(new TimeSpan(15, 30, 0), new TimeSpan(2, 0, 0));
+        if (sla.StartsWith("Urgent 4 Hr", StringComparison.OrdinalIgnoreCase))
+            return Urgent(new TimeSpan(13, 30, 0), new TimeSpan(4, 0, 0));
+        if (sla.StartsWith("SBD", StringComparison.OrdinalIgnoreCase))
+        {
+            var cutoffToday = sent.Date + new TimeSpan(11, 0, 0);
+            return sent <= cutoffToday ? sent.Date : NextBusinessDay(sent);
+        }
+        if (sla.StartsWith("NBD12", StringComparison.OrdinalIgnoreCase))
+            return Nbd(new TimeSpan(16, 0, 0), new TimeSpan(12, 0, 0));
+        if (sla.StartsWith("NBD17", StringComparison.OrdinalIgnoreCase))
+            return Nbd(new TimeSpan(16, 0, 0), new TimeSpan(17, 0, 0));
+
+        return null; // Express or an unrecognized SLA string — no computable deadline
+    }
+
     // "รออะไหล่" no longer times out into an auto-reject (removed — see TryAutoApprove) — a batch
     // waits here indefinitely until Admin substitutes a part, waits for stock and rechecks, or
     // Rejects/Cancels manually. WaitingSinceAt is kept purely for the shortage report's "waiting
@@ -260,7 +322,7 @@ public class TicketController : ControllerBase
 
         var result = tickets.Select(t =>
         {
-            var batches = t.WithdrawBatches.OrderBy(b => b.CreatedAt).ToList();
+            var batches = t.WithdrawBatches.OrderByDescending(b => b.CreatedAt).ToList();
 
             return new
             {
@@ -285,8 +347,9 @@ public class TicketController : ControllerBase
                         b.WithdrawAddress, b.WithdrawDescription, b.WithdrawSlipNo, b.WithdrawDate,
                         b.EmployeeCode, b.UsageStatus, b.TechSupportName, b.CreatedAt, b.UpdatedAt,
                         b.NeededByDate, b.FeId, b.Sla, b.AtmCode, b.WaitingSinceAt,
+                        dhlDeliveryDeadline = ComputeDhlDeliveryDeadline(b.EmailSentAt, b.Sla),
                         b.ReturnStatus, b.ReturnRejectReason, b.ReturnApproverName, b.ReturnApprovedAt,
-                        b.ReturnAddress, b.ReturnEmailSentAt,
+                        b.ReturnAddress, b.ReturnEmailSentAt, b.ReturnSlipNo,
                         lines = lines.Where(l => l.WithdrawBatchId == b.WithdrawBatchId && l.LineType == "Withdraw")
                             .Select(l => LineOut(l, batchWithdrawnPartNos)),
                         attachments = attachments.Where(a => a.WithdrawBatchId == b.WithdrawBatchId && a.Phase == "Withdraw")
@@ -471,6 +534,16 @@ public class TicketController : ControllerBase
         var year = DateTime.Now.Year;
         var prefix = $"WD-{year}-";
         var count = _context.WithdrawBatches.Count(b => b.WithdrawSlipNo != null && b.WithdrawSlipNo.StartsWith(prefix));
+        return $"{prefix}{(count + 1):D5}";
+    }
+
+    // "RT-{year}-{5-digit running no.}" — the return leg's own document number, separate sequence
+    // from WithdrawSlipNo (see ReturnSlipNo on WithdrawBatch).
+    private string GenerateReturnSlipNo()
+    {
+        var year = DateTime.Now.Year;
+        var prefix = $"RT-{year}-";
+        var count = _context.WithdrawBatches.Count(b => b.ReturnSlipNo != null && b.ReturnSlipNo.StartsWith(prefix));
         return $"{prefix}{(count + 1):D5}";
     }
 
@@ -797,6 +870,7 @@ public class TicketController : ControllerBase
         batch.ReturnStatus = "รอ";
         batch.ReturnAddress = dto.Address;
         batch.ReturnRejectReason = null; // clear any reason left over from a previous rejected return
+        batch.ReturnSlipNo ??= GenerateReturnSlipNo(); // never renumbered on a reject→resubmit
         batch.UpdatedAt = DateTime.Now;
         _context.SaveChanges();
         _audit.Log(User, "WithdrawBatch", batchId.ToString(), "SUBMIT_RETURN", null, new { batch.WithdrawBatchId, batch.ReturnStatus });
@@ -1006,10 +1080,17 @@ public class TicketController : ControllerBase
         // so this file can be handed to DHL as-is with no reformatting on their end.
         if (withdrawBatchIds.Count > 0)
         {
-            var ws = wb.Worksheets.Add("Delivery Request Form");
+            // Sheet name, header row, and column layout copied verbatim from DHL's real
+            // "New Template เบิกอะไหล่" workbook (including its "ชื่อนามสุกล" header typo) — this
+            // file gets handed to DHL as-is, so it has to match byte-for-byte, not just visually.
+            // Columns J–N have no header cell in DHL's blank template, but a real filled-in example
+            // from DHL confirms they DO carry data once a request is filled out: site (ATM
+            // code/address), usage (ใช้งาน/เก็บ), approval status, approver name, approved date —
+            // it's just that the blank template has nothing to show there yet.
+            var ws = wb.Worksheets.Add("Delivery Request Form บ้านช่าง");
             var headers = new[] {
                 "เลขที่ใบเบิก", "วันที่ขอเบิก", "วันที่ต้องการอะไหล่", "Part Number", "อะไหล่", "จำนวน",
-                "รหัสพนักงาน", "ชื่อนามสกุล", "Case No.", "", "", "", "", "", "FE ID", "SLA", "ที่อยู่"
+                "รหัสพนักงาน", "ชื่อนามสุกล", "Case No.", "", "", "", "", "", "FE ID", "SLA", "ที่อยู่"
             };
             for (int c = 0; c < headers.Length; c++) ws.Cell(1, c + 1).Value = headers[c];
             ws.Row(1).Style.Font.Bold = true;
@@ -1021,6 +1102,7 @@ public class TicketController : ControllerBase
             // we don't have their internal sequence number, so WithdrawSlipNo stands in for it.
             string SlipRef(WithdrawBatch b) => $"{b.Ticket?.TechDept}/{b.WithdrawSlipNo}{b.Ticket?.TechName}";
             string UsageLabel(string? usageStatus) => usageStatus switch { "Repair" => "ใช้งาน", "Keep" => "เก็บ", _ => "" };
+            // Matches the "{AtmCode}/{Address}" shape confirmed against a real filled-in DHL form.
             string SiteRef(WithdrawBatch b) => string.IsNullOrWhiteSpace(b.AtmCode) ? (b.WithdrawAddress ?? "") : $"{b.AtmCode}/{b.WithdrawAddress}";
 
             int row = 2;
@@ -1039,7 +1121,8 @@ public class TicketController : ControllerBase
                     ws.Cell(row, 11).Value = UsageLabel(b.UsageStatus);
                     ws.Cell(row, 12).Value = "อนุมัติ"; // only batches already at รอส่งเมล DHL reach this export
                     ws.Cell(row, 13).Value = b.ApproverName ?? "";
-                    ws.Cell(row, 14).Value = b.ApprovedAt?.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture) ?? "";
+                    // d/M/yyyy, no leading zeros — matches the real filled-in DHL form example (e.g. "31/8/2026").
+                    ws.Cell(row, 14).Value = b.ApprovedAt?.ToString("d/M/yyyy", System.Globalization.CultureInfo.InvariantCulture) ?? "";
                     ws.Cell(row, 15).Value = b.FeId ?? "";
                     ws.Cell(row, 16).Value = b.Sla ?? "";
                     ws.Cell(row, 17).Value = b.WithdrawAddress ?? "";
@@ -1061,13 +1144,22 @@ public class TicketController : ControllerBase
                 }
             }
             ws.Columns().AdjustToContents();
+            // Pin J–N to the real template's own widths regardless of what AdjustToContents
+            // computed from our (usually shorter) values, so the sheet's proportions match DHL's
+            // own template open-to-open, not just the data in it.
+            ws.Column(10).Width = 14.57; // J
+            ws.Column(11).Width = 6.57;  // K
+            ws.Column(12).Width = 9.71;  // L
+            ws.Column(13).Width = 7.43;  // M
+            ws.Column(14).Width = 12.71; // N
 
-            // DHL's own template ships these 3 reference sheets alongside the request form
-            // (FE contact list, bank site contact list, part catalogue) — bundled as a static
-            // snapshot so recipients have them without a separate file.
+            // DHL's own template ships these 4 reference sheets alongside the request form
+            // (FE contact list, bank site contact list, part catalogue, SLA dropdown list) —
+            // bundled as a static snapshot so recipients have them without a separate file.
             AddCsvResourceSheet(wb, "Data.dhl_contact_fe.csv", "Contact list DataOne FE");
             AddCsvResourceSheet(wb, "Data.dhl_contact_bank.csv", "Contact list ธนาคาร");
             AddCsvResourceSheet(wb, "Data.dhl_parts.csv", "Part");
+            AddCsvResourceSheet(wb, "Data.dhl_sla.csv", "SLA");
         }
 
         // Return sheet — separate, simpler layout (not part of DHL's inbound request form).

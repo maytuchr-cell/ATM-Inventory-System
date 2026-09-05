@@ -477,6 +477,13 @@ using (var scope = app.Services.CreateScope())
                 context.Database.ExecuteSqlRaw("ALTER TABLE WithdrawBatches ADD COLUMN ReturnEmailSentAt TEXT NULL;");
                 Console.WriteLine("✅ Migration: added WithdrawBatches.Return* (batch-scoped return leg)");
             }
+            // The return leg's own document number ("RT-{year}-{5-digit no.}"), separate sequence
+            // from WithdrawSlipNo — previously the return leg had no slip number of its own at all.
+            if (!wbCols.Contains("ReturnSlipNo"))
+            {
+                context.Database.ExecuteSqlRaw("ALTER TABLE WithdrawBatches ADD COLUMN ReturnSlipNo TEXT NULL;");
+                Console.WriteLine("✅ Migration: added WithdrawBatches.ReturnSlipNo");
+            }
 
             var tplCols2 = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             using (var cmd = context.Database.GetDbConnection().CreateCommand())

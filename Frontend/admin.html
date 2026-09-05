@@ -127,8 +127,10 @@
                 </div>
             </div>
 
-            <!-- Top/Bottom + Aging + Recurrent (3-up) -->
-            <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;margin-bottom:28px;">
+            <!-- Top/Bottom + Aging + Recurrent (3-up) — hidden per request. Left in the DOM (not
+                 removed) since dashboard.js still fetches and fills #top20-list/#bottom20-list/
+                 #aging-list/#recurrent-list; only the display is turned off. -->
+            <div style="display:none;grid-template-columns:1fr 1fr;gap:20px;margin-bottom:28px;">
                 <div class="card" style="margin-bottom:0;">
                     <div class="section-head">
                         <div class="section-accent"></div>
@@ -155,8 +157,9 @@
                 </div>
             </div>
 
-            <!-- Low Stock: parts that actually need action, not the full 500+ catalog -->
-            <div class="card">
+            <!-- Low Stock: parts that actually need action, not the full 500+ catalog — hidden
+                 per request, same reasoning as above (dashboard.js still fills #lowstock-list). -->
+            <div class="card" style="display:none;">
                 <div class="section-head">
                     <div class="section-accent"></div>
                     <span class="section-title">อะไหล่ที่ต้องระวัง (ต่ำกว่าจุดสั่งซื้อ / หมดสต็อก)</span>

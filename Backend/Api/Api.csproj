@@ -30,6 +30,7 @@
     <EmbeddedResource Include="Data\dhl_contact_fe.csv" />
     <EmbeddedResource Include="Data\dhl_contact_bank.csv" />
     <EmbeddedResource Include="Data\dhl_parts.csv" />
+    <EmbeddedResource Include="Data\dhl_sla.csv" />
   </ItemGroup>
 
   <ItemGroup>

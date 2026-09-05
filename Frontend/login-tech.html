@@ -110,6 +110,13 @@
         }
         .form-input:focus { outline: none; border-color: var(--orange); box-shadow: 0 0 0 4px var(--orange-ring); }
         .form-input::placeholder { color: var(--text-muted); }
+        .pw-toggle-btn {
+            position: absolute; right: 12px; top: 50%; transform: translateY(-50%);
+            background: none; border: none; padding: 4px; margin: 0; line-height: 0;
+            color: var(--text-muted); cursor: pointer;
+        }
+        .pw-toggle-btn:hover { color: var(--text-secondary); }
+        #passwordInput { padding-right: 40px; }
 
         .error-box {
             display: none; margin-bottom: 18px; padding: 12px 14px;
@@ -173,6 +180,9 @@
                     <svg class="input-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
                     <input type="password" id="passwordInput" class="form-input" required
                         placeholder="••••••••" autocomplete="current-password">
+                    <button type="button" class="pw-toggle-btn" onclick="togglePasswordVisibility('passwordInput', this)" aria-label="แสดง/ซ่อนรหัสผ่าน">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8Z"/><circle cx="12" cy="12" r="3"/></svg>
+                    </button>
                 </div>
             </div>
             <button type="submit" class="btn-signin" id="submitBtn">
@@ -194,6 +204,16 @@
         }
         function toggleTheme() { applyTheme(document.documentElement.getAttribute('data-theme') === 'dark' ? 'light' : 'dark'); }
         applyTheme(localStorage.getItem('theme') || 'light');
+
+        /* ── Password show/hide toggle ── */
+        const EYE_OPEN = `<path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8Z"/><circle cx="12" cy="12" r="3"/>`;
+        const EYE_OFF  = `<path d="M9.88 9.88a3 3 0 1 0 4.24 4.24"/><path d="M10.73 5.08A10.43 10.43 0 0 1 12 5c7 0 11 8 11 8a13.16 13.16 0 0 1-1.67 2.68"/><path d="M6.61 6.61A13.52 13.52 0 0 0 1 12s4 8 11 8a9.74 9.74 0 0 0 5.39-1.61"/><path d="M2 2l20 20"/>`;
+        function togglePasswordVisibility(inputId, btn) {
+            const input = document.getElementById(inputId);
+            const isHidden = input.type === 'password';
+            input.type = isHidden ? 'text' : 'password';
+            btn.querySelector('svg').innerHTML = isHidden ? EYE_OFF : EYE_OPEN;
+        }
 
         // See Frontend/shared/api.js for why dev/prod compute this differently (IIS PathBase).
         const API_BASE = (location.port === '3000')

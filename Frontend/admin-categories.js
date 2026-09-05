@@ -6,6 +6,10 @@ async function init() {
   initLayout();
   applyLang();
   await Promise.all([loadParts(), loadCategories()]);
+  // loadCategories() already renders once it resolves, but Categories is a much smaller request
+  // than Parts and virtually always finishes first — that render then runs against the still-
+  // empty allParts (Parts count 0 for every row). Render again now that both are guaranteed in.
+  renderTable();
 }
 
 async function loadParts() {

@@ -112,6 +112,7 @@ CALL _AddColumnIfMissing('WithdrawBatches', 'ReturnApproverName',  'LONGTEXT NUL
 CALL _AddColumnIfMissing('WithdrawBatches', 'ReturnApprovedAt',    'DATETIME(6) NULL');
 CALL _AddColumnIfMissing('WithdrawBatches', 'ReturnAddress',       'LONGTEXT NULL');
 CALL _AddColumnIfMissing('WithdrawBatches', 'ReturnEmailSentAt',   'DATETIME(6) NULL');
+CALL _AddColumnIfMissing('WithdrawBatches', 'ReturnSlipNo',        'LONGTEXT NULL');
 
 -- ── DailyReportImportRows ────────────────────────────────────────────────
 CALL _AddColumnIfMissing('DailyReportImportRows', 'CaseNo',          'LONGTEXT NULL');

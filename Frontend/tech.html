@@ -95,6 +95,8 @@
         .tk-line-row input[type=number] { flex:0 0 70px; padding:8px 8px; border-radius:8px; background:var(--bg-input); color:var(--text-primary); border:1.5px solid var(--border); font-family:inherit; font-size:13px; outline:none; text-align:center; }
         .tk-line-row select.tk-condition { flex:0 0 92px; padding:8px 6px; border-radius:8px; background:var(--bg-input); color:var(--text-primary); border:1.5px solid var(--border); font-family:inherit; font-size:12.5px; outline:none; }
         .tk-line-row .tk-remove { flex:0 0 auto; background:none; border:none; color:var(--red); cursor:pointer; font-size:15px; padding:4px 6px; }
+        .tk-line-row .tk-split { flex:0 0 auto; background:none; border:1.5px dashed var(--border); border-radius:8px; color:var(--text-secondary); cursor:pointer; font-size:13px; padding:3px 7px; }
+        .tk-line-row .tk-split:hover { border-color:var(--orange); color:var(--orange); }
         .tk-line-thumb-wrap { flex:0 0 auto; }
         .tk-photo-preview { display:flex; flex-wrap:wrap; gap:8px; margin-top:10px; }
         .tk-photo-thumb { position:relative; width:64px; height:64px; }
@@ -351,7 +353,7 @@
             <div style="margin-bottom:18px;">
                 <label style="font-size:11px;color:var(--text-muted);display:block;margin-bottom:4px;">Tech Support ที่ปรึกษา</label>
                 <select id="wdTechSupport" class="select-part" style="margin-bottom:0;">
-                    <option value="">ไม่มี</option>
+                    <option value="" disabled selected>— เลือก Tech Support —</option>
                 </select>
             </div>
 
@@ -379,10 +381,15 @@
             <button type="button" class="btn-add-line" style="margin-bottom:8px;" onclick="openAddressPicker('wdAddress')">📍 เลือกที่บันทึกไว้</button>
             <textarea id="wdAddress" class="form-textarea" placeholder="กรอกที่อยู่สำหรับจัดส่งอะไหล่..." style="min-height:70px;"></textarea>
 
-            <span class="tk-section-label" style="margin-top:18px;display:block;">แนบรูปภาพ</span>
-            <input type="file" id="wdPhotoInput" accept="image/*" multiple style="display:none;" onchange="handlePhotoSelect('wd', this.files)">
-            <button type="button" class="btn-add-line" onclick="document.getElementById('wdPhotoInput').click()">📷 แนบรูปภาพ (เลือกได้หลายรูป)</button>
-            <div id="wdPhotoPreview" class="tk-photo-preview"></div>
+            <!-- Photo attachment hidden per request — kept in the DOM (not removed) since
+                 uploadPendingPhotos('wd') and the admin-side attachment gallery still read
+                 photoFiles.wd / existing attachments; just nothing lets the tech add new ones. -->
+            <div style="display:none;">
+                <span class="tk-section-label" style="margin-top:18px;display:block;">แนบรูปภาพ</span>
+                <input type="file" id="wdPhotoInput" accept="image/*" multiple style="display:none;" onchange="handlePhotoSelect('wd', this.files)">
+                <button type="button" class="btn-add-line" onclick="document.getElementById('wdPhotoInput').click()">📷 แนบรูปภาพ (เลือกได้หลายรูป)</button>
+                <div id="wdPhotoPreview" class="tk-photo-preview"></div>
+            </div>
 
             <span class="tk-section-label" style="margin-top:18px;display:block;">หมายเหตุ / อาการเสีย</span>
             <textarea id="wdDescription" class="form-textarea" placeholder="เช่น Card reader เสีย, ปลั๊ก Sensor ขาด..." style="min-height:60px;"></textarea>
@@ -453,10 +460,13 @@
             <button type="button" class="btn-add-line" style="margin-bottom:8px;" onclick="openAddressPicker('rtAddress')">📍 เลือกที่บันทึกไว้</button>
             <textarea id="rtAddress" class="form-textarea" placeholder="กรอกที่อยู่ที่จะส่งของคืน..." style="min-height:70px;"></textarea>
 
-            <span class="tk-section-label" style="margin-top:18px;display:block;">แนบรูปภาพ</span>
-            <input type="file" id="rtPhotoInput" accept="image/*" multiple style="display:none;" onchange="handlePhotoSelect('rt', this.files)">
-            <button type="button" class="btn-add-line" onclick="document.getElementById('rtPhotoInput').click()">📷 แนบรูปภาพ (เลือกได้หลายรูป)</button>
-            <div id="rtPhotoPreview" class="tk-photo-preview"></div>
+            <!-- Photo attachment hidden per request — see the withdraw form's identical comment above. -->
+            <div style="display:none;">
+                <span class="tk-section-label" style="margin-top:18px;display:block;">แนบรูปภาพ</span>
+                <input type="file" id="rtPhotoInput" accept="image/*" multiple style="display:none;" onchange="handlePhotoSelect('rt', this.files)">
+                <button type="button" class="btn-add-line" onclick="document.getElementById('rtPhotoInput').click()">📷 แนบรูปภาพ (เลือกได้หลายรูป)</button>
+                <div id="rtPhotoPreview" class="tk-photo-preview"></div>
+            </div>
 
             <div class="tk-modal-actions">
                 <button type="button" class="btn btn-ghost" onclick="closeReturnModal()">ยกเลิก</button>
@@ -525,7 +535,7 @@
             <div style="margin-bottom:18px;">
                 <label style="font-size:11px;color:var(--text-muted);display:block;margin-bottom:4px;">Tech Support ที่ปรึกษา</label>
                 <select id="nrTechSupport" class="select-part" style="margin-bottom:0;">
-                    <option value="">ไม่มี</option>
+                    <option value="" disabled selected>— เลือก Tech Support —</option>
                 </select>
             </div>
 
@@ -553,10 +563,13 @@
             <button type="button" class="btn-add-line" style="margin-bottom:8px;" onclick="openAddressPicker('nrAddress')">📍 เลือกที่บันทึกไว้</button>
             <textarea id="nrAddress" class="form-textarea" placeholder="กรอกที่อยู่สำหรับจัดส่งอะไหล่..." style="min-height:70px;"></textarea>
 
-            <span class="tk-section-label" style="margin-top:18px;display:block;">แนบรูปภาพ</span>
-            <input type="file" id="nrPhotoInput" accept="image/*" multiple style="display:none;" onchange="handlePhotoSelect('nr', this.files)">
-            <button type="button" class="btn-add-line" onclick="document.getElementById('nrPhotoInput').click()">📷 แนบรูปภาพ (เลือกได้หลายรูป)</button>
-            <div id="nrPhotoPreview" class="tk-photo-preview"></div>
+            <!-- Photo attachment hidden per request — see the withdraw form's identical comment above. -->
+            <div style="display:none;">
+                <span class="tk-section-label" style="margin-top:18px;display:block;">แนบรูปภาพ</span>
+                <input type="file" id="nrPhotoInput" accept="image/*" multiple style="display:none;" onchange="handlePhotoSelect('nr', this.files)">
+                <button type="button" class="btn-add-line" onclick="document.getElementById('nrPhotoInput').click()">📷 แนบรูปภาพ (เลือกได้หลายรูป)</button>
+                <div id="nrPhotoPreview" class="tk-photo-preview"></div>
+            </div>
 
             <span class="tk-section-label" style="margin-top:18px;display:block;">หมายเหตุ / อาการเสีย</span>
             <textarea id="nrDescription" class="form-textarea" placeholder="เช่น Card reader เสีย, ปลั๊ก Sensor ขาด..." style="min-height:60px;"></textarea>
@@ -668,7 +681,10 @@
     async function fetchTechSupportList() {
         let names = [];
         try { names = await api.techSupport.getAll(); } catch { names = []; }
-        const optionsHtml = '<option value="">ไม่มี</option>' + names.map(n => `<option value="${n}">${n}</option>`).join('');
+        // No "ไม่มี" (none) choice — Tech Support is mandatory now (see submitWithdraw/
+        // submitNewRequest validation), so the blank placeholder option must never be a real,
+        // selectable answer.
+        const optionsHtml = '<option value="" disabled selected>— เลือก Tech Support —</option>' + names.map(n => `<option value="${n}">${n}</option>`).join('');
         document.getElementById('wdTechSupport').innerHTML = optionsHtml;
         document.getElementById('nrTechSupport').innerHTML = optionsHtml;
     }
@@ -813,7 +829,7 @@
             // (e.g. a mistaken approval) until the DHL email actually goes out.
             return `<span class="text-muted" style="font-size:12px;">อนุมัติแล้ว — รอ Admin ส่งเมล DHL</span>`;
         } else if (batch.status === 'เดินทาง') {
-            const eta = deliveryEtaHtml(batch.emailSentAt);
+            const eta = deliveryEtaHtml(batch.dhlDeliveryDeadline);
             return `<button class="btn-return" onclick="closeTicketDetail();confirmReceiveBatch(${tk.ticketId},${batch.withdrawBatchId})">✅ ยืนยันรับของ</button>${eta}`;
         } else if (batch.status === 'เบิก') {
             // "คืนตามใบเบิก" — this batch's own return leg. null means no return started on THIS
@@ -914,7 +930,7 @@
                 <div class="tk-readonly-box" style="margin-bottom:14px;">
                     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
                         <span class="badge ${rb.cls}"><span class="badge-dot"></span>${rb.label}</span>
-                        <span class="text-muted" style="font-size:11px;">${batch.withdrawSlipNo || ''}</span>
+                        <span class="text-muted" style="font-size:11px;">${batch.returnSlipNo || 'ยังไม่ออกเลข'}</span>
                     </div>
                     <div class="tk-readonly-grid" style="margin-bottom:10px;">
                         <div class="tk-readonly-field"><label>ที่อยู่จัดส่งคืน</label><span>${batch.returnAddress || '—'}</span></div>
@@ -972,6 +988,10 @@
             if (!rows.length) {
                 body = `<tr><td colspan="2" class="empty-state">ไม่มี Ticket ที่ต้องดำเนินการ</td></tr>`;
             } else {
+                // Newest activity first — same effectiveUpdatedAt used by the history tab below,
+                // so a Ticket someone just acted on (Admin approved, tech received, etc.) surfaces
+                // at the top instead of sitting wherever it happened to sync in.
+                rows.sort((a, b) => effectiveUpdatedAt(b) - effectiveUpdatedAt(a));
                 rows.forEach(tk => {
                     const badge = statusBreakdownHtml(tk);
                     const batchCount = (tk.withdrawBatches || []).length;
@@ -1081,6 +1101,7 @@
             </div>
             <input type="number" id="${prefix}-qty-${idx}" min="1" value="${qty || 1}">
             ${conditionHtml}
+            ${prefix === 'rt' ? `<button type="button" class="tk-split" title="แยกสภาพ — บางชิ้นดี บางชิ้นเสีย" onclick="splitReturnLine(${idx})">➕</button>` : ''}
             <button type="button" class="tk-remove" onclick="removeLine('${prefix}', ${idx})">✕</button>
         </div>`;
     }
@@ -1108,6 +1129,25 @@
     function selectPart(prefix, idx, partNo) {
         const part = cachedParts.find(p => p.partNo === partNo);
         if (!part) return;
+
+        // Picking a part that's already selected on another row (same form) stacks onto that
+        // row's quantity instead of creating a second row for the same part — a tech adding
+        // "ฐาน" twice expects one line reading ×2, not two separate ×1 lines.
+        const existingIdx = [...document.querySelectorAll(`[id^="${prefix}-part-"]`)]
+            .map(el => el.id.replace(`${prefix}-part-`, ''))
+            .find(i => i != idx && document.getElementById(`${prefix}-part-${i}`)?.dataset.partno === partNo);
+
+        if (existingIdx) {
+            const existingQtyInp = document.getElementById(`${prefix}-qty-${existingIdx}`);
+            const addedQtyInp = document.getElementById(`${prefix}-qty-${idx}`);
+            const addedQty = parseInt(addedQtyInp?.value, 10) || 1;
+            existingQtyInp.value = (parseInt(existingQtyInp.value, 10) || 0) + addedQty;
+            document.getElementById(`${prefix}-dropdown-${idx}`).classList.remove('open');
+            removeLine(prefix, idx);
+            showToast?.(`${part.partName} มีอยู่แล้ว — รวมจำนวนเป็น ×${existingQtyInp.value}`, 'info');
+            return;
+        }
+
         const input = document.getElementById(`${prefix}-part-${idx}`);
         input.value = partLabel(part);
         input.dataset.partno = partNo;
@@ -1136,6 +1176,26 @@
     function removeLine(prefix, idx) {
         document.getElementById(`${prefix}-row-${idx}`)?.remove();
     }
+    // Splits a return line into two rows for the same part — e.g. 2 withdrawn, 1 came back good
+    // and 1 came back bad. Peels 1 unit off the original row's qty into a new row (defaulted to
+    // the opposite condition) rather than letting the tech pick a second part, since a return
+    // line can only ever be one of the parts this ใบเบิก actually withdrew.
+    function splitReturnLine(idx) {
+        const partInp = document.getElementById(`rt-part-${idx}`);
+        const qtyInp = document.getElementById(`rt-qty-${idx}`);
+        const condInp = document.getElementById(`rt-cond-${idx}`);
+        const partNo = partInp?.dataset.partno;
+        const qty = parseInt(qtyInp?.value, 10) || 0;
+        if (!partNo || qty < 2) {
+            showToast?.('ต้องมีจำนวนอย่างน้อย 2 ชิ้นถึงจะแยกสภาพได้', 'error');
+            return;
+        }
+        qtyInp.value = qty - 1;
+        rtLineCount++;
+        const oppositeCondition = condInp?.value === 'Bad' ? 'Good' : 'Bad';
+        const rowHtml = lineRowHtml('rt', rtLineCount, partNo, 1, oppositeCondition);
+        document.getElementById(`rt-row-${idx}`).insertAdjacentHTML('afterend', rowHtml);
+    }
     function collectLines(prefix, count) {
         const lines = [];
         for (let i = 1; i <= count; i++) {
@@ -1152,7 +1212,16 @@
             }
             lines.push(line);
         }
-        return lines;
+        // Safety net — selectPart already stops a duplicate part from being added as a second row,
+        // but merge here too (same partNo + condition) so any row that still slipped through
+        // (e.g. pre-filled from a rejected batch) submits as one combined quantity, not two lines.
+        const merged = [];
+        for (const line of lines) {
+            const existing = merged.find(m => m.partNo === line.partNo && m.condition === line.condition);
+            if (existing) existing.quantity += line.quantity;
+            else merged.push(line);
+        }
+        return merged;
     }
 
     /* ── Photo attachments (withdraw + return share this) ──
@@ -1235,13 +1304,16 @@
             ? batch.neededByDate.slice(0, 16)
             : (kmmJob?.appointDatetime ? toLocalDatetimeInputValue(kmmJob.appointDatetime) : '');
         document.getElementById('wdAtmCode').value = batch?.status === 'Reject' ? (batch.atmCode || '') : (kmmJob?.atmCode || '');
-        document.getElementById('wdFeId').value = batch?.status === 'Reject' ? (batch.feId || '') : (kmmJob?.zoneName || '');
-        // ATM code / FE ID / problem description / needed-by date come straight from the tech's
-        // KMM job ticket and must not be hand-edited — except when fixing up a rejected batch for
+        // FE ID is DHL's own site/route code (e.g. "Bangna 01") — KMM's job ticket only gives us a
+        // broad zone name (e.g. "อีสานตอนล่าง"), not that code, so auto-filling from KMM here was
+        // just wrong data. The tech types the real FE ID by hand; keep whatever they already typed
+        // (batch.feId) across a re-open of this modal, same as a rejected-batch resubmission.
+        document.getElementById('wdFeId').value = batch?.feId || '';
+        // ATM code / problem description / needed-by date come straight from the tech's KMM job
+        // ticket and must not be hand-edited — except when fixing up a rejected batch for
         // resubmission, where these are the tech's own previously-typed values, not KMM's.
         const kmmLocked = batch?.status !== 'Reject';
         document.getElementById('wdAtmCode').readOnly = kmmLocked;
-        document.getElementById('wdFeId').readOnly = kmmLocked;
         document.getElementById('wdDescription').readOnly = kmmLocked;
         document.getElementById('wdNeededByDate').readOnly = kmmLocked;
 
@@ -1324,6 +1396,7 @@
         const atmCode = document.getElementById('wdAtmCode').value.trim() || null;
         if (!lines.length) { showToast?.('เลือกอะไหล่อย่างน้อย 1 รายการ', 'error'); return; }
         if (!address) { showToast?.('กรุณากรอกที่อยู่จัดส่ง', 'error'); return; }
+        if (!techSupportName) { showToast?.('กรุณาเลือก Tech Support ที่ปรึกษา', 'error'); return; }
 
         try {
             const attachments = await uploadPendingPhotos('wd');
@@ -1353,13 +1426,15 @@
         } catch (e) { showToast?.(e.message || t('toast.error'), 'error'); }
     }
 
-    // Once Admin confirms the DHL email went out, the tech is told the part will reach them the
-    // next day — counted from EmailSentAt, not the (usually earlier) approve moment.
-    function deliveryEtaHtml(emailSentAt) {
-        if (!emailSentAt) return '';
-        const eta = new Date(emailSentAt);
-        eta.setDate(eta.getDate() + 1);
-        return `<div class="text-muted" style="font-size:11px;margin-top:4px;">📦 คาดว่าจะได้รับของภายในวันที่ ${eta.toLocaleDateString('th-TH')}</div>`;
+    // Once Admin confirms the DHL email went out, the tech is told when the part is due —
+    // dhlDeliveryDeadline is computed server-side from EmailSentAt + the batch's actual SLA
+    // (cutoff time, NBD/SBD/Urgent rules, business-day skipping — see
+    // TicketController.ComputeDhlDeliveryDeadline), not a flat "+1 day" guess.
+    function deliveryEtaHtml(dhlDeliveryDeadline) {
+        if (!dhlDeliveryDeadline) return '';
+        const eta = new Date(dhlDeliveryDeadline);
+        const etaText = eta.toLocaleString('th-TH', { dateStyle: 'medium', timeStyle: 'short' });
+        return `<div class="text-muted" style="font-size:11px;margin-top:4px;">📦 คาดว่าจะได้รับของภายใน ${etaText}</div>`;
     }
 
     // In-app alert only, per confirmed design (no LINE/push) — flags any withdraw ticket that's
@@ -1444,11 +1519,12 @@
         if (!address) { showToast?.('กรุณากรอกที่อยู่', 'error'); return; }
         try {
             const attachments = await uploadPendingPhotos('rt');
-            await api.tickets.submitReturn(activeReturnTicketId, activeReturnBatchId, { lines, address, attachments });
+            const res = await api.tickets.submitReturn(activeReturnTicketId, activeReturnBatchId, { lines, address, attachments });
             photoFiles.rt = [];
             closeReturnModal();
             await fetchTickets();
-            showToast?.('ส่งคำขอคืนแล้ว', 'success');
+            const slipNo = res?.batch?.returnSlipNo;
+            showToast?.(slipNo ? `ส่งคำขอคืนแล้ว เลขที่ใบคืน ${slipNo}` : 'ส่งคำขอคืนแล้ว', 'success');
         } catch (e) {
             await fetchTickets();
             showToast?.(e.message || t('toast.error'), 'error');
@@ -1456,6 +1532,7 @@
     }
 
     async function markShipped(ticketId, batchId) {
+        if (!confirm('ยืนยันว่าจัดส่งของคืนแล้ว? หลังจากนี้จะยกเลิกไม่ได้')) return;
         try {
             await api.tickets.shipReturn(ticketId, batchId);
             await fetchTickets();
@@ -1472,11 +1549,8 @@
         // Prefill from the tech's own KMM profile — currentName/currentEmail (=emp_id) come from
         // login, so this no longer depends on having a previous ticket cached.
         const last = cachedTickets.find(t => t.techName);
-        // FE ID is the same thing as Zone — reuse whatever zone we know for this tech (from their
-        // most recent KMM-synced ticket) instead of leaving it for the tech to type.
-        const zone = last?.techDept || '';
         document.getElementById('nrTechName').value = currentName || last?.techName || '';
-        document.getElementById('nrTechDept').value = zone;
+        document.getElementById('nrTechDept').value = last?.techDept || '';
         document.getElementById('nrWithdrawDate').value = todayIso();
         document.getElementById('nrEmployeeCode').value = currentEmail || '';
         document.getElementById('nrCaseNo').value = '';
@@ -1484,7 +1558,9 @@
         document.getElementById('nrTechSupport').value = '';
         document.getElementById('nrNeededByDate').value = '';
         document.getElementById('nrAtmCode').value = '';
-        document.getElementById('nrFeId').value = zone;
+        // FE ID is DHL's own site/route code (e.g. "Bangna 01"), not the tech's zone — the tech
+        // types it by hand, there's nothing in our data to prefill it with.
+        document.getElementById('nrFeId').value = '';
         onUsageStatusChange('nr');
         document.getElementById('nrAddress').value = '';
         document.getElementById('nrDescription').value = '';
@@ -1519,6 +1595,7 @@
         // (buffer stock) isn't tied to any job, so it's fine left blank (falls back to a
         // self-generated placeholder number, same as before this feature existed).
         if (usageStatus === 'Repair' && !caseNo) { showToast?.('กรอก Case No. (จำเป็นสำหรับ "เบิกไปซ่อม")', 'error'); return; }
+        if (!techSupportName) { showToast?.('กรุณาเลือก Tech Support ที่ปรึกษา', 'error'); return; }
         let syncedTicketId = null;
         try {
             const externalTicketNo = caseNo || `SELF-${Date.now()}`;
