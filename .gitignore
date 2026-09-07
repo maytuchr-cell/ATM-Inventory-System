@@ -38,6 +38,17 @@ Backend/Api/wwwroot/uploads/
 
 # Local-only secrets (KMM service account, etc.) — never commit real credentials
 Backend/Api/appsettings.Development.json
+Backend/Api/appsettings.Production.json
+CREDENTIALS.md
+
+# Deployment packages & offline artifacts
+*.zip
+publish-linux*/
+offline-docker-installer/
+docker-export/
+docker-mysql/
+_deploy*/
+*_deploy*/
 
 # IDE
 .vs/
