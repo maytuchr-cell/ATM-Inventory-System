@@ -101,6 +101,7 @@
         .tk-return-counts label { display:flex; align-items:center; gap:5px; font-size:12.5px; color:var(--text-secondary); }
         .tk-return-counts input[type=number] { width:56px; padding:6px; border-radius:8px; background:var(--bg-input); color:var(--text-primary); border:1.5px solid var(--border); font-family:inherit; font-size:13px; outline:none; text-align:center; }
         .tk-return-total { font-size:12px; color:var(--text-muted); margin-left:auto; }
+        .tk-return-howto { background:var(--orange-light); border:1px solid var(--orange); border-radius:8px; padding:10px 12px; font-size:12px; line-height:1.6; color:var(--text-primary); margin-bottom:10px; }
         .tk-return-counts input[readonly] { background:var(--bg-subtle); color:var(--text-muted); cursor:default; }
         .tk-photo-preview { display:flex; flex-wrap:wrap; gap:8px; margin-top:10px; }
         .tk-photo-thumb { position:relative; width:64px; height:64px; }
@@ -457,8 +458,12 @@
             <div class="tk-readonly-box" id="rtHistory" style="margin-bottom:18px;"></div>
 
             <span class="tk-section-label">อะไหล่ที่ต้องคืน (ตามใบเบิกนี้เท่านั้น)</span>
+            <div class="tk-return-howto">
+                <b>วิธีกรอก:</b> พิมพ์เฉพาะจำนวน <b>"เสีย"</b> และ <b>"สูญหาย"</b> — ช่อง <b>"ดี"</b> จะลดให้อัตโนมัติเพื่อให้รวมเท่ากับจำนวนที่เบิกไปเสมอ ไม่ต้องคำนวณเอง<br>
+                เช่น เบิกไป 4 ชิ้น พบว่าเสีย 2 → พิมพ์ "เสีย" เป็น 2 ช่อง "ดี" จะเหลือ 2 ให้เอง (2+2=4 ครบพอดี)<br>
+                ถ้าอะไหล่หายไปเลยไม่ได้คืนจริง ให้ใส่จำนวนในช่อง <b>"สูญหาย"</b> ห้ามปล่อยว่างหรือลดยอดรวมลง
+            </div>
             <div id="rtLinesMatched"></div>
-            <div style="font-size:11.5px;color:var(--text-muted);margin-top:6px;">* แยกจำนวนที่เบิกไปเป็นดี/เสีย/สูญหาย — รวมกันต้องเท่ากับจำนวนที่เบิกไปเป๊ะ (ของหายก็ใส่ในช่อง "สูญหาย" ไม่ใช่ลดยอดรวม)</div>
 
             <span class="tk-section-label" style="margin-top:18px;display:block;">ที่อยู่ (จุดส่งคืน)</span>
             <button type="button" class="btn-add-line" style="margin-bottom:8px;" onclick="openAddressPicker('rtAddress')">📍 เลือกที่บันทึกไว้</button>
