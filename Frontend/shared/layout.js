@@ -63,6 +63,7 @@
         { key: 'nav.vendors',    href: 'admin-vendors.html',    icon: 'fa6-solid:warehouse',         adminOnly: true },
         { key: 'nav.atmmodels',  href: 'admin-atm-models.html', icon: 'streamline-plump:cog-solid',  adminOnly: true },
         { key: 'nav.equivgroups', href: 'admin-equivalent-groups.html', icon: 'mdi:vector-link',      adminOnly: true },
+        { key: 'nav.fecontacts', href: 'admin-fe-contacts.html', icon: 'mdi:card-account-phone-outline', adminOnly: true },
       ]
     },
     {

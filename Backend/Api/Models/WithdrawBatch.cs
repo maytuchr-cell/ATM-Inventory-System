@@ -85,4 +85,9 @@ public class WithdrawBatch
     // leg is its own document, not a renumbering of the ใบเบิก). Kept across a Reject→resubmit
     // cycle, same as WithdrawSlipNo never renumbers on a withdraw resubmit.
     public string? ReturnSlipNo { get; set; }
+
+    // Overwritten on every SubmitReturn call (including a reject→resubmit) — this is DHL's
+    // "วันที่ทำรายการ" column on the return-request template: the date THIS return request was
+    // made, not preserved like ReturnSlipNo. See TicketController.ExportDhlExcel.
+    public DateTime? ReturnRequestedAt { get; set; }
 }

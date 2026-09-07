@@ -37,5 +37,13 @@ public class TicketPartLine
     // back (missing, or a non-circulating "baby part") so no stock is added at confirm-return.
     public string? Condition { get; set; } // Good | Bad | Lost
 
+    // Return lines only — free-text fault description ("อาการเสีย") and the physical unit's
+    // serial number, both tech-entered at SubmitReturn. Exist purely so the DHL return-request
+    // export (see TicketController.ExportDhlExcel) can match DHL's own "เลขที่ใบคืน" template
+    // column-for-column — DHL's format carries both per line even though our own return-matching
+    // logic (DailyReportController) doesn't need them at submit time.
+    public string? Problem { get; set; }
+    public string? SerialNo { get; set; }
+
     public DateTime CreatedAt { get; set; } = DateTime.Now;
 }

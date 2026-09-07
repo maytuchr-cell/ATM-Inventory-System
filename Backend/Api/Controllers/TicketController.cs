@@ -846,16 +846,29 @@ public class TicketController : ControllerBase
         {
             if (string.IsNullOrWhiteSpace(l.Condition) || !validConditions.Contains(l.Condition))
                 return BadRequest(new { message = $"Condition for {l.PartNo} must be Good, Bad, or Lost." });
-            if (!withdrawnQtyByPartNo.TryGetValue(l.PartNo, out var withdrawnQty))
+            if (!withdrawnQtyByPartNo.ContainsKey(l.PartNo))
                 return BadRequest(new { message = $"{l.PartNo} was not withdrawn on this ใบเบิก — คืนได้เฉพาะอะไหล่ในใบเบิกนี้เท่านั้น" });
-            if (requestedQtyByPartNo.GetValueOrDefault(l.PartNo, 0) > withdrawnQty)
-                return BadRequest(new { message = $"คืน {l.PartNo} ได้ไม่เกิน {withdrawnQty} ชิ้น (จำนวนที่เบิกไป)" });
+        }
+        // Every withdrawn part must come back exactly in full — ดี+เสีย+สูญหาย across however many
+        // Condition rows the tech split it into must equal the withdrawn qty exactly, not less
+        // (missing must be declared "Lost", not just omitted) and not more. Checked against every
+        // withdrawn PartNo, not just the ones present in dto.Lines, so silently dropping a whole
+        // part from the request doesn't slip past this as an implicit zero.
+        foreach (var (partNo, withdrawnQty) in withdrawnQtyByPartNo)
+        {
+            var requestedQty = requestedQtyByPartNo.GetValueOrDefault(partNo, 0);
+            if (requestedQty != withdrawnQty)
+                return BadRequest(new { message = $"คืน {partNo} ต้องครบ {withdrawnQty} ชิ้นเป๊ะ (ตอนนี้รวม {requestedQty} ชิ้น) — ของหายให้ใส่เป็น Lost ไม่ใช่ลดจำนวนรวม" });
+        }
+        foreach (var l in dto.Lines)
+        {
             var part = _context.Parts.FirstOrDefault(p => p.PartNo == l.PartNo);
             if (part == null) return BadRequest(new { message = $"Part {l.PartNo} not found." });
             _context.TicketPartLines.Add(new TicketPartLine
             {
                 TicketId = ticketId, WithdrawBatchId = batchId, PartId = part.Id, PartNo = l.PartNo,
-                Quantity = l.Quantity, LineType = "Return", Condition = l.Condition
+                Quantity = l.Quantity, LineType = "Return", Condition = l.Condition,
+                Problem = l.Problem, SerialNo = l.SerialNo
             });
         }
 
@@ -871,6 +884,7 @@ public class TicketController : ControllerBase
         batch.ReturnAddress = dto.Address;
         batch.ReturnRejectReason = null; // clear any reason left over from a previous rejected return
         batch.ReturnSlipNo ??= GenerateReturnSlipNo(); // never renumbered on a reject→resubmit
+        batch.ReturnRequestedAt = DateTime.Now; // unlike ReturnSlipNo, this DOES refresh on a resubmit
         batch.UpdatedAt = DateTime.Now;
         _context.SaveChanges();
         _audit.Log(User, "WithdrawBatch", batchId.ToString(), "SUBMIT_RETURN", null, new { batch.WithdrawBatchId, batch.ReturnStatus });
@@ -1152,56 +1166,76 @@ public class TicketController : ControllerBase
             ws.Column(12).Width = 9.71;  // L
             ws.Column(13).Width = 7.43;  // M
             ws.Column(14).Width = 12.71; // N
-
-            // DHL's own template ships these 4 reference sheets alongside the request form
-            // (FE contact list, bank site contact list, part catalogue, SLA dropdown list) —
-            // bundled as a static snapshot so recipients have them without a separate file.
-            AddCsvResourceSheet(wb, "Data.dhl_contact_fe.csv", "Contact list DataOne FE");
-            AddCsvResourceSheet(wb, "Data.dhl_contact_bank.csv", "Contact list ธนาคาร");
-            AddCsvResourceSheet(wb, "Data.dhl_parts.csv", "Part");
-            AddCsvResourceSheet(wb, "Data.dhl_sla.csv", "SLA");
         }
 
-        // Return sheet — separate, simpler layout (not part of DHL's inbound request form).
-        // Batch-scoped now ("คืนตามใบเบิก") — each row's Case No. still comes from the batch's
-        // Ticket, but the return address/lines are the BATCH's own, not shared across batches.
+        // Return sheet — column-for-column match of DHL's own "เลขที่ใบคืน" return-request
+        // template (confirmed against a real filled-in DHL form), same spirit as the withdraw
+        // sheet above. Batch-scoped ("คืนตามใบเบิก") — each row's Case No. still comes from the
+        // batch's Ticket, but the return address/lines are the BATCH's own, not shared across batches.
         if (returnBatchIds.Count > 0)
         {
             var ws = wb.Worksheets.Add("คืนอะไหล่");
-            var headers = new[] { "Case No.", "ชื่อช่าง", "แผนก", "รหัสอะไหล่", "ชื่ออะไหล่", "จำนวน", "สภาพ", "ที่อยู่" };
+            var headers = new[] {
+                "เลขที่ใบคืน", "วันที่ทำรายการ", "วันที่รับอะไหล่", "Part Number", "อะไหล่", "จำนวน",
+                "ชื่อนามสุกล", "Case No.", "อาการเสีย", "Status", "S/N UPS ESSCO", "FE ID", "SLA", "ที่อยู่"
+            };
             for (int c = 0; c < headers.Length; c++) ws.Cell(1, c + 1).Value = headers[c];
             ws.Row(1).Style.Font.Bold = true;
 
             var returnBatches = _context.WithdrawBatches.Include(b => b.Ticket).Where(b => returnBatchIds.Contains(b.WithdrawBatchId)).ToList();
             var rLines = _context.TicketPartLines.Where(l => l.WithdrawBatchId != null && returnBatchIds.Contains(l.WithdrawBatchId.Value) && l.LineType == "Return").ToList();
+
+            // DHL's real form spells this GOOD/BAD in caps, matching the Daily Report's own
+            // INVENTORY STATUS column — "Lost" has no DHL equivalent (the part never physically
+            // came back) so it's left blank rather than guessed at.
+            string StatusLabel(string? condition) => condition switch { "Good" => "GOOD", "Bad" => "BAD", _ => "" };
+
             int row = 2;
             foreach (var b in returnBatches)
             {
                 var batchLines2 = rLines.Where(l => l.WithdrawBatchId == b.WithdrawBatchId).ToList();
+                void WriteRowHeader()
+                {
+                    ws.Cell(row, 1).Value = b.ReturnSlipNo ?? "";
+                    ws.Cell(row, 2).Value = b.ReturnRequestedAt?.ToString("d/M/yyyy", System.Globalization.CultureInfo.InvariantCulture) ?? "";
+                    // Column 3 "วันที่รับอะไหล่" is DHL's own to fill in once they physically
+                    // receive the part back — left blank on our side, same as their blank template.
+                    ws.Cell(row, 7).Value = b.Ticket?.TechName ?? "";
+                    ws.Cell(row, 8).Value = b.Ticket?.ExternalTicketNo ?? "";
+                    ws.Cell(row, 12).Value = b.FeId ?? "";
+                    ws.Cell(row, 13).Value = b.Sla ?? "";
+                    ws.Cell(row, 14).Value = b.ReturnAddress ?? "";
+                }
+
                 if (!batchLines2.Any())
                 {
-                    ws.Cell(row, 1).Value = b.Ticket?.ExternalTicketNo ?? "";
-                    ws.Cell(row, 2).Value = b.Ticket?.TechName ?? "";
-                    ws.Cell(row, 3).Value = b.Ticket?.TechDept ?? "";
-                    ws.Cell(row, 8).Value = b.ReturnAddress ?? "";
+                    WriteRowHeader();
                     row++;
                     continue;
                 }
                 foreach (var l in batchLines2)
                 {
-                    ws.Cell(row, 1).Value = b.Ticket?.ExternalTicketNo ?? "";
-                    ws.Cell(row, 2).Value = b.Ticket?.TechName ?? "";
-                    ws.Cell(row, 3).Value = b.Ticket?.TechDept ?? "";
+                    WriteRowHeader();
                     ws.Cell(row, 4).Value = l.PartNo;
                     ws.Cell(row, 5).Value = partNameByNo.GetValueOrDefault(l.PartNo, l.PartNo);
                     ws.Cell(row, 6).Value = l.Quantity;
-                    ws.Cell(row, 7).Value = l.Condition ?? "";
-                    ws.Cell(row, 8).Value = b.ReturnAddress ?? "";
+                    ws.Cell(row, 9).Value = l.Problem ?? "";
+                    ws.Cell(row, 10).Value = StatusLabel(l.Condition);
+                    ws.Cell(row, 11).Value = l.SerialNo ?? "";
                     row++;
                 }
             }
             ws.Columns().AdjustToContents();
         }
+
+        // DHL's own templates ship these 4 reference sheets alongside either request form (FE
+        // contact list, bank site contact list, part catalogue, SLA dropdown list) — bundled once
+        // regardless of which sheet(s) above got added, so a combined withdraw+return export
+        // doesn't try to add each sheet twice.
+        AddCsvResourceSheet(wb, "Data.dhl_contact_fe.csv", "Contact list DataOne FE");
+        AddCsvResourceSheet(wb, "Data.dhl_contact_bank.csv", "Contact list ธนาคาร");
+        AddCsvResourceSheet(wb, "Data.dhl_parts.csv", "Part");
+        AddCsvResourceSheet(wb, "Data.dhl_sla.csv", "SLA");
 
         using var stream = new MemoryStream();
         wb.SaveAs(stream);
@@ -1312,6 +1346,8 @@ public class LineDto
     public string PartNo { get; set; } = string.Empty;
     public int Quantity { get; set; }
     public string? Condition { get; set; } // Return lines only: Good | Bad | Lost
+    public string? Problem { get; set; }    // Return lines only: "อาการเสีย" for DHL's return-request export
+    public string? SerialNo { get; set; }   // Return lines only: "S/N UPS ESSCO" for DHL's return-request export
 }
 
 public class RejectDto

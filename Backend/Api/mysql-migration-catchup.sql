@@ -86,6 +86,8 @@ CALL _AddColumnIfMissing('TicketPartLines', 'Condition',       'LONGTEXT NULL');
 CALL _AddColumnIfMissing('TicketPartLines', 'OriginalPartNo',  'LONGTEXT NULL');
 CALL _AddColumnIfMissing('TicketPartLines', 'ConfirmedQty',    'INT NOT NULL DEFAULT 0');
 CALL _AddColumnIfMissing('TicketPartLines', 'WithdrawBatchId', 'INT NULL');
+CALL _AddColumnIfMissing('TicketPartLines', 'Problem',         'LONGTEXT NULL');
+CALL _AddColumnIfMissing('TicketPartLines', 'SerialNo',        'LONGTEXT NULL');
 
 -- ── TicketAttachments ────────────────────────────────────────────────────
 CALL _AddColumnIfMissing('TicketAttachments', 'WithdrawBatchId', 'INT NULL');
@@ -113,6 +115,7 @@ CALL _AddColumnIfMissing('WithdrawBatches', 'ReturnApprovedAt',    'DATETIME(6) 
 CALL _AddColumnIfMissing('WithdrawBatches', 'ReturnAddress',       'LONGTEXT NULL');
 CALL _AddColumnIfMissing('WithdrawBatches', 'ReturnEmailSentAt',   'DATETIME(6) NULL');
 CALL _AddColumnIfMissing('WithdrawBatches', 'ReturnSlipNo',        'LONGTEXT NULL');
+CALL _AddColumnIfMissing('WithdrawBatches', 'ReturnRequestedAt',   'DATETIME(6) NULL');
 
 -- ── DailyReportImportRows ────────────────────────────────────────────────
 CALL _AddColumnIfMissing('DailyReportImportRows', 'CaseNo',          'LONGTEXT NULL');

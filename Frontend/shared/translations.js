@@ -428,6 +428,7 @@ const TRANSLATIONS = {
 
     /* ── Equivalent Groups (FR1-02) ── */
     'nav.equivgroups':       'Equivalent Groups',
+    'nav.fecontacts':        'FE Contact List',
     'eg.title':              'Alternative Parts Grouping',
     'eg.sub':                'Define groups of interchangeable parts for return validation',
     'eg.btn.newgroup':       'New Group',
@@ -992,6 +993,7 @@ const TRANSLATIONS = {
 
     /* ── Equivalent Groups (FR1-02) ── */
     'nav.equivgroups':       'กลุ่มอะไหล่เทียบเคียง',
+    'nav.fecontacts':        'รายชื่อ FE',
     'eg.title':              'การจัดกลุ่มอะไหล่เทียบเคียง',
     'eg.sub':                'กำหนดกลุ่มอะไหล่ที่สามารถใช้ทดแทนกันได้สำหรับการตรวจสอบการคืน',
     'eg.btn.newgroup':       'สร้างกลุ่มใหม่',

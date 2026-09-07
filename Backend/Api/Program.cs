@@ -537,6 +537,63 @@ using (var scope = app.Services.CreateScope())
         }
         catch (Exception mex) { Console.WriteLine($"⚠ SavedAddresses migration skipped: {mex.Message}"); }
 
+        // ── Lightweight migration: create FeContacts table on existing DBs ──
+        if (isSqlite) try
+        {
+            context.Database.ExecuteSqlRaw(@"
+                CREATE TABLE IF NOT EXISTS FeContacts (
+                    Id INTEGER NOT NULL CONSTRAINT PK_FeContacts PRIMARY KEY AUTOINCREMENT,
+                    FeId TEXT NOT NULL,
+                    FeName TEXT NOT NULL,
+                    Tel TEXT NULL,
+                    Address TEXT NOT NULL,
+                    Postcode TEXT NULL,
+                    UpdatedAt TEXT NOT NULL
+                );");
+            context.Database.ExecuteSqlRaw(
+                "CREATE UNIQUE INDEX IF NOT EXISTS IX_FeContacts_FeId ON FeContacts (FeId);");
+        }
+        catch (Exception mex) { Console.WriteLine($"⚠ FeContacts migration skipped: {mex.Message}"); }
+
+        // ── Lightweight migration: TicketPartLines.Problem/SerialNo + WithdrawBatches.ReturnRequestedAt
+        //    — needed so the DHL return-request export can match DHL's own template column-for-column ──
+        if (isSqlite) try
+        {
+            var tplCols3 = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            using (var cmd = context.Database.GetDbConnection().CreateCommand())
+            {
+                if (cmd.Connection!.State != System.Data.ConnectionState.Open) cmd.Connection.Open();
+                cmd.CommandText = "PRAGMA table_info(TicketPartLines);";
+                using var reader = cmd.ExecuteReader();
+                while (reader.Read()) tplCols3.Add(reader.GetString(1));
+            }
+            if (!tplCols3.Contains("Problem"))
+            {
+                context.Database.ExecuteSqlRaw("ALTER TABLE TicketPartLines ADD COLUMN Problem TEXT NULL;");
+                Console.WriteLine("✅ Migration: added TicketPartLines.Problem");
+            }
+            if (!tplCols3.Contains("SerialNo"))
+            {
+                context.Database.ExecuteSqlRaw("ALTER TABLE TicketPartLines ADD COLUMN SerialNo TEXT NULL;");
+                Console.WriteLine("✅ Migration: added TicketPartLines.SerialNo");
+            }
+
+            var wbCols2 = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            using (var cmd = context.Database.GetDbConnection().CreateCommand())
+            {
+                if (cmd.Connection!.State != System.Data.ConnectionState.Open) cmd.Connection.Open();
+                cmd.CommandText = "PRAGMA table_info(WithdrawBatches);";
+                using var reader = cmd.ExecuteReader();
+                while (reader.Read()) wbCols2.Add(reader.GetString(1));
+            }
+            if (!wbCols2.Contains("ReturnRequestedAt"))
+            {
+                context.Database.ExecuteSqlRaw("ALTER TABLE WithdrawBatches ADD COLUMN ReturnRequestedAt TEXT NULL;");
+                Console.WriteLine("✅ Migration: added WithdrawBatches.ReturnRequestedAt");
+            }
+        }
+        catch (Exception mex) { Console.WriteLine($"⚠ Return-export columns migration skipped: {mex.Message}"); }
+
         // ── One-shot data migration: fold existing Ticket rows' withdraw fields into
         //    WithdrawBatch rows, and merge "sibling" Ticket rows that share an ExternalTicketNo
         //    (the old multi-withdraw mechanic — see CreateAdditionalWithdraw, now removed) into a

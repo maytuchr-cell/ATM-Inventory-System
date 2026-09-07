@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Tech Workspace — ATM Inventory</title>
-    <link rel="stylesheet" href="shared/styles.css?v=79">
+    <link rel="stylesheet" href="shared/styles.css?v=80">
     <style>
         .section-head { display:flex; align-items:center; gap:10px; margin-bottom:20px; }
         .section-accent { width:4px; height:22px; background:var(--orange); border-radius:2px; }
@@ -95,9 +95,13 @@
         .tk-line-row input[type=number] { flex:0 0 70px; padding:8px 8px; border-radius:8px; background:var(--bg-input); color:var(--text-primary); border:1.5px solid var(--border); font-family:inherit; font-size:13px; outline:none; text-align:center; }
         .tk-line-row select.tk-condition { flex:0 0 92px; padding:8px 6px; border-radius:8px; background:var(--bg-input); color:var(--text-primary); border:1.5px solid var(--border); font-family:inherit; font-size:12.5px; outline:none; }
         .tk-line-row .tk-remove { flex:0 0 auto; background:none; border:none; color:var(--red); cursor:pointer; font-size:15px; padding:4px 6px; }
-        .tk-line-row .tk-split { flex:0 0 auto; background:none; border:1.5px dashed var(--border); border-radius:8px; color:var(--text-secondary); cursor:pointer; font-size:13px; padding:3px 7px; }
-        .tk-line-row .tk-split:hover { border-color:var(--orange); color:var(--orange); }
         .tk-line-thumb-wrap { flex:0 0 auto; }
+        .tk-return-line { border:1.5px solid var(--border); border-radius:10px; padding:10px; margin-bottom:8px; }
+        .tk-return-counts { display:flex; align-items:center; gap:10px; margin:8px 0; flex-wrap:wrap; }
+        .tk-return-counts label { display:flex; align-items:center; gap:5px; font-size:12.5px; color:var(--text-secondary); }
+        .tk-return-counts input[type=number] { width:56px; padding:6px; border-radius:8px; background:var(--bg-input); color:var(--text-primary); border:1.5px solid var(--border); font-family:inherit; font-size:13px; outline:none; text-align:center; }
+        .tk-return-total { font-size:12px; color:var(--text-muted); margin-left:auto; }
+        .tk-return-counts input[readonly] { background:var(--bg-subtle); color:var(--text-muted); cursor:default; }
         .tk-photo-preview { display:flex; flex-wrap:wrap; gap:8px; margin-top:10px; }
         .tk-photo-thumb { position:relative; width:64px; height:64px; }
         .tk-photo-thumb img { width:100%; height:100%; object-fit:cover; border-radius:8px; border:1.5px solid var(--border); }
@@ -454,7 +458,7 @@
 
             <span class="tk-section-label">อะไหล่ที่ต้องคืน (ตามใบเบิกนี้เท่านั้น)</span>
             <div id="rtLinesMatched"></div>
-            <div style="font-size:11.5px;color:var(--text-muted);margin-top:6px;">* คืนน้อยกว่าจำนวนที่เบิกไปได้ (กรณีของหายหรือใช้ไปแล้ว) หรือลบแถวออกได้ถ้าไม่คืนชิ้นนั้นเลย — คืนได้เฉพาะอะไหล่ในใบเบิกนี้เท่านั้น</div>
+            <div style="font-size:11.5px;color:var(--text-muted);margin-top:6px;">* แยกจำนวนที่เบิกไปเป็นดี/เสีย/สูญหาย — รวมกันต้องเท่ากับจำนวนที่เบิกไปเป๊ะ (ของหายก็ใส่ในช่อง "สูญหาย" ไม่ใช่ลดยอดรวม)</div>
 
             <span class="tk-section-label" style="margin-top:18px;display:block;">ที่อยู่ (จุดส่งคืน)</span>
             <button type="button" class="btn-add-line" style="margin-bottom:8px;" onclick="openAddressPicker('rtAddress')">📍 เลือกที่บันทึกไว้</button>
@@ -582,10 +586,10 @@
     </div>
 </div>
 
-<script src="shared/translations.js?v=79"></script>
-<script src="shared/toast.js?v=79"></script>
-<script src="shared/api.js?v=79"></script>
-<script src="shared/layout.js?v=79"></script>
+<script src="shared/translations.js?v=80"></script>
+<script src="shared/toast.js?v=80"></script>
+<script src="shared/api.js?v=80"></script>
+<script src="shared/layout.js?v=80"></script>
 <script>
     // Auth guard — runs before anything else renders. No token means nobody actually signed in
     // through login-tech.html (or login.html); bounce there immediately instead of quietly
@@ -1074,21 +1078,10 @@
         return `<div class="tk-part-thumb-ph" style="width:${size}px;height:${size}px;">📦</div>`;
     }
 
-    const CONDITION_OPTIONS = [
-        { value: 'Good',      label: 'ของดี' },
-        { value: 'Bad',       label: 'ของเสีย' },
-        { value: 'Lost',      label: 'สูญหาย' },
-    ];
-    function lineRowHtml(prefix, idx, partNo, qty, condition) {
+    function lineRowHtml(prefix, idx, partNo, qty) {
         const selected = cachedParts.find(p => p.partNo === partNo);
         const val = selected ? partLabel(selected) : '';
         const dataAttr = selected ? ` data-partno="${selected.partNo}"` : '';
-        // Condition only applies to a Return line (prefix "rt") — Withdraw doesn't know the
-        // part's condition yet, that's decided when it comes back.
-        const conditionHtml = prefix === 'rt'
-            ? `<select class="tk-condition" id="${prefix}-cond-${idx}">${CONDITION_OPTIONS.map(o =>
-                `<option value="${o.value}" ${o.value === (condition || 'Good') ? 'selected' : ''}>${o.label}</option>`).join('')}</select>`
-            : '';
         return `<div class="tk-line-row" id="${prefix}-row-${idx}">
             <div class="tk-line-thumb-wrap" id="${prefix}-thumb-${idx}">${partThumbHtml(selected, 34, true)}</div>
             <div class="tk-part-picker">
@@ -1100,10 +1093,52 @@
                 <div class="tk-part-dropdown" id="${prefix}-dropdown-${idx}"></div>
             </div>
             <input type="number" id="${prefix}-qty-${idx}" min="1" value="${qty || 1}">
-            ${conditionHtml}
-            ${prefix === 'rt' ? `<button type="button" class="tk-split" title="แยกสภาพ — บางชิ้นดี บางชิ้นเสีย" onclick="splitReturnLine(${idx})">➕</button>` : ''}
             <button type="button" class="tk-remove" onclick="removeLine('${prefix}', ${idx})">✕</button>
         </div>`;
+    }
+
+    // Return form only — one fixed row per part this ใบเบิก actually withdrew (never addable/
+    // removable, matching "ต้องคืนให้ครบเท่าที่เบิกไปเป๊ะ"). Splits the withdrawn qty across
+    // ดี/เสีย/สูญหาย instead of the old "แยกสภาพ" button that spawned a whole extra row —
+    // validateReturnLines below enforces the three always sum back to the withdrawn qty.
+    function returnLineRowHtml(idx, partNo, qty) {
+        const selected = cachedParts.find(p => p.partNo === partNo);
+        return `<div class="tk-return-line" id="rt-row-${idx}" data-partno="${partNo}" data-withdrawn="${qty}">
+            <div class="tk-line-row">
+                <div class="tk-line-thumb-wrap">${partThumbHtml(selected, 34, true)}</div>
+                <div style="flex:1;font-size:13px;">${selected ? selected.partName : partNo}<span style="color:var(--text-muted);margin-left:6px;">เบิกไป ${qty}</span></div>
+            </div>
+            <div class="tk-return-counts">
+                <label>ดี <input type="number" id="rt-good-${idx}" value="${qty}" readonly tabindex="-1"></label>
+                <label>เสีย <input type="number" id="rt-bad-${idx}" min="0" max="${qty}" value="0" oninput="onReturnCountInput(${idx}, 'bad')"></label>
+                <label>สูญหาย <input type="number" id="rt-lost-${idx}" min="0" max="${qty}" value="0" oninput="onReturnCountInput(${idx}, 'lost')"></label>
+                <span class="tk-return-total" id="rt-total-${idx}"></span>
+            </div>
+            <div class="tk-line-row" style="padding-top:0;">
+                <input type="text" id="rt-problem-${idx}" placeholder="อาการเสีย" style="flex:1;">
+                <input type="text" id="rt-sn-${idx}" placeholder="Serial Number (ถ้ามี)" style="flex:1;">
+            </div>
+        </div>`;
+    }
+    // "ดี" is never typed directly — it's always withdrawn − เสีย − สูญหาย, so the three can never
+    // NOT sum to the withdrawn qty (the old free-typed "ดี" field is exactly what let a tech type
+    // เสีย=2 on top of an unchanged ดี=4 and overshoot the total). Editing เสีย/สูญหาย past what's
+    // left is clamped back down (whichever field the tech just touched loses the excess) instead
+    // of letting the total silently go over.
+    function onReturnCountInput(idx, changedField) {
+        const withdrawn = parseInt(document.getElementById(`rt-row-${idx}`)?.dataset.withdrawn, 10) || 0;
+        const badInp = document.getElementById(`rt-bad-${idx}`);
+        const lostInp = document.getElementById(`rt-lost-${idx}`);
+        let bad = Math.max(0, parseInt(badInp.value, 10) || 0);
+        let lost = Math.max(0, parseInt(lostInp.value, 10) || 0);
+        if (bad + lost > withdrawn) {
+            if (changedField === 'lost') lost = Math.max(0, withdrawn - bad);
+            else bad = Math.max(0, withdrawn - lost);
+            badInp.value = bad;
+            lostInp.value = lost;
+        }
+        document.getElementById(`rt-good-${idx}`).value = withdrawn - bad - lost;
+        document.getElementById(`rt-total-${idx}`).textContent = `เบิกไป ${withdrawn}`;
     }
 
     function onPartInput(prefix, idx) {
@@ -1176,26 +1211,6 @@
     function removeLine(prefix, idx) {
         document.getElementById(`${prefix}-row-${idx}`)?.remove();
     }
-    // Splits a return line into two rows for the same part — e.g. 2 withdrawn, 1 came back good
-    // and 1 came back bad. Peels 1 unit off the original row's qty into a new row (defaulted to
-    // the opposite condition) rather than letting the tech pick a second part, since a return
-    // line can only ever be one of the parts this ใบเบิก actually withdrew.
-    function splitReturnLine(idx) {
-        const partInp = document.getElementById(`rt-part-${idx}`);
-        const qtyInp = document.getElementById(`rt-qty-${idx}`);
-        const condInp = document.getElementById(`rt-cond-${idx}`);
-        const partNo = partInp?.dataset.partno;
-        const qty = parseInt(qtyInp?.value, 10) || 0;
-        if (!partNo || qty < 2) {
-            showToast?.('ต้องมีจำนวนอย่างน้อย 2 ชิ้นถึงจะแยกสภาพได้', 'error');
-            return;
-        }
-        qtyInp.value = qty - 1;
-        rtLineCount++;
-        const oppositeCondition = condInp?.value === 'Bad' ? 'Good' : 'Bad';
-        const rowHtml = lineRowHtml('rt', rtLineCount, partNo, 1, oppositeCondition);
-        document.getElementById(`rt-row-${idx}`).insertAdjacentHTML('afterend', rowHtml);
-    }
     function collectLines(prefix, count) {
         const lines = [];
         for (let i = 1; i <= count; i++) {
@@ -1205,23 +1220,46 @@
             const partNo = partInp.dataset.partno || null;
             const quantity = parseInt(qtyInp.value, 10) || 0;
             if (!partNo || quantity <= 0) continue;
-            const line = { partNo, quantity };
-            if (prefix === 'rt') {
-                const condInp = document.getElementById(`${prefix}-cond-${i}`);
-                line.condition = condInp?.value || 'Good';
-            }
-            lines.push(line);
+            lines.push({ partNo, quantity });
         }
         // Safety net — selectPart already stops a duplicate part from being added as a second row,
-        // but merge here too (same partNo + condition) so any row that still slipped through
-        // (e.g. pre-filled from a rejected batch) submits as one combined quantity, not two lines.
+        // but merge here too so any row that still slipped through (e.g. pre-filled from a
+        // rejected batch) submits as one combined quantity, not two lines.
         const merged = [];
         for (const line of lines) {
-            const existing = merged.find(m => m.partNo === line.partNo && m.condition === line.condition);
+            const existing = merged.find(m => m.partNo === line.partNo);
             if (existing) existing.quantity += line.quantity;
             else merged.push(line);
         }
         return merged;
+    }
+
+    // Return form only — one row per withdrawn part, each split across ดี/เสีย/สูญหาย. Returns
+    // null (after toasting which part is wrong) if any row's three counts don't sum exactly to
+    // what that part was withdrawn — "ห้ามคืนน้อยกว่าและมากกว่าที่เบิก" is enforced here, not
+    // just shown as a hint, since a tech can otherwise submit past a red total by not noticing.
+    function collectReturnLines(count) {
+        const lines = [];
+        for (let i = 1; i <= count; i++) {
+            const row = document.getElementById(`rt-row-${i}`);
+            if (!row) continue;
+            const partNo = row.dataset.partno;
+            const withdrawn = parseInt(row.dataset.withdrawn, 10) || 0;
+            const good = parseInt(document.getElementById(`rt-good-${i}`).value, 10) || 0;
+            const bad  = parseInt(document.getElementById(`rt-bad-${i}`).value, 10) || 0;
+            const lost = parseInt(document.getElementById(`rt-lost-${i}`).value, 10) || 0;
+            if (good + bad + lost !== withdrawn) {
+                const partName = cachedParts.find(p => p.partNo === partNo)?.partName || partNo;
+                showToast?.(`${partName}: คืนรวม ${good + bad + lost} ชิ้น ต้องเท่ากับที่เบิกไป ${withdrawn} ชิ้นเป๊ะ`, 'error');
+                return null;
+            }
+            const problem = document.getElementById(`rt-problem-${i}`)?.value.trim() || null;
+            const serialNo = document.getElementById(`rt-sn-${i}`)?.value.trim() || null;
+            if (good > 0) lines.push({ partNo, quantity: good, condition: 'Good', problem, serialNo });
+            if (bad > 0)  lines.push({ partNo, quantity: bad,  condition: 'Bad',  problem, serialNo });
+            if (lost > 0) lines.push({ partNo, quantity: lost, condition: 'Lost', problem, serialNo });
+        }
+        return lines;
     }
 
     /* ── Photo attachments (withdraw + return share this) ──
@@ -1278,6 +1316,22 @@
         document.getElementById('nrCaseNoRequired').style.display = required ? 'inline' : 'none';
     }
 
+    // Best-effort auto-fill for a brand-new request only — looks up DHL's own FE contact list by
+    // TechName (see FeContactController.Suggest for how forgiving that name match is) and fills
+    // the FE ID + address fields only if they're still empty, so it never clobbers a value the
+    // tech already typed (e.g. re-triggering after the async lookup resolves late).
+    async function applyFeSuggestion(techName, feIdFieldId, addressFieldId) {
+        if (!techName) return;
+        try {
+            const match = await api.feContacts.suggest(techName);
+            if (!match) return;
+            const feIdField = document.getElementById(feIdFieldId);
+            const addressField = document.getElementById(addressFieldId);
+            if (feIdField && !feIdField.value.trim()) feIdField.value = match.feId;
+            if (addressField && !addressField.value.trim()) addressField.value = match.address;
+        } catch (e) { /* no match / lookup failed — form just stays as-is */ }
+    }
+
     /* ── Withdraw form ── batchId omitted = a brand new ใบเบิก under this Ticket (covers both the
        Ticket's first-ever withdraw and any "เบิกเพิ่ม" after — same call either way now that a
        Ticket can carry several independent WithdrawBatches). batchId given = editing/resubmitting
@@ -1306,8 +1360,9 @@
         document.getElementById('wdAtmCode').value = batch?.status === 'Reject' ? (batch.atmCode || '') : (kmmJob?.atmCode || '');
         // FE ID is DHL's own site/route code (e.g. "Bangna 01") — KMM's job ticket only gives us a
         // broad zone name (e.g. "อีสานตอนล่าง"), not that code, so auto-filling from KMM here was
-        // just wrong data. The tech types the real FE ID by hand; keep whatever they already typed
-        // (batch.feId) across a re-open of this modal, same as a rejected-batch resubmission.
+        // just wrong data. Keep whatever the tech already typed (batch.feId) across a re-open of
+        // this modal, same as a rejected-batch resubmission; only for a genuinely brand-new
+        // request do we try DHL's own FE contact list instead (see applyFeSuggestion below).
         document.getElementById('wdFeId').value = batch?.feId || '';
         // ATM code / problem description / needed-by date come straight from the tech's KMM job
         // ticket and must not be hand-edited — except when fixing up a rejected batch for
@@ -1327,6 +1382,7 @@
 
         document.getElementById('wdAddress').value = batch?.status === 'Reject' ? (batch.withdrawAddress || '') : '';
         document.getElementById('wdDescription').value = batch?.status === 'Reject' ? (batch.withdrawDescription || '') : (kmmJob?.problemDetail || '');
+        if (batch?.status !== 'Reject') applyFeSuggestion(tk.techName, 'wdFeId', 'wdAddress');
         document.getElementById('wdLines').innerHTML = '';
         wdLineCount = 0;
         const priorLines = batch?.status === 'Reject' ? (batch.lines || []) : [];
@@ -1494,14 +1550,18 @@
         document.getElementById('rtHistory').innerHTML = historyHtml;
 
         document.getElementById('rtAddress').value = '';
+        // Return leg has no FE ID field of its own — same DHL contact-list lookup as the withdraw
+        // form, just filling the address (see applyFeSuggestion).
+        applyFeSuggestion(tk.techName, null, 'rtAddress');
         document.getElementById('rtLinesMatched').innerHTML = '';
         rtLineCount = 0;
-        // One row per line this batch actually withdrew, defaulting qty to what was withdrawn
-        // (partial return allowed by lowering it or deleting the row) — no way to add a part that
-        // wasn't part of this ใบเบิก.
+        // One fixed row per part this batch actually withdrew — defaults to all-Good, tech
+        // redistributes across ดี/เสีย/สูญหาย but the three must always sum back to qty withdrawn
+        // (see collectReturnLines) — no adding a part outside this ใบเบิก, no dropping one either.
         batch.lines.forEach(l => {
             rtLineCount++;
-            document.getElementById('rtLinesMatched').insertAdjacentHTML('beforeend', lineRowHtml('rt', rtLineCount, l.partNo, l.quantity));
+            document.getElementById('rtLinesMatched').insertAdjacentHTML('beforeend', returnLineRowHtml(rtLineCount, l.partNo, l.quantity));
+            onReturnCountInput(rtLineCount);
         });
         photoFiles.rt = [];
         renderPhotoPreview('rt');
@@ -1513,7 +1573,8 @@
         activeReturnBatchId = null;
     }
     async function submitReturn() {
-        const lines = collectLines('rt', rtLineCount);
+        const lines = collectReturnLines(rtLineCount);
+        if (lines === null) return; // collectReturnLines already toasted which part is wrong
         const address = document.getElementById('rtAddress').value.trim();
         if (!lines.length) { showToast?.('เลือกอะไหล่อย่างน้อย 1 รายการ', 'error'); return; }
         if (!address) { showToast?.('กรุณากรอกที่อยู่', 'error'); return; }
@@ -1558,12 +1619,13 @@
         document.getElementById('nrTechSupport').value = '';
         document.getElementById('nrNeededByDate').value = '';
         document.getElementById('nrAtmCode').value = '';
-        // FE ID is DHL's own site/route code (e.g. "Bangna 01"), not the tech's zone — the tech
-        // types it by hand, there's nothing in our data to prefill it with.
+        // FE ID is DHL's own site/route code (e.g. "Bangna 01"), not the tech's zone — try DHL's
+        // own FE contact list first (see applyFeSuggestion), tech can still overwrite by hand.
         document.getElementById('nrFeId').value = '';
         onUsageStatusChange('nr');
         document.getElementById('nrAddress').value = '';
         document.getElementById('nrDescription').value = '';
+        applyFeSuggestion(document.getElementById('nrTechName').value.trim(), 'nrFeId', 'nrAddress');
         document.getElementById('nrLines').innerHTML = '';
         nrLineCount = 0;
         addLine('new');
