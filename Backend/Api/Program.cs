@@ -254,6 +254,11 @@ using (var scope = app.Services.CreateScope())
                 context.Database.ExecuteSqlRaw("ALTER TABLE DailyReportImportRows ADD COLUMN WithdrawBatchId INTEGER NULL;");
                 Console.WriteLine("✅ Migration: added DailyReportImportRows.WithdrawBatchId (return leg is batch-scoped now)");
             }
+            if (!driCols.Contains("StockCredited"))
+            {
+                context.Database.ExecuteSqlRaw("ALTER TABLE DailyReportImportRows ADD COLUMN StockCredited INTEGER NOT NULL DEFAULT 0;");
+                Console.WriteLine("✅ Migration: added DailyReportImportRows.StockCredited (Unmatched rows now still credit the warehouse)");
+            }
         }
         catch (Exception mex) { Console.WriteLine($"⚠ DailyReportImport migration skipped: {mex.Message}"); }
 

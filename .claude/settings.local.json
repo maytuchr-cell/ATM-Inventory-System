@@ -222,7 +222,20 @@
       "Bash(time curl -s -i -X POST \"http://localhost:5128/Auth/login\" -H \"Content-Type: application/json\" -d '{\"email\":\"admin@atm.com\",\"password\":\"admin123\"}' --max-time 10)",
       "Bash(curl -s -X POST \"http://localhost:5128/Ticket/sync\" -H \"Content-Type: application/json\" -d '{\"externalTicketNo\":\"TEST-SHORTAGE-TICKET\",\"techName\":\"Test Tech\",\"techEmail\":\"tech@atm.com\",\"techDept\":\"Test Zone\"}')",
       "Bash(curl -s -X POST \"http://localhost:5128/Ticket/8/withdraw-batches\" -H \"Content-Type: application/json\" -d '{\"lines\":[{\"partNo\":\"TEST-SHORTAGE-001\",\"quantity\":5}],\"address\":\"Test address\"}')",
-      "Bash(curl -s \"http://localhost:5128/Ticket/shortage-report?days=30\")"
+      "Bash(curl -s \"http://localhost:5128/Ticket/shortage-report?days=30\")",
+      "Bash(tasklist //FI \"IMAGENAME eq dotnet.exe\")",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\" http://127.0.0.1:8081/Service/GetStatus --max-time 3)",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\\\\n\" http://127.0.0.1:8081/Service/GetStatus --max-time 5)",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\\\\n\" http://localhost:8081/Service/GetStatus --max-time 5)",
+      "Bash(curl -s -X POST http://127.0.0.1:8081/Auth/Login -H \"Content-Type: application/json\" -d '{\"username\":\"006429\",\"password\":\"006429@Dataone\"}' --max-time 60)",
+      "Bash(curl -s -X POST http://localhost:5128/Auth/Login -H \"Content-Type: application/json\" -d '{\"email\":\"006429\",\"password\":\"006429@Dataone\"}' --max-time 60)",
+      "Bash(curl -s -X POST http://localhost:5128/Auth/Login -H \"Content-Type: application/json\" -d '{\"username\":\"006429\",\"password\":\"006429@Dataone\"}' --max-time 60)",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\\\\n\" http://localhost:3000/login.html --max-time 5)",
+      "Bash(xargs sed -i 's/?v=71/?v=72/g')",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\\\\n\" http://localhost:5128/TechSupport --max-time 3)",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\\\\n\" http://localhost:3000/login.html --max-time 3)",
+      "Bash(xargs sed -i 's/?v=72/?v=73/g')",
+      "Bash(powershell -Command \"Get-Process -Id 25696 -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue; Get-Process -Name Api,dotnet -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue\")"
     ]
   }
 }

@@ -82,7 +82,8 @@ public class DailyReportController : ControllerBase
                 MatchType = r.MatchType,
                 TicketId = r.TicketId,
                 WithdrawBatchId = r.WithdrawBatchId,
-                PartUnitId = r.PartUnitId
+                PartUnitId = r.PartUnitId,
+                StockCredited = r.StockCredited
             });
         }
         _context.SaveChanges();
@@ -155,7 +156,26 @@ public class DailyReportController : ControllerBase
                 _stock.AdjustStock(row.PartNo, mainWh?.Id ?? 0, row.Qty, "Repair", "UndoImport", "DailyReportRow", id.ToString(), userName, $"ย้อนกลับแถว import #{id}", serialNo: row.SerialNo, partUnitId: unit.Id);
                 unit.Status = "InRepair";
             }
-            // StillInRepair / Unmatched rows never touched anything — nothing to undo.
+            else if (row.MatchType == "Unmatched" && row.StockCredited)
+            {
+                // Credited straight to the central warehouse with no Ticket involved (see Process,
+                // Rule 3) — reverse only that, checking the PartUnit's status first exactly like
+                // RepairCompleted above, so a serial this row created that a LATER import already
+                // moved on from (e.g. matched a return, or completed repair) doesn't get silently
+                // deleted out from under that later row.
+                var expectedStatus = row.DhlStatus == "GOOD" ? "InStock" : "InRepair";
+                if (row.PartUnitId.HasValue)
+                {
+                    var unit = _context.PartUnits.FirstOrDefault(u => u.Id == row.PartUnitId);
+                    if (unit == null || unit.Status != expectedStatus)
+                        return BadRequest(new { message = "สถานะอะไหล่ชิ้นนี้เปลี่ยนไปแล้วหลังจาก import — ย้อนกลับไม่ได้อัตโนมัติ" });
+                    _context.PartUnits.Remove(unit);
+                }
+                _stock.AdjustStock(row.PartNo, mainWh?.Id ?? 0, -row.Qty, row.DhlStatus == "GOOD" ? "Good" : "Repair",
+                    "UndoImport", "DailyReportRow", id.ToString(), userName, $"ย้อนกลับแถว import #{id}", serialNo: row.SerialNo);
+            }
+            // StillInRepair rows, and an Unmatched row that never found the Part No. at all
+            // (StockCredited == false), never touched anything — nothing to undo.
         }
         catch (InvalidOperationException ex)
         {
@@ -288,6 +308,10 @@ public class DailyReportController : ControllerBase
         public string? ExternalTicketNo { get; set; }
         public int? PartUnitId { get; set; }
         public string? Note { get; set; }
+        // Only meaningful for MatchType == Unmatched — ReturnConfirmed/RepairCompleted always move
+        // stock, StillInRepair never does, so only Unmatched needs to say which case it was (part
+        // not found in our system vs. credited to the central warehouse anyway).
+        public bool StockCredited { get; set; }
     }
 
     public class Summary
@@ -337,9 +361,14 @@ public class DailyReportController : ControllerBase
 
         foreach (var row in rows)
         {
-            var currentUnitStatus = serialStatusOverlay.TryGetValue(row.SerialNo, out var overlaid)
-                ? overlaid
-                : _context.PartUnits.FirstOrDefault(u => u.SerialNo == row.SerialNo)?.Status;
+            // A blank SerialNo (common for small unserialized parts like connectors) can't be
+            // tracked as an individual unit at all — treating "" as a real dictionary key would
+            // wrongly link every blank-serial row together as if they were the same physical item.
+            var currentUnitStatus = string.IsNullOrWhiteSpace(row.SerialNo)
+                ? null
+                : serialStatusOverlay.TryGetValue(row.SerialNo, out var overlaid)
+                    ? overlaid
+                    : _context.PartUnits.FirstOrDefault(u => u.SerialNo == row.SerialNo)?.Status;
 
             // Rule 1 — repair completing / still in repair.
             if (currentUnitStatus == "InRepair")
@@ -384,7 +413,8 @@ public class DailyReportController : ControllerBase
             {
                 remaining[line.TicketPartLineId] = Math.Max(0, remaining[line.TicketPartLineId] - row.Qty);
                 summary.ReturnConfirmed++;
-                serialStatusOverlay[row.SerialNo] = row.Status == "GOOD" ? "InStock" : "InRepair";
+                if (!string.IsNullOrWhiteSpace(row.SerialNo))
+                    serialStatusOverlay[row.SerialNo] = row.Status == "GOOD" ? "InStock" : "InRepair";
 
                 int? unitId = null;
                 if (commit)
@@ -434,13 +464,56 @@ public class DailyReportController : ControllerBase
                 continue;
             }
 
-            // Rule 3 — nothing matched.
+            // Rule 3 — no open return line matches this row (no Ticket submitted a return for it,
+            // or it hasn't reached "เดินทาง" yet in our own tracking). DHL has physically received
+            // the part regardless of whether our app's return flow ever caught up to it, and Admin
+            // needs the warehouse count to be right every single day so techs can withdraw against
+            // it — so the stock still goes in, just not tied to any Ticket/WithdrawBatch. Flagged
+            // as Unmatched in the report for Admin to reconcile later if a Ticket does turn up.
             summary.Unmatched++;
+            var partExists = partsByNo.TryGetValue(row.PartNo, out var unmatchedPart);
+            // Don't credit a serial we already have a PartUnit record for — re-importing the same
+            // Daily Report file (or a serial this same pass already handled a few rows up) must not
+            // add the same physical unit's stock twice. Only a genuinely new serial (or a row with
+            // no serial at all, which we can't dedupe) gets credited.
+            var alreadyTracked = !string.IsNullOrWhiteSpace(row.SerialNo) && currentUnitStatus != null;
+            var shouldCredit = partExists && !alreadyTracked;
+            int? unmatchedUnitId = null;
+            if (shouldCredit)
+            {
+                if (!string.IsNullOrWhiteSpace(row.SerialNo))
+                    serialStatusOverlay[row.SerialNo] = row.Status == "GOOD" ? "InStock" : "InRepair";
+                if (commit)
+                {
+                    _stock.AdjustStock(row.PartNo, mainWh?.Id ?? 0, row.Qty, row.Status == "GOOD" ? "Good" : "Repair",
+                        "Return", "DailyReportRow", null, userName, $"รับเข้าจาก Daily Report — ไม่พบใบเบิก/คืนที่ตรงกัน SN {row.SerialNo}", serialNo: row.SerialNo);
+
+                    if (!string.IsNullOrWhiteSpace(row.SerialNo))
+                    {
+                        var unit = new PartUnit { SerialNo = row.SerialNo, PartId = unmatchedPart!.Id };
+                        _context.PartUnits.Add(unit);
+                        unit.Status = row.Status == "GOOD" ? "InStock" : "InRepair";
+                        unit.Condition = row.Status == "GOOD" ? "Good" : "Bad";
+                        unit.LocationId = mainWh?.Id;
+                        _context.SaveChanges();
+                        unmatchedUnitId = unit.Id;
+                    }
+                }
+            }
+
+            var unmatchedNote = matchedByCaseNo
+                ? $"มี Case No. ({row.CaseNo}) แต่ไม่พบ Ticket ที่รอคืนอยู่ตรงกัน"
+                : "ไม่พบ Ticket ที่รอคืนอยู่สำหรับอะไหล่นี้";
+            unmatchedNote += !partExists
+                ? " — ไม่พบ Part No. นี้ในระบบ จึงเพิ่มสต็อกให้ไม่ได้"
+                : alreadyTracked
+                    ? " — SN นี้เคยถูกบันทึกไว้แล้ว ไม่เพิ่มสต็อกซ้ำ"
+                    : (row.Status == "GOOD" ? " — เพิ่มเข้าสต็อกดีที่คลังกลางแล้ว (ยังไม่ผูกกับใบเบิก)" : " — เพิ่มเข้าสต็อกซ่อมที่คลังกลางแล้ว (ยังไม่ผูกกับใบเบิก)");
             results.Add(new RowResult
             {
                 RowIndex = row.RowIndex, PartNo = row.PartNo, PartName = row.PartName, SerialNo = row.SerialNo, Qty = row.Qty,
-                DhlStatus = row.Status, Problem = row.Problem, MatchType = "Unmatched", CaseNo = row.CaseNo,
-                Note = matchedByCaseNo ? $"มี Case No. ({row.CaseNo}) แต่ไม่พบ Ticket ที่รอคืนอยู่ตรงกัน" : "ไม่พบ Ticket ที่รอคืนอยู่สำหรับอะไหล่นี้"
+                DhlStatus = row.Status, Problem = row.Problem, MatchType = "Unmatched", CaseNo = row.CaseNo, PartUnitId = unmatchedUnitId,
+                Note = unmatchedNote, StockCredited = shouldCredit
             });
         }
 

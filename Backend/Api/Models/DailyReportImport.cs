@@ -49,6 +49,12 @@ public class DailyReportImportRow
                                                // batches returning the same PartNo.
     public int? PartUnitId { get; set; } // set when a PartUnit was created/updated for this row
 
+    // Only meaningful when MatchType == Unmatched — true means the row still credited stock to
+    // the central warehouse (Part existed in our system) even with no Ticket to tie it to; false
+    // means nothing moved (Part No. from the file doesn't exist in our system at all). Drives
+    // whether UndoRow can safely reverse an Unmatched row.
+    public bool StockCredited { get; set; }
+
     public bool Undone { get; set; }
     public DateTime? UndoneAt { get; set; }
 }

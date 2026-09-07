@@ -222,6 +222,45 @@ public class DailyReportControllerTests
     }
 
     [Fact]
+    public void Confirm_NoOpenReturnAtAll_StillCreditsCentralWarehouse()
+    {
+        // No Ticket, no batch, nothing waiting — DHL genuinely received a part our app never
+        // tracked a return for (e.g. the tech's return request never reached "เดินทาง" in-app).
+        // The physical stock still has to show up so techs can withdraw against it same-day.
+        var (_, dailyReport, context, mainWh, _) = Create();
+        var file = BuildDailyReportFile((PartNo, "Test Part", "SN-NOTICKET-001", 2, "GOOD", null));
+
+        var result = Assert.IsType<OkObjectResult>(dailyReport.Confirm(file));
+
+        Assert.Equal(102, context.PartStocks.First(s => s.LocationId == mainWh.Id).GoodQty); // 100 + 2
+        Assert.Equal("InStock", context.PartUnits.First(u => u.SerialNo == "SN-NOTICKET-001").Status);
+    }
+
+    [Fact]
+    public void UndoRow_UnmatchedButCredited_RevertsStock()
+    {
+        var (_, dailyReport, context, mainWh, _) = Create();
+        var file = BuildDailyReportFile((PartNo, "Test Part", "SN-NOTICKET-002", 1, "GOOD", null));
+        var confirmResult = Assert.IsType<OkObjectResult>(dailyReport.Confirm(file));
+
+        var jsonOptions = new System.Text.Json.JsonSerializerOptions { ReferenceHandler = System.Text.Json.Serialization.ReferenceHandler.IgnoreCycles };
+        var json = System.Text.Json.JsonSerializer.Serialize(confirmResult.Value, jsonOptions);
+        using var doc = System.Text.Json.JsonDocument.Parse(json);
+        var batchId = doc.RootElement.GetProperty("batch").GetProperty("Id").GetInt32();
+        var row = context.DailyReportImportRows.First(r => r.BatchId == batchId);
+
+        Assert.True(row.StockCredited);
+        Assert.Equal(101, context.PartStocks.First(s => s.LocationId == mainWh.Id).GoodQty);
+
+        var undoResult = dailyReport.UndoRow(row.Id);
+
+        Assert.IsType<OkObjectResult>(undoResult);
+        Assert.Equal(100, context.PartStocks.First(s => s.LocationId == mainWh.Id).GoodQty); // back to baseline
+        Assert.Null(context.PartUnits.FirstOrDefault(u => u.SerialNo == "SN-NOTICKET-002"));
+        Assert.True(context.DailyReportImportRows.First(r => r.Id == row.Id).Undone);
+    }
+
+    [Fact]
     public void UndoRow_ReturnConfirmed_RevertsStockAndReopensTicket()
     {
         var (tickets, dailyReport, context, mainWh, techLoc) = Create();
@@ -268,7 +307,10 @@ public class DailyReportControllerTests
     public void Confirm_WithCaseNoButNoMatchingTicket_IsUnmatched_NotAGuess()
     {
         // A row carries a Case No. that doesn't correspond to any open return line — must not
-        // silently fall back to guessing by Part No. against some unrelated open ticket.
+        // silently fall back to guessing by Part No. against some unrelated open ticket. The
+        // unrelated Ticket's own batch must stay untouched either way; the part itself still
+        // credits the central warehouse (a brand-new serial DHL genuinely received), just with
+        // no Ticket/WithdrawBatch tied to it — see Process, Rule 3.
         var (tickets, dailyReport, context, mainWh, _) = Create();
         var (ticket, batch) = CreateShippedReturnTicket(tickets, context, "DR-CASE-2");
         var file = BuildDailyReportFileWithCaseNo((PartNo, "Test Part", "SN-CASE-002", 1, "GOOD", null, "NO-SUCH-CASE"));
@@ -277,7 +319,7 @@ public class DailyReportControllerTests
 
         Assert.IsType<OkObjectResult>(result);
         Assert.Equal("เดินทาง", context.WithdrawBatches.First(b => b.WithdrawBatchId == batch.WithdrawBatchId).ReturnStatus); // untouched
-        Assert.Equal(99, context.PartStocks.First(s => s.LocationId == mainWh.Id).GoodQty); // untouched
+        Assert.Equal(100, context.PartStocks.First(s => s.LocationId == mainWh.Id).GoodQty); // credited anyway (99 + 1 new serial)
     }
 
     [Fact]

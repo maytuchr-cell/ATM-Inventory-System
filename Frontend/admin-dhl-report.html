@@ -269,7 +269,7 @@
               <td><span class="dr-badge ${r.matchType}">${MATCH_LABEL[r.matchType] || r.matchType}</span></td>
               <td class="dr-note">${r.undone ? 'ย้อนกลับแล้ว' : ''}</td>
               <td>
-                <button class="dr-undo-btn" ${(r.undone || (r.matchType !== 'ReturnConfirmed' && r.matchType !== 'RepairCompleted')) ? 'disabled' : ''}
+                <button class="dr-undo-btn" ${(r.undone || !['ReturnConfirmed', 'RepairCompleted'].includes(r.matchType) && !(r.matchType === 'Unmatched' && r.stockCredited)) ? 'disabled' : ''}
                         onclick="undoRow(${r.id}, ${id})">ย้อนกลับ</button>
               </td>
             </tr>`).join('')

@@ -117,6 +117,7 @@ CALL _AddColumnIfMissing('WithdrawBatches', 'ReturnSlipNo',        'LONGTEXT NUL
 -- ── DailyReportImportRows ────────────────────────────────────────────────
 CALL _AddColumnIfMissing('DailyReportImportRows', 'CaseNo',          'LONGTEXT NULL');
 CALL _AddColumnIfMissing('DailyReportImportRows', 'WithdrawBatchId', 'INT NULL');
+CALL _AddColumnIfMissing('DailyReportImportRows', 'StockCredited',   'TINYINT(1) NOT NULL DEFAULT 0');
 
 -- ── StockMovements ───────────────────────────────────────────────────────
 CALL _AddColumnIfMissing('StockMovements', 'PartId',     'INT NOT NULL DEFAULT 0');
