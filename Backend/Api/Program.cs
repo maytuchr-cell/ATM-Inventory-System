@@ -1661,7 +1661,10 @@ using (var scope = app.Services.CreateScope())
         int DemoPartId(string pn) => context.Parts.First(p => p.PartNo == pn).Id;
 
         // ── Tickets (rich demo data — เบิก/ยืม/คืน synced from Aservice) ──
-        if (!context.Tickets.Any())
+        // Dev-only fixture data — must never fire against Production. Without this guard, ANY
+        // database that boots with an empty Tickets table (a fresh Production DB included) gets
+        // silently repopulated with these fake ASV-SEED-* tickets on first startup.
+        if (app.Environment.IsDevelopment() && !context.Tickets.Any())
         {
             void SeedTicket(string extNo, string techName, string techDept, string status,
                 string partNo, int daysAgo, string? withdrawAddr = "Demo Address", string? returnAddr = null)
@@ -1736,7 +1739,10 @@ using (var scope = app.Services.CreateScope())
         // ── Serial Tracking demo data ──────────────────────────────────────────
         // Seeds GoodsReceipts + StockMovements with SerialNo so the tracking
         // timeline page has real data to display out of the box.
-        if (!context.GoodsReceipts.Any())
+        // Dev-only — same reasoning as the Tickets seed above: a Production DB with an empty
+        // GoodsReceipts table (fresh, or right after real data is cleared out) must not get this
+        // fake GR-2025-001/SN-DISP-001 fixture data seeded into it.
+        if (app.Environment.IsDevelopment() && !context.GoodsReceipts.Any())
         {
             var wh    = context.Locations.First(l => l.Code == "DHL-BKK");
             var grg   = context.Locations.First(l => l.Code == "GRG-BKK");
