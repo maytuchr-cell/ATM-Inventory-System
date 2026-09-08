@@ -137,7 +137,11 @@ public class EquivalentGroupController : ControllerBase
         }
         catch (Exception ex)
         {
-            return BadRequest(new { message = $"Could not read the file: {ex.Message}" });
+            // ex.Message on a DbUpdateException is just the generic EF wrapper text ("An error
+            // occurred while saving the entity changes...") — the actual reason (a constraint
+            // violation, usually) is always one level down in InnerException.
+            var detail = ex.InnerException?.Message ?? ex.Message;
+            return BadRequest(new { message = $"Could not read the file: {detail}" });
         }
     }
 

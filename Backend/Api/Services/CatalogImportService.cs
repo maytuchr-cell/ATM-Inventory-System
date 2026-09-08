@@ -287,6 +287,30 @@ public class CatalogImportService
             {
                 targetGroupId = existingGroupIds[0];
                 groupsMerged++;
+
+                // This component's parts weren't all in the same existing group — e.g. PartX
+                // (already in Group A) and PartY (already in Group B) turn out equivalent in
+                // this file. Fold every OTHER group's members into targetGroupId too, instead of
+                // just adding the two touched parts and leaving the rest of that other group
+                // behind — otherwise Group B silently ends up split with some parts pointing at
+                // A and the rest still at B, which is exactly the kind of inconsistency that can
+                // surface as a unique-constraint failure on a later import touching the same parts.
+                foreach (var otherGroupId in existingGroupIds.Skip(1))
+                {
+                    var otherMembers = _context.EquivalentGroupMembers.Where(m => m.GroupId == otherGroupId).ToList();
+                    foreach (var m in otherMembers)
+                    {
+                        if (_context.EquivalentGroupMembers.Any(x => x.GroupId == targetGroupId && x.PartNo == m.PartNo))
+                            _context.EquivalentGroupMembers.Remove(m); // already present in target — drop the stale duplicate
+                        else
+                        {
+                            m.GroupId = targetGroupId;
+                            groupIdByPartNo[m.PartNo] = targetGroupId;
+                        }
+                    }
+                    _context.SaveChanges();
+                    _context.EquivalentGroups.Remove(_context.EquivalentGroups.First(g => g.Id == otherGroupId));
+                }
             }
 
             foreach (var pn in partNos)
