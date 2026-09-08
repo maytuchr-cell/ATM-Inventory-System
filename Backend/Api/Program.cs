@@ -1642,6 +1642,10 @@ using (var scope = app.Services.CreateScope())
             Console.WriteLine("✅ ATM Models (GRG) seeded.");
         }
 
+        // ── Demo parts and mock tickets/tracking disabled for production/live data ──
+        bool seedDemoData = false;
+        if (seedDemoData)
+        {
         // ── Demo parts referenced by Tickets/serial-tracking demo (create-if-missing, ungated) ──
         // These must exist as real Parts so PartId/StockMovement FKs resolve on every DB.
         var demoParts = new[] {
@@ -1813,6 +1817,7 @@ using (var scope = app.Services.CreateScope())
             context.SaveChanges();
             Console.WriteLine("✅ Serial tracking demo data seeded. Try: SN-DISP-001, SN-BNA-001, SN-CR-001, SN-PRT-001");
         }
+        } // end seedDemoData
 
         // ── Backfill StockMovement.PartId from PartNo (existing rows where PartId=0) ──
         // Idempotent: only touches unlinked rows whose PartNo matches an existing Part.
@@ -1880,6 +1885,31 @@ app.UseStaticFiles(new StaticFileOptions {
 
 app.UseAuthorization();
 app.MapControllers();
+
+// ── Version & Git Commit Info Endpoint ──
+static object GetVersionInfo(WebApplication app)
+{
+    var asm = typeof(Program).Assembly;
+    var attr = (System.Reflection.AssemblyInformationalVersionAttribute?)Attribute.GetCustomAttribute(asm, typeof(System.Reflection.AssemblyInformationalVersionAttribute));
+    string infoVer = attr?.InformationalVersion ?? "1.0.0";
+    string[] segments = infoVer.Split('+');
+    string ver = segments.Length > 0 ? segments[0] : "1.0.0";
+    string fullCommit = segments.Length > 1 ? segments[1] : "";
+    string shortCommit = fullCommit.Length > 7 ? fullCommit.Substring(0, 7) : fullCommit;
+    string buildTime = System.IO.File.GetLastWriteTime(asm.Location).ToString("yyyy-MM-dd HH:mm:ss");
+
+    return new
+    {
+        version = $"v{ver}",
+        commit = shortCommit,
+        fullCommit,
+        buildTime,
+        environment = app.Environment.EnvironmentName
+    };
+}
+
+app.MapGet("/version", () => Results.Ok(GetVersionInfo(app))).AllowAnonymous();
+app.MapGet("/api/version", () => Results.Ok(GetVersionInfo(app))).AllowAnonymous();
 
 app.Run();
 

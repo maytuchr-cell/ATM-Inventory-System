@@ -18,21 +18,112 @@ public class PartUnitController : ControllerBase
 
     public PartUnitController(AppDbContext context) => _context = context;
 
-    // GET /api/PartUnit?partNo=&partId=&status=
+    // GET /api/PartUnit?search=&partNo=&partId=&status=&condition=&locationId=
     [HttpGet]
-    public IActionResult GetAll([FromQuery] string? partNo, [FromQuery] int? partId, [FromQuery] string? status)
+    public IActionResult GetAll(
+        [FromQuery] string? search,
+        [FromQuery] string? partNo,
+        [FromQuery] int? partId,
+        [FromQuery] string? status,
+        [FromQuery] string? condition,
+        [FromQuery] int? locationId)
     {
         var q = _context.PartUnits.Include(u => u.Part).Include(u => u.Location).AsQueryable();
 
         if (partId.HasValue) q = q.Where(u => u.PartId == partId);
         if (!string.IsNullOrWhiteSpace(partNo)) q = q.Where(u => u.Part != null && u.Part.PartNo == partNo);
         if (!string.IsNullOrWhiteSpace(status)) q = q.Where(u => u.Status == status);
+        if (!string.IsNullOrWhiteSpace(condition)) q = q.Where(u => u.Condition == condition);
+        if (locationId.HasValue) q = q.Where(u => u.LocationId == locationId);
 
-        var result = q.OrderBy(u => u.SerialNo).Select(u => new {
+        if (!string.IsNullOrWhiteSpace(search))
+        {
+            var s = search.Trim().ToLower();
+            q = q.Where(u => u.SerialNo.ToLower().Contains(s)
+                || (u.Part != null && (u.Part.PartNo.ToLower().Contains(s) || u.Part.PartName.ToLower().Contains(s)))
+                || (u.Location != null && u.Location.Name.ToLower().Contains(s)));
+        }
+
+        var rawUnits = q.OrderBy(u => u.SerialNo).Select(u => new {
             u.Id, u.PartId, partNo = u.Part!.PartNo, partName = u.Part.PartName,
             u.LocationId, location = u.Location == null ? null : u.Location.Name,
             u.SerialNo, u.Condition, u.ExpiryDate, u.IsUnrepairable, u.ReceivedAt, u.Status
         }).ToList();
+
+        var issuedSerials = rawUnits
+            .Where(u => u.Status == "Issued" && !string.IsNullOrWhiteSpace(u.SerialNo))
+            .Select(u => u.SerialNo)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        var holders = new Dictionary<string, (string TechName, string? CaseNo, int? TicketId)>(StringComparer.OrdinalIgnoreCase);
+        if (issuedSerials.Count > 0)
+        {
+            // 1. Check Tickets & TicketPartLines
+            var ticketLines = _context.TicketPartLines
+                .Include(l => l.Ticket)
+                .Where(l => l.SerialNo != null && issuedSerials.Contains(l.SerialNo))
+                .ToList();
+            foreach (var l in ticketLines)
+            {
+                if (!string.IsNullOrWhiteSpace(l.Ticket?.TechName))
+                    holders[l.SerialNo!] = (l.Ticket.TechName, l.Ticket.ExternalTicketNo, l.TicketId);
+            }
+
+            // 2. Check StockMovements for baseline / Outbound remarks
+            var unmapped = issuedSerials.Where(s => !holders.ContainsKey(s)).ToList();
+            if (unmapped.Count > 0)
+            {
+                var movements = _context.StockMovements
+                    .Where(m => m.SerialNo != null && unmapped.Contains(m.SerialNo))
+                    .OrderBy(m => m.Timestamp)
+                    .ToList();
+
+                foreach (var m in movements)
+                {
+                    string? tech = null;
+                    string? cNo = null;
+                    if (!string.IsNullOrWhiteSpace(m.Remarks) && m.Remarks.Contains("ช่าง:"))
+                    {
+                        var parts = m.Remarks.Split('|');
+                        foreach (var p in parts)
+                        {
+                            var pt = p.Trim();
+                            if (pt.StartsWith("ช่าง:")) tech = pt.Substring(5).Trim();
+                            else if (pt.StartsWith("เคส:")) cNo = pt.Substring(4).Trim();
+                        }
+                    }
+                    else if (!string.IsNullOrWhiteSpace(m.UserName) && m.UserName != "admin" && m.UserName != "System" && m.UserName != "DHL Daily Report (Auto)")
+                    {
+                        tech = m.UserName;
+                    }
+
+                    if (!string.IsNullOrWhiteSpace(tech))
+                    {
+                        holders[m.SerialNo!] = (tech, cNo, null);
+                    }
+                }
+            }
+        }
+
+        var result = rawUnits.Select(u => {
+            string? holder = null;
+            string? caseNo = null;
+            int? ticketId = null;
+            if (u.Status == "Issued" && !string.IsNullOrWhiteSpace(u.SerialNo) && holders.TryGetValue(u.SerialNo, out var h))
+            {
+                holder = h.TechName;
+                caseNo = h.CaseNo;
+                ticketId = h.TicketId;
+            }
+            return new {
+                u.Id, u.PartId, u.partNo, u.partName,
+                u.LocationId, u.location,
+                u.SerialNo, u.Condition, u.ExpiryDate, u.IsUnrepairable, u.ReceivedAt, u.Status,
+                currentHolder = holder,
+                caseNo = caseNo,
+                ticketId = ticketId
+            };
+        });
 
         return Ok(result);
     }

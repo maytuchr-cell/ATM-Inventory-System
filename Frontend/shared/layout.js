@@ -1,10 +1,9 @@
 /* ── Dynamic sidebar injector ── */
 (function() {
 
-  // Shown at the bottom of every page's sidebar — bump this by hand on a real release, it's not
-  // tied to the ?v=N cache-bust query string (that's about busting browser caches, not telling
-  // the user what version they're on).
-  const APP_VERSION = 'v1.0.0';
+  // Shown at the bottom of every page's sidebar
+  const APP_VERSION = 'v1.0.132';
+  const APP_COMMIT  = '176de62';
 
   // ── Inject Iconify once ───────────────────────────────────────────────────
   if (!document.querySelector('script[src*="iconify-icon"]')) {
@@ -58,6 +57,7 @@
       adminOnly: true,
       items: [
         { key: 'nav.parts',      href: 'admin-parts.html',      icon: 'mdi:hexagon-outline',         adminOnly: true },
+        { key: 'nav.serials',    href: 'admin-serials.html',    icon: 'mdi:barcode-scan',            adminOnly: true },
         { key: 'nav.categories', href: 'admin-categories.html', icon: 'bxs:category-alt',            adminOnly: true },
         { key: 'nav.locations',  href: 'admin-locations.html',  icon: 'weui:location-filled',        adminOnly: true },
         { key: 'nav.vendors',    href: 'admin-vendors.html',    icon: 'fa6-solid:warehouse',         adminOnly: true },
@@ -308,7 +308,11 @@
             </button>
             <button class="ctrl-btn btn-danger btn-sm" style="padding:0 10px;" onclick="signOut()" title="ออกจากระบบ">⏏</button>
           </div>
-          <div class="sidebar-version">ATM Inventory ${APP_VERSION}</div>
+          <div class="sidebar-version" id="sidebar-version" title="Git Commit: ${APP_COMMIT}">
+            <span>ATM</span>
+            <span class="ver-badge" id="ver-badge">${APP_VERSION}</span>
+            <span class="ver-commit" id="ver-commit">${APP_COMMIT}</span>
+          </div>
         </div>
 
       </aside>`;
@@ -318,6 +322,37 @@
 
     // Sync main-content margin when sidebar collapses
     _syncMainMargin();
+
+    // Fetch live Git version and commit info from backend or static version.json
+    const updateVersionUI = (info) => {
+      if (!info) return;
+      const bEl = document.getElementById('ver-badge');
+      const cEl = document.getElementById('ver-commit');
+      const wrapEl = document.getElementById('sidebar-version');
+      if (bEl && info.version) bEl.textContent = info.version;
+      if (cEl && info.commit) cEl.textContent = info.commit;
+      if (wrapEl) {
+        wrapEl.title = `Branch: ${info.branch || 'NewForServer_NET8'}\nCommit: ${info.fullCommit || info.commit || '-'}\nBuild: ${info.buildTime || '-'}\nEnv: ${info.environment || 'Production'}`;
+      }
+    };
+
+    try {
+      const apiBase = (typeof API_BASE !== 'undefined')
+        ? API_BASE
+        : (location.port === '3000' ? `http://${location.hostname || 'localhost'}:5128` : location.origin + '/api');
+
+      fetch(`${apiBase}/version`)
+        .then(r => r.ok ? r.json() : null)
+        .then(info => {
+          if (info) updateVersionUI(info);
+          else {
+            fetch('version.json').then(r => r.ok ? r.json() : null).then(updateVersionUI).catch(() => {});
+          }
+        })
+        .catch(() => {
+          fetch('version.json').then(r => r.ok ? r.json() : null).then(updateVersionUI).catch(() => {});
+        });
+    } catch (_) {}
   };
 
   function _syncMainMargin() {

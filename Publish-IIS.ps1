@@ -38,8 +38,32 @@ if ($SelfContained) {
 } else {
     dotnet publish $apiProject -c Release -o $apiOut --self-contained false
 }
-if ($LASTEXITCODE -ne 0) { throw "dotnet publish failed" }
 # Frontend static files are copied automatically by Api.csproj's CopyFrontendAfterPublish target.
+
+# Generate version.json with current Git branch & commit info
+try {
+    $commitCount = git rev-list --count HEAD 2>$null
+    if (-not $commitCount) { $commitCount = "0" }
+    $ver = "v1.0.$commitCount"
+    $commit = git rev-parse --short HEAD 2>$null
+    $fullCommit = git rev-parse HEAD 2>$null
+    $branch = git rev-parse --abbrev-ref HEAD 2>$null
+    $buildTime = (Get-Date).ToString("yyyy-MM-dd HH:mm:ss")
+    $versionJson = @"
+{
+  "version": "$ver",
+  "commit": "$commit",
+  "fullCommit": "$fullCommit",
+  "branch": "$branch",
+  "buildTime": "$buildTime"
+}
+"@
+    Set-Content -Path (Join-Path $outDir "version.json") -Value $versionJson -Encoding UTF8
+    Set-Content -Path (Join-Path $apiOut "version.json") -Value $versionJson -Encoding UTF8
+    Write-Host "==> Injected version.json ($ver, branch: $branch, commit: $commit)"
+} catch {
+    Write-Host "==> Warning: Failed to inject version.json ($($_))"
+}
 
 Write-Host "==> Done. Deployment package ready at: $outDir"
 Write-Host "    Site root      : $outDir"

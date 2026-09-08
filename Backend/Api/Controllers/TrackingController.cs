@@ -1,4 +1,5 @@
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
 using Api.Models;
 
 namespace Api.Controllers;
@@ -79,6 +80,26 @@ public class TrackingController : ControllerBase
             });
         }
 
+        // Fallback to PartUnits if no movements recorded yet
+        if (!events.Any())
+        {
+            var unit = _context.PartUnits.Include(u => u.Part).Include(u => u.Location).FirstOrDefault(u => u.SerialNo == sn);
+            if (unit != null)
+            {
+                events.Add(new TimelineEvent
+                {
+                    Timestamp   = unit.ReceivedAt,
+                    EventType   = "InitialBaseline",
+                    Description = $"บันทึกตั้งต้นในระบบ (Part: {unit.Part?.PartNo} - {unit.Part?.PartName}) สถานะ {unit.Status}",
+                    Location    = unit.Location?.Name ?? "DHL Center Bangkok",
+                    Condition   = unit.Condition,
+                    RefType     = "PartUnit",
+                    RefId       = unit.Id.ToString(),
+                    UserName    = "System"
+                });
+            }
+        }
+
         if (!events.Any())
             return NotFound(new { message = $"No records found for Serial No. '{sn}'." });
 
@@ -104,6 +125,7 @@ public class TrackingController : ControllerBase
 
         return m.MovementType switch
         {
+            "InitialBaseline" => $"บันทึกตั้งต้นในระบบ: {m.Remarks ?? "สต็อกตั้งต้น"} (อยู่ที่ {to ?? from ?? "DHL Center Bangkok"})",
             "GR"         => $"Received into {to ?? "warehouse"} via Goods Receipt",
             "Issue"      => $"Issued from {from ?? "warehouse"} to technician{(m.RefId != null ? $" (Ticket #{m.RefId})" : "")}",
             "Return"     => $"Returned to {to ?? "warehouse"} in {m.Condition} condition",

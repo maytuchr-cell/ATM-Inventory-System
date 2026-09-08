@@ -29,6 +29,7 @@ const TRANSLATIONS = {
     /* ── Nav ── */
     'nav.dashboard':  'Dashboard',
     'nav.parts':      'Parts Master',
+    'nav.serials':    'Serial Units',
     'nav.categories': 'Categories',
     'nav.locations':  'Locations',
     'nav.vendors':    'Vendors',
@@ -617,6 +618,7 @@ const TRANSLATIONS = {
     /* ── Nav ── */
     'nav.dashboard':  'แผงควบคุม',
     'nav.parts':      'รายการอะไหล่',
+    'nav.serials':    'ทะเบียน S/N',
     'nav.categories': 'หมวดหมู่',
     'nav.locations':  'สถานที่',
     'nav.vendors':    'ผู้จัดจำหน่าย',

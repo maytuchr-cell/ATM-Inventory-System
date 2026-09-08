@@ -117,7 +117,7 @@ public class PartsController : ControllerBase
     // TicketController.ApproveTicket) vs. stock already issued out to technicians. The total
     // (StockTotals above) can be higher than what's approvable because it includes tech-held
     // stock, which is exactly the "shows 2 but withdraw says short by 1" confusion this fixes.
-    private (Dictionary<int, int> Warehouse, Dictionary<int, int> Tech) StockByBucket(IEnumerable<int> partIds)
+    private (Dictionary<int, int> WarehouseGood, Dictionary<int, int> WarehouseRepair, Dictionary<int, int> Tech) StockByBucket(IEnumerable<int> partIds)
     {
         var ids = partIds.ToList();
         var whId = _context.Locations.FirstOrDefault(l => l.Code == "DHL-BKK")?.Id;
@@ -127,9 +127,10 @@ public class PartsController : ControllerBase
             .Where(s => ids.Contains(s.PartId) && (s.LocationId == whId || s.LocationId == techId))
             .ToList();
 
-        var wh = rows.Where(s => s.LocationId == whId).ToDictionary(s => s.PartId, s => s.GoodQty);
+        var whGood = rows.Where(s => s.LocationId == whId).ToDictionary(s => s.PartId, s => s.GoodQty);
+        var whRepair = rows.Where(s => s.LocationId == whId).ToDictionary(s => s.PartId, s => s.RepairQty);
         var tech = rows.Where(s => s.LocationId == techId).ToDictionary(s => s.PartId, s => s.GoodQty);
-        return (wh, tech);
+        return (whGood, whRepair, tech);
     }
 
     // GET /api/Parts?categoryId=&isActive=&search=
@@ -140,14 +141,21 @@ public class PartsController : ControllerBase
         if (categoryId.HasValue) q = q.Where(p => p.CategoryId == categoryId);
         if (isActive.HasValue)   q = q.Where(p => p.IsActive == isActive);
         if (!string.IsNullOrWhiteSpace(search))
-            q = q.Where(p => p.PartName.Contains(search) || p.PartNo.Contains(search));
+            q = q.Where(p => p.PartName.Contains(search) || p.PartNo.Contains(search) || (p.Project != null && p.Project.Contains(search)));
 
         var parts = q.OrderBy(p => p.PartNo).ToList();
 
         // on-hand totals from PartStock (source of truth)
         var stockTotals = StockTotals(parts.Select(p => p.Id));
-        var (whStock, techStock) = StockByBucket(parts.Select(p => p.Id));
+        var (whGood, whRepair, techStock) = StockByBucket(parts.Select(p => p.Id));
         var images = ImagesByPart(parts.Select(p => p.Id));
+
+        // PartUnit counts
+        var partIds = parts.Select(p => p.Id).ToList();
+        var unitCounts = _context.PartUnits
+            .Where(u => partIds.Contains(u.PartId) && u.Status != "Disposed")
+            .GroupBy(u => u.PartId)
+            .ToDictionary(g => g.Key, g => g.Count());
 
         // attach known serial numbers from StockMovements
         var serialMap = _context.StockMovements
@@ -158,8 +166,10 @@ public class PartsController : ControllerBase
         var result = parts.Select(p => new {
             p.Id, p.PartNo, p.PartName, p.OrderNumber, p.Unit,
             StockQuantity = stockTotals.GetValueOrDefault(p.Id, 0),
-            WarehouseStock = whStock.GetValueOrDefault(p.Id, 0),
+            WarehouseStock = whGood.GetValueOrDefault(p.Id, 0),
+            RepairStock = whRepair.GetValueOrDefault(p.Id, 0),
             TechStock = techStock.GetValueOrDefault(p.Id, 0),
+            SerialUnitsCount = unitCounts.GetValueOrDefault(p.Id, 0),
             p.CategoryId, p.MinStock, p.MaxStock,
             p.ReorderPoint, p.CostPerUnit, p.CatalogueRef, p.SerialNo,
             p.MainUnit, p.Remark, p.ImagePath, p.Zone, p.DeviceType, p.AddedBy, p.Lot, p.Project, p.AddedDate,
