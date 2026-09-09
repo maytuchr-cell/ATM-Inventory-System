@@ -267,11 +267,18 @@ const api = {
   },
   dailyReport: {
     preview: (file) => { const fd = new FormData(); fd.append('file', file); return apiUpload('/DailyReport/preview', fd); },
-    confirm: (file) => { const fd = new FormData(); fd.append('file', file); return apiUpload('/DailyReport/confirm', fd); },
+    confirm: (file, syncReconcile = false) => {
+      const isSync = (syncReconcile === true || syncReconcile === 'true');
+      const fd = new FormData();
+      fd.append('file', file);
+      fd.append('syncReconcile', isSync ? 'true' : 'false');
+      return apiUpload('/DailyReport/confirm?syncReconcile=' + (isSync ? 'true' : 'false'), fd);
+    },
     history: () => apiFetch('/DailyReport/history'),
     batch:   (id) => apiFetch(`/DailyReport/batches/${id}`),
     undoRow: (id) => apiFetch(`/DailyReport/rows/${id}/undo`, { method: 'PUT' }),
     adjustReconcile: (data) => apiFetch('/DailyReport/reconcile/adjust', { method: 'POST', body: JSON.stringify(data) }),
+    resetBaseline: () => apiFetch('/DailyReport/reset-baseline', { method: 'POST' }),
   },
   feContacts: {
     getAll:  ()          => apiFetch('/FeContact'),

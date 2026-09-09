@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Daily Report — ATM Inventory</title>
-  <link rel="stylesheet" href="shared/styles.css?v=81">
+  <link rel="stylesheet" href="shared/styles.css?v=99">
   <style>
     .dr-stats { display:grid; grid-template-columns:repeat(5, 1fr); gap:10px; margin:14px 0 18px; }
     @media (max-width: 1024px) {
@@ -132,10 +132,16 @@
         </div>
       </div>
 
-      <div class="page-body">
-        <div class="dr-tabs">
-          <button class="dr-tab active" id="tab-import" onclick="switchTab('import')">นำเข้าไฟล์</button>
-          <button class="dr-tab" id="tab-history" onclick="switchTab('history')">ประวัติการนำเข้า</button>
+        <div style="display:flex; justify-content:space-between; align-items:flex-end; border-bottom:1px solid var(--border); margin-bottom:16px; flex-wrap:wrap; gap:10px;">
+          <div class="dr-tabs" style="border-bottom:none; margin-bottom:0;">
+            <button class="dr-tab active" id="tab-import" onclick="switchTab('import')">นำเข้าไฟล์</button>
+            <button class="dr-tab" id="tab-history" onclick="switchTab('history')">ประวัติการนำเข้า</button>
+          </div>
+          <div style="margin-bottom:6px;">
+            <button class="btn btn-danger btn-sm" onclick="openResetModal()" id="btn-reset-baseline" title="ล้างข้อมูล Daily Report และสต็อกอะไหล่เพื่อเริ่มตั้งต้นใหม่">
+              <iconify-icon icon="mdi:database-refresh-outline" width="16" style="vertical-align:-2px;"></iconify-icon> ล้างข้อมูลเพื่อเริ่มตั้งต้นใหม่ (03 ก.ย.)
+            </button>
+          </div>
         </div>
 
         <!-- ── Import tab ── -->
@@ -280,7 +286,6 @@
                       <th class="th-repair">ระบบ ซ่อม</th>
                       <th class="th-repair">ผลต่างซ่อม</th>
                       <th style="text-align:center;">สถานะ</th>
-                      <th style="text-align:center;">จัดการ</th>
                     </tr>
                   </thead>
                   <tbody id="reconcile-tbody"></tbody>
@@ -430,6 +435,31 @@
           </div>
         </div>
 
+        <!-- Section 3: Minimum Stock Reconciliation -->
+        <div id="cm-reconcile-section" style="display:none; margin-bottom:16px;">
+          <div style="font-size:12.5px; font-weight:700; margin-bottom:8px; color:var(--text-primary); display:flex; align-items:center; gap:6px;">
+            <iconify-icon icon="mdi:scale-balance" width="16" style="color:#0d9488;"></iconify-icon>
+            3. ตรวจสอบยอดคงคลัง (Minimum Stock Reconciliation):
+          </div>
+          <div style="background:var(--bg-subtle); padding:10px 14px; border-radius:8px; border:1px solid var(--border); margin-bottom:10px;">
+            <div style="display:flex; justify-content:space-between; align-items:center; font-size:12px;">
+              <span>ยอดตรงกับ DHL: <strong id="cm-rec-match" style="color:var(--green);">0</strong> รายการ</span>
+              <span>มีผลต่าง (Diff): <strong id="cm-rec-diff" style="color:var(--orange);">0</strong> รายการ</span>
+            </div>
+          </div>
+          <div style="background:#f0fdf4; border:1.5px solid #86efac; border-radius:8px; padding:12px 14px;">
+            <label style="display:flex; align-items:flex-start; gap:10px; cursor:pointer; font-weight:700; color:#166534; user-select:none;">
+              <input type="checkbox" id="cm-sync-reconcile" style="margin-top:3px; width:18px; height:18px; accent-color:#16a34a;" checked>
+              <div>
+                <div style="font-size:13px;">ปรับยอดคงคลังให้ตรงกับยอดตรวจนับของ DHL (ยึดตาม Minimum Stock)</div>
+                <div style="font-size:11px; font-weight:400; color:#15803d; margin-top:2px;">
+                  ปรับสต็อกคลังกลาง (DHL-BKK) สำหรับรายการที่มีผลต่างให้เท่ากับตัวเลขในไฟล์ DHL ทันที (Diff จะกลายเป็น 0)
+                </div>
+              </div>
+            </label>
+          </div>
+        </div>
+
         <div style="background:#fff7ed; border:1px solid #fed7aa; border-radius:8px; padding:10px 14px; font-size:12px; color:#9a3412; display:flex; gap:8px; align-items:flex-start;">
           <iconify-icon icon="mdi:alert" width="18" height="18" style="flex-shrink:0; margin-top:2px;"></iconify-icon>
           <div>
@@ -510,57 +540,68 @@
     </div>
   </div>
 
-  <!-- Modal 3: ปรับยอดสต็อกให้ตรงกับ DHL (Sync & Adjust) -->
-  <div class="modal-overlay hidden" id="sync-modal-overlay" onclick="if(event.target===this)closeSyncModal()">
-    <div class="modal" style="max-width:500px; width:100%;">
+  <!-- Modal 3: ยืนยันการล้างข้อมูลเพื่อเริ่มตั้งต้นใหม่ (Reset Baseline Confirmation) -->
+  <div class="modal-overlay hidden" id="reset-baseline-modal" onclick="if(event.target===this)closeResetModal()">
+    <div class="modal" style="max-width:540px; width:100%;">
       <div class="modal-header" style="border-bottom:1px solid var(--border); padding-bottom:12px; margin-bottom:16px;">
-        <div class="modal-title" style="display:flex; align-items:center; gap:8px; color:var(--orange); font-size:16px; font-weight:700;">
-          <iconify-icon icon="mdi:sync" width="22" height="22"></iconify-icon>
-          <span>ปรับยอดสต็อกให้ตรงกับ DHL (Sync & Adjust)</span>
+        <div class="modal-title" style="display:flex; align-items:center; gap:8px; color:var(--red); font-size:17px; font-weight:700;">
+          <iconify-icon icon="mdi:alert-octagon" width="26" height="26"></iconify-icon>
+          <span>ยืนยันการล้างข้อมูล Daily Report & สต็อกตั้งต้น</span>
         </div>
       </div>
       <div class="modal-body" style="font-size:13px; line-height:1.6;">
-        <p style="font-size:12.5px; color:var(--text-secondary); margin-bottom:12px;">
-          ระบบจะปรับปรุงยอดสต็อกคลังกลาง <code>DHL-BKK</code> และบันทึกประวัติลงใน <code>StockMovements</code> (ประเภท <b>StockCountAdjust</b>) พร้อม Audit Trail
-        </p>
-        <div style="background:var(--bg-subtle); border:1px solid var(--border); border-radius:8px; padding:12px; margin-bottom:14px;">
-          <div><b>Part No:</b> <code id="sync-partno" style="font-size:13.5px; color:var(--orange);"></code></div>
-          <div style="margin-top:4px;"><b>ชื่ออะไหล่:</b> <span id="sync-partname"></span></div>
-          <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-top:10px; border-top:1px dashed var(--border); padding-top:8px;">
-            <div>
-              <div style="font-size:11.5px; color:var(--text-secondary);">ของดี (Good Stock)</div>
-              <div>เดิม: <b id="sync-old-good"></b> ➔ ปรับเป็น: <b id="sync-new-good" style="color:var(--green,#16a34a);"></b></div>
-            </div>
-            <div>
-              <div style="font-size:11.5px; color:var(--text-secondary);">รอซ่อม (Repair Stock)</div>
-              <div>เดิม: <b id="sync-old-repair"></b> ➔ ปรับเป็น: <b id="sync-new-repair" style="color:var(--orange,#ea580c);"></b></div>
-            </div>
+        <div style="background:var(--red-light); border:1px solid var(--red); border-radius:10px; padding:12px 16px; margin-bottom:16px; color:#991b1b;">
+          <div style="font-weight:700; margin-bottom:4px; display:flex; align-items:center; gap:6px;">
+            <iconify-icon icon="mdi:shield-alert" width="18"></iconify-icon>
+            คำเตือน: การดำเนินการนี้จะรีเซ็ตข้อมูลธุรกรรม Daily Report ทั้งหมด
+          </div>
+          <div style="font-size:12px;">
+            เหมาะสำหรับกรณีต้องการเริ่มนับหนึ่งใหม่จากไฟล์ Daily Report วันที่ 03 ก.ย. 2026 (Baseline)
           </div>
         </div>
-        <div class="form-group" style="margin-bottom:16px;">
-          <label class="form-label" style="font-size:12.5px; font-weight:600; margin-bottom:6px; display:block;">ระบุเหตุผลในการปรับปรุงยอด (Audit Reason) *</label>
-          <select id="sync-reason-select" class="form-select" style="width:100%; padding:8px 10px; font-size:13px; border-radius:6px; border:1px solid var(--border);">
-            <option value="นับสต็อกจริงคลัง DHL (Physical Cycle Count)">📋 นับสต็อกจริงคลัง DHL (Physical Cycle Count)</option>
-            <option value="สินค้าสูญหาย/ชำรุดในคลัง DHL (Warehouse Shrinkage)">⚠️ สินค้าสูญหาย/ชำรุดในคลัง DHL (Warehouse Shrinkage)</option>
-            <option value="ปรับยอดตัดรอบบัญชี (Account Adjustment)">📊 ปรับยอดตัดรอบบัญชี (Account Adjustment)</option>
-            <option value="ปรับตามเอกสารส่งมอบย้อนหลัง">📦 ปรับตามเอกสารส่งมอบย้อนหลัง</option>
-          </select>
+
+        <div style="background:var(--bg-subtle); border:1px solid var(--border); border-radius:10px; padding:14px 16px; margin-bottom:16px;">
+          <div style="font-weight:700; color:var(--text-primary); margin-bottom:8px;">ระบบจะดำเนินการดังนี้:</div>
+          <ul style="padding-left:20px; color:var(--text-secondary); font-size:12.5px; display:flex; flex-direction:column; gap:6px;">
+            <li><b>ลบประวัติการนำเข้า Daily Report ทั้งหมด</b> (Import Batches และ Rows ทั้งหมด)</li>
+            <li><b>รีเซ็ตยอดสต็อกอะไหล่ (Part Stocks) ทุกรายการเป็น 0</b> เพื่อรอการซิงค์ยอดจากไฟล์ตั้งต้น 03 ก.ย.</li>
+            <li><b>ล้างประวัติการเคลื่อนไหวสต็อก (Stock Movements)</b> ที่เกิดขึ้นจากการ Import Daily Report</li>
+            <li><b>ล้างข้อมูลซีเรียล (Serial Tracking)</b> ที่ถูกสร้างจากการนำเข้า Daily Report</li>
+            <li><b>รีเซ็ตสถานะใบเบิกรับคืน</b> (ConfirmedQty = 0, ReturnStatus = 'เดินทาง') กลับสู่สถานะก่อน Import</li>
+          </ul>
+        </div>
+
+        <div style="background:#f0fdf4; border:1.5px solid #86efac; border-radius:10px; padding:12px 16px; margin-bottom:16px;">
+          <div style="font-weight:700; color:#166534; margin-bottom:4px; display:flex; align-items:center; gap:6px;">
+            <iconify-icon icon="mdi:check-circle-outline" width="18"></iconify-icon>
+            ขั้นตอนหลังจากกดล้างข้อมูล:
+          </div>
+          <div style="font-size:12px; color:#15803d; line-height:1.5;">
+            คุณสามารถอัปโหลดไฟล์ <b>"Dataone Daily Report 03 Sep 2026_.xlsx"</b> จากนั้นเลือกติ๊กถูก <b>"ปรับยอดคงคลังให้ตรงกับยอดตรวจนับของ DHL (ยึดตาม Minimum Stock)"</b> เพื่อสถาปนายอดสต็อกตั้งต้น 03 ก.ย. ได้อย่างถูกต้อง 100% (Diff = 0)
+          </div>
+        </div>
+
+        <div style="margin-top:14px;">
+          <label style="display:flex; align-items:center; gap:8px; cursor:pointer; font-weight:600; color:var(--text-primary); user-select:none;">
+            <input type="checkbox" id="chk-confirm-reset" onchange="document.getElementById('btn-execute-reset').disabled = !this.checked" style="width:16px; height:16px; accent-color:var(--red);">
+            <span>ฉันเข้าใจผลกระทบและยืนยันต้องการล้างข้อมูลเพื่อเริ่มตั้งต้นใหม่</span>
+          </label>
         </div>
       </div>
-      <div class="modal-footer" style="display:flex; justify-content:flex-end; gap:10px; margin-top:16px; border-top:1px solid var(--border); padding-top:12px;">
-        <button type="button" class="btn btn-secondary" onclick="closeSyncModal()">ยกเลิก</button>
-        <button type="button" class="btn btn-primary" id="sync-confirm-btn" onclick="confirmSyncAdjustment()">
-          <iconify-icon icon="mdi:check" width="16"></iconify-icon> ยืนยันปรับยอดสต็อก
+      <div class="modal-footer" style="display:flex; justify-content:flex-end; gap:10px; margin-top:20px; border-top:1px solid var(--border); padding-top:14px;">
+        <button type="button" class="btn btn-secondary" onclick="closeResetModal()">ยกเลิก</button>
+        <button type="button" class="btn btn-danger" id="btn-execute-reset" onclick="executeResetBaseline()" disabled>
+          <iconify-icon icon="mdi:trash-can-outline" width="16"></iconify-icon> ยืนยันล้างข้อมูลทั้งหมด
         </button>
       </div>
     </div>
   </div>
 
   <script src="https://code.iconify.design/iconify-icon/2.1.0/iconify-icon.min.js"></script>
-  <script src="shared/translations.js?v=81"></script>
-  <script src="shared/toast.js?v=81"></script>
-  <script src="shared/api.js?v=81"></script>
-  <script src="shared/layout.js?v=81"></script>
+  <script src="shared/translations.js?v=100"></script>
+  <script src="shared/toast.js?v=100"></script>
+  <script src="shared/api.js?v=100"></script>
+  <script src="shared/layout.js?v=100"></script>
   <script>
     let pendingFile = null;
     let lastPreviewRows = [];
@@ -834,12 +875,6 @@
               ? `<span style="color:var(--green);font-weight:600;">0</span>`
               : `<span style="color:${item.diffRepair > 0 ? 'var(--orange)' : 'var(--red)'};font-weight:700;">${item.diffRepair > 0 ? '+' : ''}${item.diffRepair}</span>`;
 
-            const safePartNo = escapeHtml(item.partNo);
-            const safePartName = escapeHtml(item.partName || '');
-            const actionBtn = (!isMatch && !isMissing)
-              ? `<button type="button" class="btn btn-secondary btn-xs" onclick="openSyncModal('${safePartNo}', '${safePartName}', ${item.systemGoodQty}, ${item.dhlGoodQty}, ${item.systemRepairQty}, ${item.dhlBadQty})" style="white-space:nowrap;font-size:11px;padding:3px 8px;display:inline-flex;align-items:center;gap:3px;"><iconify-icon icon="mdi:sync" width="12"></iconify-icon> ปรับยอด</button>`
-              : `—`;
-
             return `
               <tr>
                 <td><code>${item.partNo}</code></td>
@@ -851,75 +886,10 @@
                 <td style="text-align:right;font-weight:700;color:var(--orange,#ea580c);background:rgba(234,88,12,0.03);">${item.systemRepairQty.toLocaleString()}</td>
                 <td style="text-align:right;background:rgba(234,88,12,0.03);">${diffRepairText}</td>
                 <td style="text-align:center;">${badge}</td>
-                <td style="text-align:center;">${actionBtn}</td>
               </tr>
             `;
           }).join('')
-        : `<tr><td colspan="10" class="empty-state">ไฟล์นี้ไม่มีชีต Minimum Stock สำหรับกระทบยอด</td></tr>`;
-    }
-
-    let currentSyncItem = null;
-
-    function openSyncModal(partNo, partName, oldGood, newGood, oldRepair, newRepair) {
-      currentSyncItem = { partNo, partName, oldGood, newGood, oldRepair, newRepair };
-      document.getElementById('sync-partno').textContent = partNo;
-      document.getElementById('sync-partname').textContent = partName || '—';
-      document.getElementById('sync-old-good').textContent = oldGood.toLocaleString();
-      document.getElementById('sync-new-good').textContent = newGood.toLocaleString();
-      document.getElementById('sync-old-repair').textContent = oldRepair.toLocaleString();
-      document.getElementById('sync-new-repair').textContent = newRepair.toLocaleString();
-      document.getElementById('sync-modal-overlay').classList.remove('hidden');
-    }
-
-    function closeSyncModal() {
-      currentSyncItem = null;
-      document.getElementById('sync-modal-overlay').classList.add('hidden');
-    }
-
-    async function confirmSyncAdjustment() {
-      if (!currentSyncItem) return;
-      const reason = document.getElementById('sync-reason-select').value;
-      const btn = document.getElementById('sync-confirm-btn');
-      btn.disabled = true;
-      btn.textContent = 'กำลังบันทึก...';
-
-      try {
-        await api.dailyReport.adjustReconcile({
-          adjustments: [{
-            partNo: currentSyncItem.partNo,
-            targetGood: currentSyncItem.newGood,
-            targetRepair: currentSyncItem.newRepair,
-            reason: reason
-          }]
-        });
-
-        // Update in-memory reconciliation item
-        const item = lastReconciliation.find(i => i.partNo === currentSyncItem.partNo);
-        if (item) {
-          item.systemGoodQty = currentSyncItem.newGood;
-          item.systemRepairQty = currentSyncItem.newRepair;
-          item.diffGood = 0;
-          item.diffRepair = 0;
-          item.status = 'MATCH';
-        }
-
-        // Update summary stats
-        const matchCount = lastReconciliation.filter(i => i.status === 'MATCH').length;
-        const diffCount = lastReconciliation.filter(i => i.status !== 'MATCH').length;
-        const elStatRec = document.getElementById('stat-reconcile');
-        if (elStatRec) elStatRec.textContent = `${matchCount.toLocaleString()} / ${diffCount.toLocaleString()}`;
-        const elStatRecSub = document.getElementById('stat-reconcile-sub');
-        if (elStatRecSub) elStatRecSub.textContent = `ตรง ${matchCount.toLocaleString()} • ต่าง ${diffCount.toLocaleString()}`;
-
-        closeSyncModal();
-        applyActiveFilters();
-        showToast?.('ปรับปรุงยอดสต็อกให้ตรงกับ DHL สำเร็จเรียบร้อย', 'success');
-      } catch (e) {
-        showToast?.('เกิดข้อผิดพลาด: ' + e.message, 'error');
-      } finally {
-        btn.disabled = false;
-        btn.textContent = 'ยืนยันปรับยอดสต็อก';
-      }
+        : `<tr><td colspan="9" class="empty-state">ไฟล์นี้ไม่มีชีต Minimum Stock สำหรับกระทบยอด</td></tr>`;
     }
 
     function escapeHtml(str) {
@@ -971,6 +941,23 @@
         stockMathExpl.innerHTML = `* ผลรวม: รายการใหม่ (<strong>${newImpactCount.toLocaleString()}</strong>) + รายการเดิม (<strong>${unchangedCount.toLocaleString()}</strong>) = <strong>${totalRows.toLocaleString()}</strong> รายการครบถ้วน`;
       }
 
+      // Reconcile section in confirm modal
+      const recItems = lastReconciliation || [];
+      const recMatch = recItems.filter(i => i.status === 'MATCH').length;
+      const recDiff = recItems.filter(i => i.status !== 'MATCH').length;
+      const recSection = document.getElementById('cm-reconcile-section');
+      if (recSection) {
+        if (recItems.length > 0) {
+          recSection.style.display = 'block';
+          document.getElementById('cm-rec-match').textContent = recMatch.toLocaleString();
+          document.getElementById('cm-rec-diff').textContent = recDiff.toLocaleString();
+          const chk = document.getElementById('cm-sync-reconcile');
+          if (chk) chk.checked = (recDiff > 0);
+        } else {
+          recSection.style.display = 'none';
+        }
+      }
+
       document.getElementById('confirm-import-modal').classList.remove('hidden');
     }
 
@@ -984,7 +971,8 @@
       btn.disabled = true;
       btn.innerHTML = `<iconify-icon icon="eos-icons:loading" width="16" style="vertical-align:-3px;"></iconify-icon> กำลัง Import เข้าระบบ...`;
       try {
-        const res = await api.dailyReport.confirm(pendingFile);
+        const syncReconcile = document.getElementById('cm-sync-reconcile')?.checked ?? false;
+        const res = await api.dailyReport.confirm(pendingFile, syncReconcile);
         closeConfirmModal();
         lastImportedBatchId = res.batch?.id;
         showResultModal(res);
@@ -1013,8 +1001,9 @@
       if (recWrap) {
         if (s.reconcileMatchCount != null || s.reconcileDiffCount != null) {
           recWrap.style.display = 'block';
+          const syncedNote = (s.reconcileDiffCount === 0 && s.reconcileMatchCount > 0) ? ' • ปรับยอดตรงตาม DHL เรียบร้อย 100%' : '';
           document.getElementById('rm-reconcile-text').textContent =
-            `ยอดสต็อกตรงกับคลัง DHL: ${(s.reconcileMatchCount || 0).toLocaleString()} รายการ • มีผลต่าง: ${(s.reconcileDiffCount || 0).toLocaleString()} รายการ`;
+            `ยอดสต็อกตรงกับคลัง DHL: ${(s.reconcileMatchCount || 0).toLocaleString()} รายการ • มีผลต่าง: ${(s.reconcileDiffCount || 0).toLocaleString()} รายการ${syncedNote}`;
         } else {
           recWrap.style.display = 'none';
         }
@@ -1032,6 +1021,36 @@
       closeResultModal();
       if (lastImportedBatchId) {
         viewBatch(lastImportedBatchId);
+      }
+    }
+
+    function openResetModal() {
+      const chk = document.getElementById('chk-confirm-reset');
+      if (chk) chk.checked = false;
+      const btn = document.getElementById('btn-execute-reset');
+      if (btn) btn.disabled = true;
+      document.getElementById('reset-baseline-modal').classList.remove('hidden');
+    }
+
+    function closeResetModal() {
+      document.getElementById('reset-baseline-modal').classList.add('hidden');
+    }
+
+    async function executeResetBaseline() {
+      const btn = document.getElementById('btn-execute-reset');
+      btn.disabled = true;
+      btn.innerHTML = `<iconify-icon icon="eos-icons:loading" width="16" style="vertical-align:-3px;"></iconify-icon> กำลังล้างข้อมูล...`;
+      try {
+        const res = await api.dailyReport.resetBaseline();
+        closeResetModal();
+        showToast?.(res.message || 'ล้างข้อมูลสำเร็จ พร้อมสำหรับการนำเข้า 03 ก.ย.', 'success');
+        cancelPreview();
+        loadHistory();
+      } catch (e) {
+        showToast?.(e.message || t('toast.error'), 'error');
+      } finally {
+        btn.disabled = false;
+        btn.innerHTML = `<iconify-icon icon="mdi:trash-can-outline" width="16"></iconify-icon> ยืนยันล้างข้อมูลทั้งหมด`;
       }
     }
 

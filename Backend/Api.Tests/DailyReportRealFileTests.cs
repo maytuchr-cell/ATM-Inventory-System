@@ -837,4 +837,37 @@ public class DailyReportRealFileTests
         var ok = Assert.IsType<OkObjectResult>(result);
         _output.WriteLine("Imported successfully to real AtmInventory.db!");
     }
+
+    [Fact(Skip = "Run manually to avoid mutating production DB during test runs")]
+    public void Import08SepWithSyncReconcileToRealDb()
+    {
+        var current = Directory.GetCurrentDirectory();
+        while (!string.IsNullOrEmpty(current) && !File.Exists(Path.Combine(current, "Backend", "Api", "AtmInventory.db")))
+        {
+            var parent = Directory.GetParent(current)?.FullName;
+            if (parent == current) break;
+            current = parent;
+        }
+        var realDbPath = Path.Combine(current!, "Backend", "Api", "AtmInventory.db");
+        var options = new DbContextOptionsBuilder<AppDbContext>()
+            .UseSqlite($"Data Source={realDbPath}")
+            .Options;
+
+        using var context = new AppDbContext(options);
+        var stock = new StockService(context);
+        var audit = new AuditService(context);
+        var controller = new DailyReportController(context, stock, audit);
+
+        var filePath08 = FindDocumentFile("Dataone Daily Report 08 Sep 2026_.xlsx");
+        using var stream = OpenFileShared(filePath08);
+        var formFile = new FormFile(stream, 0, stream.Length, "file", Path.GetFileName(filePath08))
+        {
+            Headers = new HeaderDictionary(),
+            ContentType = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        };
+
+        var result = controller.Confirm(formFile, syncReconcile: true);
+        var ok = Assert.IsType<OkObjectResult>(result);
+        _output.WriteLine("Imported and synced 08 Sep successfully to real AtmInventory.db!");
+    }
 }
