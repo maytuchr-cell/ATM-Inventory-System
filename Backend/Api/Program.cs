@@ -259,6 +259,35 @@ using (var scope = app.Services.CreateScope())
                 context.Database.ExecuteSqlRaw("ALTER TABLE DailyReportImportRows ADD COLUMN StockCredited INTEGER NOT NULL DEFAULT 0;");
                 Console.WriteLine("✅ Migration: added DailyReportImportRows.StockCredited (Unmatched rows now still credit the warehouse)");
             }
+            if (!driCols.Contains("SourceSheet"))
+            {
+                context.Database.ExecuteSqlRaw("ALTER TABLE DailyReportImportRows ADD COLUMN SourceSheet TEXT NOT NULL DEFAULT 'Return inbound';");
+                Console.WriteLine("✅ Migration: added DailyReportImportRows.SourceSheet (multi-sheet Daily Report processing)");
+            }
+            if (!driCols.Contains("FeName"))
+            {
+                context.Database.ExecuteSqlRaw("ALTER TABLE DailyReportImportRows ADD COLUMN FeName TEXT NULL;");
+                Console.WriteLine("✅ Migration: added DailyReportImportRows.FeName");
+            }
+
+            var dribCols = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            using (var cmd = context.Database.GetDbConnection().CreateCommand())
+            {
+                if (cmd.Connection!.State != System.Data.ConnectionState.Open) cmd.Connection.Open();
+                cmd.CommandText = "PRAGMA table_info(DailyReportImportBatches);";
+                using var reader = cmd.ExecuteReader();
+                while (reader.Read()) dribCols.Add(reader.GetString(1));
+            }
+            if (!dribCols.Contains("OutboundCount"))
+            {
+                context.Database.ExecuteSqlRaw("ALTER TABLE DailyReportImportBatches ADD COLUMN OutboundCount INTEGER NOT NULL DEFAULT 0;");
+                Console.WriteLine("✅ Migration: added DailyReportImportBatches.OutboundCount");
+            }
+            if (!dribCols.Contains("InboundRepairedCount"))
+            {
+                context.Database.ExecuteSqlRaw("ALTER TABLE DailyReportImportBatches ADD COLUMN InboundRepairedCount INTEGER NOT NULL DEFAULT 0;");
+                Console.WriteLine("✅ Migration: added DailyReportImportBatches.InboundRepairedCount");
+            }
 
             var tplCols = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             using (var cmd = context.Database.GetDbConnection().CreateCommand())

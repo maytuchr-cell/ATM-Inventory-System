@@ -121,6 +121,12 @@ CALL _AddColumnIfMissing('WithdrawBatches', 'ReturnRequestedAt',   'DATETIME(6) 
 CALL _AddColumnIfMissing('DailyReportImportRows', 'CaseNo',          'LONGTEXT NULL');
 CALL _AddColumnIfMissing('DailyReportImportRows', 'WithdrawBatchId', 'INT NULL');
 CALL _AddColumnIfMissing('DailyReportImportRows', 'StockCredited',   'TINYINT(1) NOT NULL DEFAULT 0');
+CALL _AddColumnIfMissing('DailyReportImportRows', 'SourceSheet',     "VARCHAR(255) NOT NULL DEFAULT 'Return inbound'");
+CALL _AddColumnIfMissing('DailyReportImportRows', 'FeName',          'LONGTEXT NULL');
+
+-- ── DailyReportImportBatches ─────────────────────────────────────────────
+CALL _AddColumnIfMissing('DailyReportImportBatches', 'OutboundCount',        'INT NOT NULL DEFAULT 0');
+CALL _AddColumnIfMissing('DailyReportImportBatches', 'InboundRepairedCount', 'INT NOT NULL DEFAULT 0');
 
 -- ── StockMovements ───────────────────────────────────────────────────────
 CALL _AddColumnIfMissing('StockMovements', 'PartId',     'INT NOT NULL DEFAULT 0');
