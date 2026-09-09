@@ -36,6 +36,18 @@ async function loadLocations() {
   }
 }
 
+const LOCATION_ICONS = {
+  DHL_CENTER:     { icon: 'mdi:warehouse', color: '#16a34a' },
+  RATCHABURANA:   { icon: 'mdi:home-repair-service', color: '#ea580c' },
+  GRG:            { icon: 'mdi:cog-box', color: '#0284c7' },
+  OL_TECHNICIAN:  { icon: 'mdi:account-wrench', color: '#2563eb' },
+  IN_TRANSIT:     { icon: 'mdi:truck-fast-outline', color: '#d97706' },
+  AIRPORT:        { icon: 'mdi:airplane-takeoff', color: '#06b6d4' },
+  SCRAP:          { icon: 'mdi:delete-sweep', color: '#64748b' },
+  TRANSPORT_HUB:  { icon: 'mdi:transit-connection-variant', color: '#8b5cf6' },
+  LOCAL_VENDOR:   { icon: 'mdi:storefront-outline', color: '#ec4899' }
+};
+
 function renderTable() {
   const typeFilter   = document.getElementById('type-filter').value;
   const statusFilter = document.getElementById('status-filter').value;
@@ -52,6 +64,7 @@ function renderTable() {
     return;
   }
   tbody.innerHTML = rows.map(l => {
+    const locMeta = LOCATION_ICONS[l.locationType] || { icon: 'mdi:map-marker-outline', color: 'var(--text-secondary)' };
     const typeBadge = `<span class="badge badge-orange">${t('loc.type.' + l.locationType) || l.locationType}</span>`;
     const statusBadge = l.isActive
       ? `<span class="badge badge-green">${t('lbl.active')}</span>`
@@ -62,7 +75,12 @@ function renderTable() {
       : '';
     return `<tr>
       <td><code>${l.code}</code></td>
-      <td><strong>${l.name}</strong></td>
+      <td>
+        <div style="display:inline-flex; align-items:center; gap:8px;">
+          <iconify-icon icon="${locMeta.icon}" width="18" style="color:${locMeta.color}; flex-shrink:0;"></iconify-icon>
+          <strong>${l.name}</strong>
+        </div>
+      </td>
       <td>${typeBadge}</td>
       <td>${statusBadge}</td>
       <td style="display:flex;gap:6px;">${actions}</td>

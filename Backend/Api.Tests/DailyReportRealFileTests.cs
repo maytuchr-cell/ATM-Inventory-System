@@ -734,4 +734,96 @@ public class DailyReportRealFileTests
             }
         }
     }
+
+    [Fact]
+    public void ScanAllDistinctLocationsInExcelFiles()
+    {
+        var files = new[]
+        {
+            "Dataone Daily Report 03 Sep 2026_.xlsx",
+            "Dataone Daily Report 04-05 Sep 2026_.xlsx",
+            "Dataone Daily Report 07 Sep 2026_.xlsx"
+        };
+
+        foreach (var fname in files)
+        {
+            var fpath = FindDocumentFile(fname);
+            if (!File.Exists(fpath)) continue;
+            _output.WriteLine($"\n================== FILE: {fname} ==================");
+            using var wb = new ClosedXML.Excel.XLWorkbook(fpath);
+            foreach (var ws in wb.Worksheets)
+            {
+                var sname = ws.Name;
+                var lastRow = ws.LastRowUsed()?.RowNumber() ?? 0;
+                var lastCol = ws.LastColumnUsed()?.ColumnNumber() ?? 0;
+                if (lastRow <= 1) continue;
+
+                var headers = new Dictionary<int, string>();
+                for (int c = 1; c <= lastCol; c++)
+                {
+                    var h = ws.Cell(1, c).GetString().Trim();
+                    if (!string.IsNullOrEmpty(h)) headers[c] = h;
+                }
+
+                // Look for location-related columns
+                var locCols = headers.Where(kvp =>
+                    kvp.Value.Contains("Site", StringComparison.OrdinalIgnoreCase) ||
+                    kvp.Value.Contains("Customer", StringComparison.OrdinalIgnoreCase) ||
+                    kvp.Value.Contains("Location", StringComparison.OrdinalIgnoreCase) ||
+                    kvp.Value.Contains("Address", StringComparison.OrdinalIgnoreCase) ||
+                    kvp.Value.Contains("Shipped", StringComparison.OrdinalIgnoreCase) ||
+                    kvp.Value.Contains("Warehouse", StringComparison.OrdinalIgnoreCase) ||
+                    kvp.Value.Contains("Destination", StringComparison.OrdinalIgnoreCase)
+                ).ToList();
+
+                if (!locCols.Any()) continue;
+
+                _output.WriteLine($"--- Sheet: '{sname}' (Rows: {lastRow}) ---");
+                foreach (var lc in locCols)
+                {
+                    var distinctVals = new HashSet<string>();
+                    for (int r = 2; r <= lastRow; r++)
+                    {
+                        var val = ws.Cell(r, lc.Key).GetString().Trim();
+                        if (!string.IsNullOrWhiteSpace(val)) distinctVals.Add(val);
+                    }
+                    _output.WriteLine($"  Col '{lc.Value}' ({distinctVals.Count} distinct): {string.Join(" | ", distinctVals.Take(10))}");
+                    if (distinctVals.Count > 10) _output.WriteLine($"    ... and {distinctVals.Count - 10} more");
+                }
+            }
+        }
+    }
+
+    [Fact(Skip = "Run manually to avoid mutating production DB during test runs")]
+    public void Import07SepToRealDb()
+    {
+        var current = Directory.GetCurrentDirectory();
+        while (!string.IsNullOrEmpty(current) && !File.Exists(Path.Combine(current, "Backend", "Api", "AtmInventory.db")))
+        {
+            var parent = Directory.GetParent(current)?.FullName;
+            if (parent == current) break;
+            current = parent;
+        }
+        var realDbPath = Path.Combine(current!, "Backend", "Api", "AtmInventory.db");
+        var options = new DbContextOptionsBuilder<AppDbContext>()
+            .UseSqlite($"Data Source={realDbPath}")
+            .Options;
+
+        using var context = new AppDbContext(options);
+        var stock = new StockService(context);
+        var audit = new AuditService(context);
+        var controller = new DailyReportController(context, stock, audit);
+
+        var filePath07 = FindDocumentFile("Dataone Daily Report 07 Sep 2026_.xlsx");
+        using var stream = File.OpenRead(filePath07);
+        var formFile = new FormFile(stream, 0, stream.Length, "file", Path.GetFileName(filePath07))
+        {
+            Headers = new HeaderDictionary(),
+            ContentType = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        };
+
+        var result = controller.Confirm(formFile);
+        var ok = Assert.IsType<OkObjectResult>(result);
+        _output.WriteLine("Imported successfully to real AtmInventory.db!");
+    }
 }

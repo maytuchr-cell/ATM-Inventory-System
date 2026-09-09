@@ -259,6 +259,39 @@ using (var scope = app.Services.CreateScope())
                 context.Database.ExecuteSqlRaw("ALTER TABLE DailyReportImportRows ADD COLUMN StockCredited INTEGER NOT NULL DEFAULT 0;");
                 Console.WriteLine("✅ Migration: added DailyReportImportRows.StockCredited (Unmatched rows now still credit the warehouse)");
             }
+
+            var tplCols = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            using (var cmd = context.Database.GetDbConnection().CreateCommand())
+            {
+                if (cmd.Connection!.State != System.Data.ConnectionState.Open) cmd.Connection.Open();
+                cmd.CommandText = "PRAGMA table_info(TicketPartLines);";
+                using var reader = cmd.ExecuteReader();
+                while (reader.Read()) tplCols.Add(reader.GetString(1));
+            }
+            if (!tplCols.Contains("Problem"))
+            {
+                context.Database.ExecuteSqlRaw("ALTER TABLE TicketPartLines ADD COLUMN Problem TEXT NULL;");
+                Console.WriteLine("✅ Migration: added TicketPartLines.Problem");
+            }
+            if (!tplCols.Contains("SerialNo"))
+            {
+                context.Database.ExecuteSqlRaw("ALTER TABLE TicketPartLines ADD COLUMN SerialNo TEXT NULL;");
+                Console.WriteLine("✅ Migration: added TicketPartLines.SerialNo");
+            }
+
+            var wbCols = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            using (var cmd = context.Database.GetDbConnection().CreateCommand())
+            {
+                if (cmd.Connection!.State != System.Data.ConnectionState.Open) cmd.Connection.Open();
+                cmd.CommandText = "PRAGMA table_info(WithdrawBatches);";
+                using var reader = cmd.ExecuteReader();
+                while (reader.Read()) wbCols.Add(reader.GetString(1));
+            }
+            if (!wbCols.Contains("ReturnRequestedAt"))
+            {
+                context.Database.ExecuteSqlRaw("ALTER TABLE WithdrawBatches ADD COLUMN ReturnRequestedAt TEXT NULL;");
+                Console.WriteLine("✅ Migration: added WithdrawBatches.ReturnRequestedAt");
+            }
         }
         catch (Exception mex) { Console.WriteLine($"⚠ DailyReportImport migration skipped: {mex.Message}"); }
 
@@ -299,6 +332,29 @@ using (var scope = app.Services.CreateScope())
                 "CREATE INDEX IF NOT EXISTS IX_PartImages_PartId ON PartImages (PartId);");
         }
         catch (Exception mex) { Console.WriteLine($"⚠ PartImages migration skipped: {mex.Message}"); }
+
+        // ── Lightweight migration: FeContacts and SavedAddresses tables ──
+        if (isSqlite) try
+        {
+            context.Database.ExecuteSqlRaw(@"
+                CREATE TABLE IF NOT EXISTS FeContacts (
+                    Id INTEGER NOT NULL CONSTRAINT PK_FeContacts PRIMARY KEY AUTOINCREMENT,
+                    FeId TEXT NOT NULL,
+                    FeName TEXT NOT NULL,
+                    Tel TEXT NULL,
+                    Address TEXT NOT NULL,
+                    Postcode TEXT NULL,
+                    UpdatedAt TEXT NOT NULL
+                );");
+            context.Database.ExecuteSqlRaw(@"
+                CREATE TABLE IF NOT EXISTS SavedAddresses (
+                    Id INTEGER NOT NULL CONSTRAINT PK_SavedAddresses PRIMARY KEY AUTOINCREMENT,
+                    TechEmail TEXT NOT NULL,
+                    Address TEXT NOT NULL,
+                    UpdatedAt TEXT NOT NULL
+                );");
+        }
+        catch (Exception mex) { Console.WriteLine($"⚠ FeContacts/SavedAddresses migration skipped: {mex.Message}"); }
 
         // ── Lightweight migration: rebuild Tickets on the new เบิก/ยืม/คืน schema, add
         //    TicketPartLines. Old Tickets rows used the single-part-request model — there is no

@@ -614,21 +614,97 @@
             </div>
           `;
         } else if (u.status === 'InStock') {
+          let locText = u.location || 'คลังกลาง DHL-BKK';
+          let locIcon = 'mdi:warehouse';
+          let locColor = 'var(--green)';
+          const locLower = (u.location || '').toLowerCase();
+          if (locLower.includes('ratchaburana') || locLower.includes('wh-rat')) {
+            locText = 'Ratchaburana Warehouse';
+            locIcon = 'mdi:home-repair-service';
+            locColor = '#ea580c';
+          } else if (locLower.includes('grg')) {
+            locText = 'GRG Bangkok Hub';
+            locIcon = 'mdi:cog-box';
+            locColor = '#0284c7';
+          } else if (locLower.includes('airport') || locLower.includes('apt') || locLower.includes('suvarnabhumi')) {
+            locText = 'Suvarnabhumi Airport';
+            locIcon = 'mdi:airplane-takeoff';
+            locColor = '#06b6d4';
+          } else if (locLower.includes('scrap')) {
+            locText = 'Scrap / Disposal Yard';
+            locIcon = 'mdi:delete-sweep';
+            locColor = '#64748b';
+          } else if (locLower.includes('transit')) {
+            locText = 'In-Transit';
+            locIcon = 'mdi:truck-fast-outline';
+            locColor = '#d97706';
+          }
           locationHtml = `
             <span style="color:var(--text-secondary); display:inline-flex; align-items:center; gap:5px;">
-              <iconify-icon icon="mdi:warehouse" width="16" style="color:var(--green);"></iconify-icon>
-              <span>${u.location || 'คลังกลาง DHL-BKK'}</span>
+              <iconify-icon icon="${locIcon}" width="16" style="color:${locColor};"></iconify-icon>
+              <span>${locText}</span>
             </span>
           `;
         } else if (u.status === 'InRepair') {
+          let repairLocText = u.location || 'ศูนย์ซ่อม / Lab';
+          let locIcon = 'mdi:tools';
+          let locColor = 'var(--orange)';
+          const locLower = (u.location || '').toLowerCase();
+          if (locLower.includes('ratchaburana') || locLower.includes('wh-rat')) {
+            repairLocText = 'Ratchaburana (D1 Room Repair)';
+            locIcon = 'mdi:home-repair-service';
+            locColor = '#c2410c';
+          } else if (locLower.includes('dhl')) {
+            repairLocText = 'พักรอส่งซ่อม (คลัง DHL)';
+            locIcon = 'mdi:timer-sand';
+            locColor = '#d97706';
+          } else if (locLower.includes('grg')) {
+            repairLocText = 'GRG Bangkok Hub';
+            locIcon = 'mdi:cog-box';
+            locColor = '#0284c7';
+          }
           locationHtml = `
-            <span style="color:var(--orange); display:inline-flex; align-items:center; gap:5px;">
-              <iconify-icon icon="mdi:tools" width="16"></iconify-icon>
-              <span>${u.location || 'ศูนย์ซ่อม / Lab'}</span>
+            <span style="color:${locColor}; display:inline-flex; align-items:center; gap:5px; font-weight:500;">
+              <iconify-icon icon="${locIcon}" width="16"></iconify-icon>
+              <span>${repairLocText}</span>
             </span>
           `;
         } else {
-          locationHtml = `<span>${u.location || '—'}</span>`;
+          let locText = u.location || '—';
+          let locIcon = 'mdi:map-marker-outline';
+          let locColor = 'var(--text-secondary)';
+          const locLower = (u.location || '').toLowerCase();
+          if (locLower.includes('scrap') || u.status === 'Scrapped' || u.status === 'Disposed') {
+            locText = u.location || 'Scrap / Disposal Yard';
+            locIcon = 'mdi:delete-sweep';
+            locColor = '#64748b';
+          } else if (locLower.includes('transit') || u.status === 'InTransit') {
+            locText = u.location || 'In-Transit';
+            locIcon = 'mdi:truck-fast-outline';
+            locColor = '#d97706';
+          } else if (locLower.includes('airport') || locLower.includes('apt')) {
+            locText = u.location || 'Suvarnabhumi Airport';
+            locIcon = 'mdi:airplane-takeoff';
+            locColor = '#06b6d4';
+          } else if (locLower.includes('grg')) {
+            locText = u.location || 'GRG Bangkok Hub';
+            locIcon = 'mdi:cog-box';
+            locColor = '#0284c7';
+          } else if (locLower.includes('ratchaburana') || locLower.includes('wh-rat')) {
+            locText = u.location || 'Ratchaburana Warehouse';
+            locIcon = 'mdi:home-repair-service';
+            locColor = '#ea580c';
+          } else if (locLower.includes('dhl')) {
+            locText = u.location || 'DHL Center Bangkok';
+            locIcon = 'mdi:warehouse';
+            locColor = 'var(--green)';
+          }
+          locationHtml = `
+            <span style="color:var(--text-secondary); display:inline-flex; align-items:center; gap:5px;">
+              <iconify-icon icon="${locIcon}" width="16" style="color:${locColor};"></iconify-icon>
+              <span>${locText}</span>
+            </span>
+          `;
         }
 
         return `

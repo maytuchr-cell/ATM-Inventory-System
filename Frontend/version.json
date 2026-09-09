@@ -1,6 +1,6 @@
-{
-  "version": "v1.0.133",
-  "commit": "d1558c9744b9ce4cf87a860a85dedd1dba4368e5",
-  "branch": "NewForServer_NET8",
-  "buildTime": "2026-09-09 02:19:30"
+﻿{
+"version": "v1.0.134",
+"commit": "0d56f7c",
+"branch": "ForDailyReport_Boom",
+"buildTime": "2026-09-09 09:40:59"
 }

@@ -31,10 +31,12 @@ public class DailyReportControllerTests
         var part = new Part { PartNo = PartNo, PartName = "Test Part", IsActive = true };
         var mainWh = new Location { Code = "DHL-BKK", Name = "DHL Center Bangkok", LocationType = "DHL_CENTER", IsActive = true };
         var techLoc = new Location { Code = "OL-TECH", Name = "Technician Stock", LocationType = "OL_TECHNICIAN", IsActive = true };
+        var ratWh = new Location { Code = "WH-RAT", Name = "Ratchaburana Warehouse", LocationType = "RATCHABURANA", IsActive = true };
         context.Parts.Add(part);
-        context.Locations.AddRange(mainWh, techLoc);
+        context.Locations.AddRange(mainWh, techLoc, ratWh);
         context.SaveChanges();
         context.PartStocks.Add(new PartStock { PartId = part.Id, LocationId = mainWh.Id, GoodQty = 100, BadQty = 0 });
+        context.PartStocks.Add(new PartStock { PartId = part.Id, LocationId = ratWh.Id, GoodQty = 0, BadQty = 0, RepairQty = 0 });
         context.SaveChanges();
 
         var stock = new StockService(context);
@@ -407,7 +409,8 @@ public class DailyReportControllerTests
     private static IFormFile BuildMultiSheetReportFile(
         (string PartNo, string Serial, int Qty, string CaseNo, string FeName)[] outbound,
         (string PartNo, string Serial, int Qty)[] inboundNormal,
-        (string PartNo, int AvailQty, int MinQty)[] minStock)
+        (string PartNo, int AvailQty, int MinQty)[] minStock,
+        (string PartNo, string Serial, int Qty, string CaseNo, string CustSite)[]? outboundExport = null)
     {
         using var wb = new XLWorkbook();
 
@@ -430,6 +433,34 @@ public class DailyReportControllerTests
             wsOut.Cell(r, 6).Value = row.FeName;
             wsOut.Cell(r, 20).Value = row.CaseNo;
             r++;
+        }
+
+        // Outbound Orde Export sheet (sending defective items to repair center D1 Room Repair / WH-RAT)
+        if (outboundExport != null && outboundExport.Length > 0)
+        {
+            var wsExp = wb.Worksheets.Add("Outbound Orde Export");
+            wsExp.Cell(1, 1).Value = "No";
+            wsExp.Cell(1, 2).Value = "Part Number";
+            wsExp.Cell(1, 3).Value = "Part Description";
+            wsExp.Cell(1, 4).Value = "SERIAL_NUMBER";
+            wsExp.Cell(1, 5).Value = "QTY";
+            wsExp.Cell(1, 7).Value = "Customer site";
+            wsExp.Cell(1, 8).Value = "Address";
+            wsExp.Cell(1, 20).Value = "Case No";
+            wsExp.Cell(1, 26).Value = "Inventory Status";
+            int rExp = 2;
+            foreach (var row in outboundExport)
+            {
+                wsExp.Cell(rExp, 1).Value = rExp - 1;
+                wsExp.Cell(rExp, 2).Value = row.PartNo;
+                wsExp.Cell(rExp, 4).Value = row.Serial;
+                wsExp.Cell(rExp, 5).Value = row.Qty;
+                wsExp.Cell(rExp, 7).Value = row.CustSite;
+                wsExp.Cell(rExp, 8).Value = "SVOA ราษฎร์บูรณะ เลขที่ 131 ถนนราษฎร์บูรณะ";
+                wsExp.Cell(rExp, 20).Value = row.CaseNo;
+                wsExp.Cell(rExp, 26).Value = "BAD";
+                rExp++;
+            }
         }
 
         // Inbound normal sheet
@@ -476,6 +507,75 @@ public class DailyReportControllerTests
         wb.SaveAs(stream);
         stream.Position = 0;
         return new FormFile(stream, 0, stream.Length, "file", "daily-report-multi.xlsx") { Headers = new HeaderDictionary(), ContentType = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" };
+    }
+
+    [Fact]
+    public void Confirm_OutboundOrdeExport_MovesUnitLocationToRatchaburanaAndTransfersStock()
+    {
+        var (tickets, dailyReport, context, mainWh, _) = Create();
+        var part = context.Parts.First(p => p.PartNo == PartNo);
+        var ratWh = context.Locations.First(l => l.Code == "WH-RAT");
+
+        // Initial state: Unit is at DHL-BKK in InRepair
+        var unit = new PartUnit
+        {
+            PartId = part.Id,
+            SerialNo = "SN-EXP-01",
+            Status = "InRepair",
+            Condition = "Bad",
+            LocationId = mainWh.Id
+        };
+        context.PartUnits.Add(unit);
+        var mainStock = context.PartStocks.First(s => s.LocationId == mainWh.Id);
+        mainStock.RepairQty = 5;
+        var ratStock = context.PartStocks.First(s => s.LocationId == ratWh.Id);
+        ratStock.RepairQty = 0;
+        context.SaveChanges();
+
+        // DHL sends unit to D1 Room Repair (SVOA ราษฎร์บูรณะ)
+        var file = BuildMultiSheetReportFile(
+            outbound: Array.Empty<(string, string, int, string, string)>(),
+            inboundNormal: Array.Empty<(string, string, int)>(),
+            minStock: Array.Empty<(string, int, int)>(),
+            outboundExport: new[] { (PartNo, "SN-EXP-01", 1, "EXPORT-GRGLOT35-2026", "D1 Room Repair") }
+        );
+
+        var result = dailyReport.Confirm(file);
+        Assert.IsType<OkObjectResult>(result);
+
+        context.Entry(mainStock).Reload();
+        context.Entry(ratStock).Reload();
+        context.Entry(unit).Reload();
+
+        // 1. PartUnit location should move to WH-RAT (Ratchaburana Warehouse)
+        Assert.Equal(ratWh.Id, unit.LocationId);
+        Assert.Equal("InRepair", unit.Status);
+        Assert.Equal("Bad", unit.Condition);
+
+        // 2. Stock should transfer from DHL-BKK to WH-RAT
+        Assert.Equal(4, mainStock.RepairQty);
+        Assert.Equal(1, ratStock.RepairQty);
+
+        // 3. Complete the loop: Unit is repaired and returns in Inbound normal
+        var returnFile = BuildMultiSheetReportFile(
+            outbound: Array.Empty<(string, string, int, string, string)>(),
+            inboundNormal: new[] { (PartNo, "SN-EXP-01", 1) },
+            minStock: Array.Empty<(string, int, int)>()
+        );
+
+        var returnResult = dailyReport.Confirm(returnFile);
+        Assert.IsType<OkObjectResult>(returnResult);
+
+        context.Entry(mainStock).Reload();
+        context.Entry(ratStock).Reload();
+        context.Entry(unit).Reload();
+
+        // Repaired unit should be back at DHL-BKK in Good condition, RepairQty deducted from WH-RAT
+        Assert.Equal(mainWh.Id, unit.LocationId);
+        Assert.Equal("InStock", unit.Status);
+        Assert.Equal("Good", unit.Condition);
+        Assert.Equal(0, ratStock.RepairQty);
+        Assert.Equal(101, mainStock.GoodQty);
     }
 
     [Fact]
