@@ -807,11 +807,7 @@ public class DailyReportController : ControllerBase
             .ToList();
         var remainingWithdraw = openWithdrawLines.ToDictionary(l => l.TicketPartLineId, l => l.Quantity - l.ConfirmedQty);
 
-        var autoCreatedBatches = new Dictionary<string, (Ticket Ticket, WithdrawBatch Batch)>(StringComparer.OrdinalIgnoreCase);
-        var year = DateTime.Now.Year;
-        var slipPrefix = $"WD-{year}-";
-        int runningSlipCount = _context.WithdrawBatches.Count(b => b.WithdrawSlipNo != null && b.WithdrawSlipNo.StartsWith(slipPrefix));
-        var feContactsByName = _context.FeContacts.ToList().GroupBy(f => f.FeName.Trim(), StringComparer.OrdinalIgnoreCase).ToDictionary(g => g.Key, g => g.First(), StringComparer.OrdinalIgnoreCase);
+
 
         var serialStatusOverlay = new Dictionary<string, string>();
         var results = new List<RowResult>();
@@ -889,10 +885,15 @@ public class DailyReportController : ControllerBase
                     ? overlaid
                     : _context.PartUnits.FirstOrDefault(u => u.SerialNo == row.SerialNo)?.Status;
 
-            // If an Outbound item was already linked to an existing Ticket/WithdrawBatch, do not process again
+            // If an Outbound item was already linked to an existing Ticket/WithdrawBatch, or already issued/imported, do not process again
             var isAlreadyInTicket = !string.IsNullOrWhiteSpace(row.SerialNo)
-                ? _context.TicketPartLines.Any(l => l.SerialNo == row.SerialNo && l.LineType == "Withdraw")
-                : (!string.IsNullOrWhiteSpace(row.CaseNo) && _context.TicketPartLines.Any(l => l.Ticket != null && l.Ticket.ExternalTicketNo == row.CaseNo && l.PartNo == row.PartNo && l.LineType == "Withdraw"));
+                ? (_context.TicketPartLines.Any(l => l.SerialNo == row.SerialNo && l.LineType == "Withdraw")
+                   || currentUnitStatus == "Issued"
+                   || _context.DailyReportImportRows.Any(r => r.SerialNo == row.SerialNo && !r.Undone && (r.MatchType == "OutboundConfirmed" || r.MatchType == "OutboundUnmatched" || r.MatchType == "OutboundAutoTicket")))
+                : (!string.IsNullOrWhiteSpace(row.CaseNo) && (
+                    _context.TicketPartLines.Any(l => l.Ticket != null && l.Ticket.ExternalTicketNo == row.CaseNo && l.PartNo == row.PartNo && l.LineType == "Withdraw")
+                    || _context.DailyReportImportRows.Any(r => r.CaseNo == row.CaseNo && r.PartNo == row.PartNo && !r.Undone && (r.MatchType == "OutboundConfirmed" || r.MatchType == "OutboundUnmatched" || r.MatchType == "OutboundAutoTicket"))
+                ));
 
             if (isTechOutboundSheet && isAlreadyInTicket)
             {
@@ -1043,113 +1044,24 @@ public class DailyReportController : ControllerBase
                 }
                 else
                 {
-                    // UNMATCHED OUTBOUND — Auto-Create Ticket and WithdrawBatch
+                    // UNMATCHED OUTBOUND — Do NOT auto-create Ticket. Record as direct outbound stock movement.
                     if (!string.IsNullOrWhiteSpace(row.SerialNo))
                         serialStatusOverlay[row.SerialNo] = "Issued";
 
-                    var caseKey = string.IsNullOrWhiteSpace(row.CaseNo)
-                        ? $"AUTO-{DateTime.Now:yyyyMMdd}-{row.RowIndex}"
-                        : row.CaseNo.Trim();
-
-                    int? createdTicketId = null;
-                    int? createdBatchId = null;
-                    string? createdTicketNo = caseKey;
-
+                    unitId = null;
                     if (partsByNo.TryGetValue(row.PartNo, out var part))
                     {
                         if (commit)
                         {
-                            Ticket? ticket = null;
-                            WithdrawBatch? batch = null;
-
-                            if (autoCreatedBatches.TryGetValue(caseKey, out var tuple))
-                            {
-                                ticket = tuple.Ticket;
-                                batch = tuple.Batch;
-                            }
-                            else
-                            {
-                                ticket = _context.Tickets.Include(t => t.WithdrawBatches).FirstOrDefault(t => t.ExternalTicketNo == caseKey);
-                                var feName = !string.IsNullOrWhiteSpace(row.FeName) ? row.FeName.Trim() : "Technician";
-                                feContactsByName.TryGetValue(feName, out var feContact);
-
-                                if (ticket == null)
-                                {
-                                    ticket = new Ticket
-                                    {
-                                        ExternalTicketNo = caseKey,
-                                        TechName = feName,
-                                        TechEmail = "tech@atm.com",
-                                        TechDept = feContact?.FeId ?? "Central",
-                                        CreatedAt = row.TxDate ?? DateTime.Now,
-                                        UpdatedAt = DateTime.Now
-                                    };
-                                    _context.Tickets.Add(ticket);
-                                    _context.SaveChanges();
-                                }
-
-                                batch = ticket.WithdrawBatches.FirstOrDefault(b => b.Status == "เบิก" || b.Status == "เดินทาง");
-                                var hasReceived = row.FeReceiveDate.HasValue || isPriorToBaseline;
-                                var initialStatus = hasReceived ? "เบิก" : "เดินทาง";
-
-                                if (batch == null)
-                                {
-                                    runningSlipCount++;
-                                    batch = new WithdrawBatch
-                                    {
-                                        TicketId = ticket.TicketId,
-                                        Status = initialStatus,
-                                        WithdrawSlipNo = $"{slipPrefix}{runningSlipCount:D5}",
-                                        WithdrawAddress = feContact?.Address ?? row.ShippedFrom ?? "DHL Outbound",
-                                        FeId = feContact?.FeId,
-                                        WithdrawDate = row.TxDate ?? DateTime.Now,
-                                        EmailSentAt = initialStatus == "เดินทาง" ? (row.TxDate ?? DateTime.Now) : null,
-                                        ApproverName = "DHL Daily Report (Auto)",
-                                        ApprovedAt = row.TxDate ?? DateTime.Now,
-                                        CreatedAt = row.TxDate ?? DateTime.Now,
-                                        UpdatedAt = DateTime.Now
-                                    };
-                                    _context.WithdrawBatches.Add(batch);
-                                    _context.SaveChanges();
-                                }
-                                else if (batch.Status == "เดินทาง" && hasReceived)
-                                {
-                                    batch.Status = "เบิก";
-                                    batch.UpdatedAt = DateTime.Now;
-                                    _context.SaveChanges();
-                                }
-
-                                autoCreatedBatches[caseKey] = (ticket, batch);
-                            }
-
-                            createdTicketId = ticket.TicketId;
-                            createdBatchId = batch.WithdrawBatchId;
-                            createdTicketNo = ticket.ExternalTicketNo;
-
-                            // 2. Add Part Line
-                            var newLine = new TicketPartLine
-                            {
-                                TicketId = ticket.TicketId,
-                                WithdrawBatchId = batch.WithdrawBatchId,
-                                PartId = part.Id,
-                                PartNo = row.PartNo,
-                                Quantity = row.Qty,
-                                LineType = "Withdraw",
-                                SerialNo = row.SerialNo,
-                                ConfirmedQty = row.Qty
-                            };
-                            _context.TicketPartLines.Add(newLine);
-
-                            // 3. Adjust Stock: If prior to baseline (03 Sep), stock in DHL-BKK was already counted post-outbound.
+                            // Adjust Stock: If prior to baseline (03 Sep), stock in DHL-BKK was already counted post-outbound.
                             // So do not deduct DHL-BKK to avoid double-deducting baseline stock.
                             // Only deduct DHL-BKK if this is a new outbound occurring after baseline.
                             if (!isPriorToBaseline)
                             {
-                                _stock.AdjustStock(row.PartNo, mainWh?.Id ?? 0, -row.Qty, "Good", "Withdraw", "WithdrawBatch", batch.WithdrawBatchId.ToString(), userName, $"จ่ายออกจากคลังกลาง (Auto Ticket) SN {row.SerialNo}", serialNo: row.SerialNo);
+                                _stock.AdjustStock(row.PartNo, mainWh?.Id ?? 0, -row.Qty, "Good", "Withdraw", "DailyReportRow", row.RowIndex.ToString(), userName, $"จ่ายออกจากคลังกลาง (ไม่ผูกใบเบิก) SN {row.SerialNo}", serialNo: row.SerialNo);
                             }
-                            _stock.AdjustStock(row.PartNo, techLoc?.Id ?? 0, row.Qty, "Good", "Withdraw", "WithdrawBatch", batch.WithdrawBatchId.ToString(), userName, $"ส่งมอบให้ช่าง {row.FeName} (Auto Ticket) SN {row.SerialNo}", serialNo: row.SerialNo);
+                            _stock.AdjustStock(row.PartNo, techLoc?.Id ?? 0, row.Qty, "Good", "Withdraw", "DailyReportRow", row.RowIndex.ToString(), userName, $"ส่งมอบให้ช่าง {row.FeName} (ไม่ผูกใบเบิก) SN {row.SerialNo}", serialNo: row.SerialNo);
 
-                            // 4. Register PartUnit
                             if (!string.IsNullOrWhiteSpace(row.SerialNo))
                             {
                                 var unit = _context.PartUnits.FirstOrDefault(u => u.SerialNo == row.SerialNo);
@@ -1166,10 +1078,9 @@ public class DailyReportController : ControllerBase
                             _context.SaveChanges();
                         }
 
-                        summary.AutoCreatedTicketCount++;
                         var note = isPriorToBaseline
-                            ? $"สร้าง Ticket งาน #{caseKey} และใบเบิกให้อัตโนมัติ (ยอดยกมา 03 ก.ย. ช่าง {row.FeName ?? "Technician"}) — ไม่หักสต็อกคลังกลางซ้ำ"
-                            : $"สร้าง Ticket งาน #{caseKey} และใบเบิกให้อัตโนมัติ (ช่าง {row.FeName ?? "Technician"})";
+                            ? $"จ่ายออกก่อนวันตั้งต้น (3 ก.ย. ช่าง {row.FeName ?? "Technician"}) — ไม่หักสต็อกคลังกลางซ้ำ"
+                            : $"จ่ายออกจากคลัง DHL ให้ช่าง {row.FeName ?? "Technician"} (ตัดสต็อกโดยตรง ไม่เปิดใบเบิก)";
 
                         results.Add(new RowResult
                         {
@@ -1183,10 +1094,7 @@ public class DailyReportController : ControllerBase
                             Problem = row.Problem,
                             CaseNo = row.CaseNo,
                             FeName = row.FeName,
-                            MatchType = "OutboundAutoTicket",
-                            TicketId = createdTicketId,
-                            WithdrawBatchId = createdBatchId,
-                            ExternalTicketNo = createdTicketNo,
+                            MatchType = "OutboundUnmatched",
                             PartUnitId = unitId,
                             StockCredited = !isPriorToBaseline,
                             Note = note
@@ -1208,7 +1116,7 @@ public class DailyReportController : ControllerBase
                             CaseNo = row.CaseNo,
                             FeName = row.FeName,
                             MatchType = "OutboundUnmatched",
-                            Note = $"ไม่พบรหัสอะไหล่ {row.PartNo} ในระบบ — ไม่สามารถเปิดใบเบิกได้"
+                            Note = $"ไม่พบรหัสอะไหล่ {row.PartNo} ในระบบ — ข้ามการปรับสต็อก"
                         });
                     }
                 }
@@ -1562,7 +1470,7 @@ public class DailyReportController : ControllerBase
                 else
                 {
                     summary.StillInRepair++;
-                    results.Add(new RowResult { RowIndex = row.RowIndex, SourceSheet = row.SourceSheet, PartNo = row.PartNo, PartName = row.PartName, SerialNo = row.SerialNo, Qty = row.Qty, DhlStatus = row.Status, Problem = row.Problem, CaseNo = row.CaseNo, FeName = row.FeName, MatchType = "StillInRepair", Note = "ยังซ่อมไม่เสร็จ" });
+                    results.Add(new RowResult { RowIndex = row.RowIndex, SourceSheet = row.SourceSheet, PartNo = row.PartNo, PartName = row.PartName, SerialNo = row.SerialNo, Qty = row.Qty, DhlStatus = row.Status, Problem = row.Problem, CaseNo = row.CaseNo, FeName = row.FeName, MatchType = "StillInRepair", Note = "รับเข้าสต็อกซ่อม (เคสย้อนหลัง — อยู่ระหว่างการซ่อม)" });
                 }
                 continue;
             }
@@ -1580,7 +1488,7 @@ public class DailyReportController : ControllerBase
                 if (commit)
                 {
                     _stock.AdjustStock(row.PartNo, mainWh?.Id ?? 0, row.Qty, row.Status == "GOOD" ? "Good" : "Repair",
-                        "Return", "DailyReportRow", null, userName, $"รับเข้าจาก Daily Report — ไม่พบใบเบิก/คืนที่ตรงกัน SN {row.SerialNo}", serialNo: row.SerialNo);
+                        "Return", "DailyReportRow", null, userName, $"รับคืนเข้าสต็อกคลังกลาง (เคสย้อนหลัง) SN {row.SerialNo}", serialNo: row.SerialNo);
 
                     if (!string.IsNullOrWhiteSpace(row.SerialNo))
                     {
@@ -1600,13 +1508,13 @@ public class DailyReportController : ControllerBase
             }
 
             var unmatchedNote = matchedByReturnCaseNo
-                ? $"มี Case No. ({row.CaseNo}) แต่ไม่พบ Ticket ที่รอคืนอยู่ตรงกัน"
-                : "ไม่พบ Ticket ที่รอคืนอยู่สำหรับอะไหล่นี้";
+                ? $"รับคืนของเคส #{row.CaseNo} (เคสย้อนหลัง)"
+                : "รับคืนอะไหล่นอกรอบ (เคสย้อนหลัง)";
             unmatchedNote += !partExists
                 ? " — ไม่พบ Part No. นี้ในระบบ จึงเพิ่มสต็อกให้ไม่ได้"
                 : alreadyTracked
                     ? " — SN นี้เคยถูกบันทึกไว้แล้ว ไม่เพิ่มสต็อกซ้ำ"
-                    : (row.Status == "GOOD" ? " — เพิ่มเข้าสต็อกดีที่คลังกลางแล้ว (ยังไม่ผูกกับใบเบิก)" : " — เพิ่มเข้าสต็อกซ่อมที่คลังกลางแล้ว (ยังไม่ผูกกับใบเบิก)");
+                    : (row.Status == "GOOD" ? " — ปรับเข้าสต็อกดีที่คลังกลางเรียบร้อย" : " — ปรับเข้าสต็อกซ่อมที่คลังกลางเรียบร้อย");
             results.Add(new RowResult
             {
                 RowIndex = row.RowIndex,

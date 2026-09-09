@@ -182,13 +182,13 @@
                   <option value="">ทุกผลการจับคู่ (All Match Types)</option>
                   <option value="OutboundConfirmed">📤 จ่ายออกตามใบเบิก</option>
                   <option value="OutboundAutoTicket">✨ สร้างใบเบิกอัตโนมัติ</option>
-                  <option value="OutboundUnmatched">📤 จ่ายออก (ไม่พบใบเบิก)</option>
-                  <option value="ReturnConfirmed">✅ คืนสำเร็จ</option>
+                  <option value="OutboundUnmatched">📤 จ่ายออกนอกระบบ (ไม่ผูกใบเบิก)</option>
+                  <option value="ReturnConfirmed">✅ คืนสำเร็จ (ปิดใบเบิก)</option>
                   <option value="ExportRepair">🚚 ส่งไปศูนย์ซ่อม (D1 Room Repair)</option>
                   <option value="InboundRepaired">📥 รับเข้าอะไหล่ซ่อม</option>
                   <option value="RepairCompleted">🔧 ซ่อมเสร็จ</option>
-                  <option value="StillInRepair">⏳ ยังซ่อมไม่เสร็จ</option>
-                  <option value="Unmatched">⚠️ ยังไม่จับคู่</option>
+                  <option value="StillInRepair">⏳ อยู่ระหว่างการซ่อม (เคสย้อนหลัง)</option>
+                  <option value="Unmatched">📥 รับคืนเข้าสต็อก (เคสย้อนหลัง)</option>
                   <option value="PriorToBaseline">📌 ก่อนวันตั้งต้น (3 ก.ย.)</option>
                   <option value="AlreadyImported">🔁 เคยนำเข้าแล้ว</option>
                 </select>
@@ -476,13 +476,13 @@
     const MATCH_LABEL = {
       OutboundConfirmed:  '📤 จ่ายออกตามใบเบิก',
       OutboundAutoTicket: '✨ สร้างใบเบิกอัตโนมัติ',
-      OutboundUnmatched:  '📤 จ่ายออก (ไม่พบใบเบิก)',
-      ReturnConfirmed:   '✅ คืนสำเร็จ',
+      OutboundUnmatched:  '📤 จ่ายออกนอกระบบ (ไม่ผูกใบเบิก)',
+      ReturnConfirmed:   '✅ คืนสำเร็จ (ปิดใบเบิก)',
       ExportRepair:      '🚚 ส่งไปศูนย์ซ่อม (D1 Room Repair)',
       RepairCompleted:   '🔧 ซ่อมเสร็จ',
-      StillInRepair:     '⏳ ยังซ่อมไม่เสร็จ',
+      StillInRepair:     '⏳ อยู่ระหว่างการซ่อม (เคสย้อนหลัง)',
       InboundRepaired:   '📥 รับเข้าอะไหล่ซ่อม',
-      Unmatched:         '⚠️ ยังไม่จับคู่',
+      Unmatched:         '📥 รับคืนเข้าสต็อก (เคสย้อนหลัง)',
       PriorToBaseline:   '📌 ก่อนวันตั้งต้น (3 ก.ย.)',
       AlreadyImported:   '🔁 เคยนำเข้าแล้ว'
     };

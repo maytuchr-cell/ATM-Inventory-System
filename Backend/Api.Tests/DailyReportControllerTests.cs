@@ -673,7 +673,7 @@ public class DailyReportControllerTests
     }
 
     [Fact]
-    public void Confirm_OutboundOrder_UnmatchedTicket_AutoCreatesTicketAndBatchAndStockMovement()
+    public void Confirm_OutboundOrder_UnmatchedTicket_DirectDeductsStock_WithoutCreatingTicket()
     {
         var (tickets, dailyReport, context, mainWh, techLoc) = Create();
         context.FeContacts.Add(new FeContact { FeName = "Tech Somchai", FeId = "FE-007", Address = "Site 123" });
@@ -686,23 +686,10 @@ public class DailyReportControllerTests
         var result = dailyReport.Confirm(file);
         Assert.IsType<OkObjectResult>(result);
 
-        // Verify Ticket created
-        var autoTicket = context.Tickets.FirstOrDefault(t => t.ExternalTicketNo == "CASE-NEW-999");
-        Assert.NotNull(autoTicket);
-        Assert.Equal("Tech Somchai", autoTicket.TechName);
-
-        // Verify WithdrawBatch created (starts in เดินทาง if FE Receive Date is not yet filled)
-        var autoBatch = context.WithdrawBatches.FirstOrDefault(b => b.TicketId == autoTicket.TicketId);
-        Assert.NotNull(autoBatch);
-        Assert.Equal("เดินทาง", autoBatch.Status);
-        Assert.Equal("Site 123", autoBatch.WithdrawAddress);
-        Assert.StartsWith("WD-", autoBatch.WithdrawSlipNo ?? "");
-
-        // Verify PartLine
-        var partLine = context.TicketPartLines.FirstOrDefault(l => l.WithdrawBatchId == autoBatch.WithdrawBatchId);
-        Assert.NotNull(partLine);
-        Assert.Equal("SN-AUTO-01", partLine.SerialNo);
-        Assert.Equal(1, partLine.ConfirmedQty);
+        // Verify NO Ticket created
+        Assert.Empty(context.Tickets);
+        Assert.Empty(context.WithdrawBatches);
+        Assert.Empty(context.TicketPartLines);
 
         // Verify Stock adjustments
         var finalMainStock = context.PartStocks.First(s => s.LocationId == mainWh.Id).GoodQty;
@@ -743,7 +730,7 @@ public class DailyReportControllerTests
     }
 
     [Fact]
-    public void Confirm_OutboundOrder_MultipleRowsSameCaseNo_ReusesSameTicketAndBatch()
+    public void Confirm_OutboundOrder_MultipleRowsSameCaseNo_ProcessesAllRowsDirectly_WithoutCreatingTicket()
     {
         var (tickets, dailyReport, context, mainWh, techLoc) = Create();
         var part2 = new Part { PartNo = "DR-TEST-PART2", PartName = "Part 2", IsActive = true };
@@ -762,18 +749,9 @@ public class DailyReportControllerTests
         var result = dailyReport.Confirm(file);
         Assert.IsType<OkObjectResult>(result);
 
-        // Only ONE ticket should be created for CASE-SHARED-101
-        var matchingTickets = context.Tickets.Where(t => t.ExternalTicketNo == "CASE-SHARED-101").ToList();
-        Assert.Single(matchingTickets);
-
-        // Only ONE withdraw batch under that ticket
-        var batches = context.WithdrawBatches.Where(b => b.TicketId == matchingTickets[0].TicketId).ToList();
-        Assert.Single(batches);
-        Assert.True(batches[0].Status == "เบิก" || batches[0].Status == "เดินทาง");
-
-        // Two part lines under this batch
-        var lines = context.TicketPartLines.Where(l => l.WithdrawBatchId == batches[0].WithdrawBatchId).ToList();
-        Assert.Equal(2, lines.Count);
+        // No ticket should be created
+        Assert.Empty(context.Tickets);
+        Assert.Empty(context.WithdrawBatches);
 
         // Both stocks deducted
         var finalStock1 = context.PartStocks.First(s => s.LocationId == mainWh.Id && s.PartId == part1.Id).GoodQty;
@@ -791,7 +769,7 @@ public class DailyReportControllerTests
     }
 
     [Fact]
-    public void Confirm_OutboundOrder_BlankCaseNo_GeneratesAutoTicketNumber()
+    public void Confirm_OutboundOrder_DirectIssue_DeductsStockAndRegistersIssued()
     {
         var (tickets, dailyReport, context, mainWh, techLoc) = Create();
         var initialMainStock = context.PartStocks.First(s => s.LocationId == mainWh.Id).GoodQty;
@@ -804,8 +782,8 @@ public class DailyReportControllerTests
         Assert.NotNull(unit);
         Assert.Equal("Issued", unit.Status);
 
-        var autoTicket = context.Tickets.FirstOrDefault(t => t.ExternalTicketNo.StartsWith("AUTO-"));
-        Assert.NotNull(autoTicket);
+        // No dummy ticket is created
+        Assert.Empty(context.Tickets);
 
         var finalMainStock = context.PartStocks.First(s => s.LocationId == mainWh.Id).GoodQty;
         Assert.Equal(initialMainStock - 1, finalMainStock);
@@ -851,7 +829,7 @@ public class DailyReportControllerTests
 
         var rows = (List<DailyReportController.RowResult>)ok.Value!.GetType().GetProperty("rows")!.GetValue(ok.Value)!;
         Assert.Single(rows);
-        Assert.Equal("OutboundAutoTicket", rows[0].MatchType);
+        Assert.Equal("OutboundUnmatched", rows[0].MatchType);
 
         // Stock count must NOT change in main warehouse (exempt from double deduction)
         var finalMainStock = context.PartStocks.First(s => s.LocationId == mainWh.Id).GoodQty;
@@ -863,9 +841,8 @@ public class DailyReportControllerTests
         Assert.Equal("Issued", unit.Status);
         Assert.Equal(techLoc.Id, unit.LocationId);
 
-        // Ticket and WithdrawBatch are created
-        var ticket = context.Tickets.FirstOrDefault(t => t.ExternalTicketNo == "CASE-OLD-01");
-        Assert.NotNull(ticket);
+        // No dummy ticket is created
+        Assert.Empty(context.Tickets);
     }
 
     private class FakeEnv : IWebHostEnvironment
