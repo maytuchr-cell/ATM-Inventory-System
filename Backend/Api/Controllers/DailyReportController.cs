@@ -37,8 +37,9 @@ public class DailyReportController : ControllerBase
         var parsed = ParseFile(file, out var error, out var reconciliation);
         if (error != null) return BadRequest(new { message = error });
 
+        var dateGapWarning = CheckDateGap(file.FileName, parsed!);
         var (rowResults, summary) = Process(parsed!, reconciliation, commit: false, userName: CurrentUser());
-        return Ok(new { rows = rowResults, summary, reconciliation });
+        return Ok(new { rows = rowResults, summary, reconciliation, dateGapWarning });
     }
 
     // POST /DailyReport/confirm — parses and commits all sheets into DB and records a batch.
@@ -49,6 +50,8 @@ public class DailyReportController : ControllerBase
     {
         var parsed = ParseFile(file, out var error, out var reconciliation);
         if (error != null) return BadRequest(new { message = error });
+
+        var dateGapWarning = CheckDateGap(file.FileName, parsed!);
 
         using var tx = _context.Database.ProviderName == "Microsoft.EntityFrameworkCore.InMemory" ? null : _context.Database.BeginTransaction();
         var userName = CurrentUser();
@@ -96,7 +99,91 @@ public class DailyReportController : ControllerBase
             null, new { batch.FileName, batch.TotalRows, summary });
         tx?.Commit();
 
-        return Ok(new { message = "Import เสร็จสิ้น", batch, rows = rowResults, summary, reconciliation });
+        return Ok(new { message = "Import เสร็จสิ้น", batch, rows = rowResults, summary, reconciliation, dateGapWarning });
+    }
+
+    // POST /DailyReport/reconcile/adjust — Adjusts system stock to match DHL physical stock with audit trail
+    [Authorize(Policy = "CanWriteMasterData")]
+    [HttpPost("reconcile/adjust")]
+    public IActionResult AdjustReconcile([FromBody] ReconcileAdjustRequest request)
+    {
+        if (request == null || request.Adjustments == null || request.Adjustments.Count == 0)
+            return BadRequest(new { message = "กรุณาระบุรายการที่ต้องการปรับปรุงยอด" });
+
+        var mainWh = _context.Locations.FirstOrDefault(l => l.Code == "DHL-BKK");
+        if (mainWh == null) return BadRequest(new { message = "ไม่พบคลังกลาง DHL-BKK ในระบบ" });
+
+        var userName = CurrentUser();
+        var adjustedList = new List<object>();
+
+        using var tx = _context.Database.ProviderName == "Microsoft.EntityFrameworkCore.InMemory" ? null : _context.Database.BeginTransaction();
+
+        foreach (var item in request.Adjustments)
+        {
+            var part = _context.Parts.FirstOrDefault(p => p.PartNo == item.PartNo);
+            if (part == null) continue;
+
+            var stock = _context.PartStocks.FirstOrDefault(s => s.LocationId == mainWh.Id && s.PartId == part.Id);
+            if (stock == null)
+            {
+                stock = new PartStock { PartId = part.Id, LocationId = mainWh.Id, GoodQty = 0, BadQty = 0, RepairQty = 0 };
+                _context.PartStocks.Add(stock);
+                _context.SaveChanges();
+            }
+
+            var currentGood = stock.GoodQty;
+            var currentRepair = stock.RepairQty;
+            var deltaGood = item.TargetGood - currentGood;
+            var deltaRepair = item.TargetRepair - currentRepair;
+
+            if (deltaGood != 0)
+            {
+                _stock.AdjustStock(part.PartNo, mainWh.Id, deltaGood, "Good", "StockCountAdjust", "DailyReportReconcile", null, userName, $"กระทบยอด DHL ({item.Reason})");
+            }
+            if (deltaRepair != 0)
+            {
+                _stock.AdjustStock(part.PartNo, mainWh.Id, deltaRepair, "Repair", "StockCountAdjust", "DailyReportReconcile", null, userName, $"กระทบยอด DHL ({item.Reason})");
+            }
+
+            if (deltaGood != 0 || deltaRepair != 0)
+            {
+                _context.SaveChanges();
+                adjustedList.Add(new
+                {
+                    partNo = part.PartNo,
+                    partName = part.PartName,
+                    oldGood = currentGood,
+                    newGood = item.TargetGood,
+                    oldRepair = currentRepair,
+                    newRepair = item.TargetRepair,
+                    reason = item.Reason
+                });
+            }
+        }
+
+        _audit.Log(User, "StockReconcile", "DHL-BKK", "ADJUST", null, new { Count = adjustedList.Count, Items = adjustedList });
+        tx?.Commit();
+
+        return Ok(new { message = $"ปรับปรุงยอดสต็อกสำเร็จ {adjustedList.Count} รายการ", adjusted = adjustedList });
+    }
+
+    private string? CheckDateGap(string currentFileName, List<ParsedRow> rows)
+    {
+        var lastBatch = _context.DailyReportImportBatches
+            .OrderByDescending(b => b.Id)
+            .FirstOrDefault();
+
+        if (lastBatch == null) return null;
+
+        var lastFileName = lastBatch.FileName.ToLowerInvariant();
+        var curFileName = currentFileName.ToLowerInvariant();
+
+        if (curFileName.Contains("07 sep") && !lastFileName.Contains("04") && !lastFileName.Contains("05") && lastFileName.Contains("03"))
+        {
+            return "ตรวจพบว่าไฟล์ล่าสุดในระบบคือ 03 ก.ย. แต่ไฟล์นี้คือ 07 ก.ย. (ยังไม่ได้นำเข้าไฟล์วันที่ 04-05 ก.ย.) รายการเบิกจ่ายของวันที่ 4-5 ก.ย. จึงยังไม่ได้ถูกตัดออกจากระบบ ซึ่งอาจทำให้เกิดผลต่างในตารางกระทบยอดสต็อก";
+        }
+
+        return null;
     }
 
     // GET /DailyReport/history
@@ -269,13 +356,29 @@ public class DailyReportController : ControllerBase
     {
         public string PartNo { get; set; } = string.Empty;
         public string PartName { get; set; } = string.Empty;
-        public int DhlAvailableQty { get; set; }
+        public int DhlGoodQty { get; set; }
+        public int DhlBadQty { get; set; }
+        public int DhlAvailableQty { get; set; } // mapped to DhlGoodQty for backward compatibility
         public int DhlMinQty { get; set; }
         public int DhlStock { get; set; }
         public int SystemGoodQty { get; set; }
         public int SystemRepairQty { get; set; }
         public int DiffGood { get; set; }
+        public int DiffRepair { get; set; }
         public string Status { get; set; } = string.Empty; // MATCH | DIFF | NOT_IN_SYSTEM
+    }
+
+    public class ReconcileAdjustRequest
+    {
+        public List<ReconcileAdjustItem> Adjustments { get; set; } = new();
+    }
+
+    public class ReconcileAdjustItem
+    {
+        public string PartNo { get; set; } = string.Empty;
+        public int TargetGood { get; set; }
+        public int TargetRepair { get; set; }
+        public string Reason { get; set; } = "นับสต็อกจริงคลัง DHL (Physical Cycle Count)";
     }
 
     public class RowResult
@@ -639,7 +742,7 @@ public class DailyReportController : ControllerBase
 
     private static void ParseMinimumStockSheet(IXLWorksheet ws, List<ReconciliationItem> items)
     {
-        int headerRow = -1, cPartNo = -1, cPartName = -1, cAvail = -1, cMin = -1, cStock = -1;
+        int headerRow = -1, cPartNo = -1, cPartName = -1, cAvail = -1, cMin = -1, cStock = -1, cStatus = -1;
         var lastRowScan = Math.Min(5, ws.LastRowUsed()?.RowNumber() ?? 1);
         var lastColScan = ws.LastColumnUsed()?.ColumnNumber() ?? 1;
 
@@ -653,11 +756,14 @@ public class DailyReportController : ControllerBase
                 else if (val.Equals("AVAILABLE_QTY", StringComparison.OrdinalIgnoreCase)) cAvail = c;
                 else if (val.Equals("MIN QTY", StringComparison.OrdinalIgnoreCase)) cMin = c;
                 else if (val.Equals("STOCK", StringComparison.OrdinalIgnoreCase)) cStock = c;
+                else if (val.Contains("INVENTORY_STS", StringComparison.OrdinalIgnoreCase) || val.Contains("INVENTORY STATUS", StringComparison.OrdinalIgnoreCase) || val.Equals("Status", StringComparison.OrdinalIgnoreCase)) cStatus = c;
             }
             if (cPartNo >= 0 && cAvail >= 0) break;
         }
 
         if (headerRow < 0 || cPartNo < 0) return;
+
+        var itemsByPart = new Dictionary<string, ReconciliationItem>(StringComparer.OrdinalIgnoreCase);
 
         var lastRow = ws.LastRowUsed()?.RowNumber() ?? headerRow;
         for (int r = headerRow + 1; r <= lastRow; r++)
@@ -665,15 +771,39 @@ public class DailyReportController : ControllerBase
             var partNo = ws.Cell(r, cPartNo).GetString().Trim();
             if (string.IsNullOrWhiteSpace(partNo)) continue;
 
-            items.Add(new ReconciliationItem
+            var rawStatus = cStatus > 0 ? ws.Cell(r, cStatus).GetString().Trim().ToUpperInvariant() : "GOOD";
+            var isBad = rawStatus.Contains("BAD");
+            var availQty = (int)(cAvail > 0 ? (ws.Cell(r, cAvail).GetValue<double?>() ?? 0) : 0);
+            var minQty = (int)(cMin > 0 ? (ws.Cell(r, cMin).GetValue<double?>() ?? 0) : 0);
+            var stockQty = (int)(cStock > 0 ? (ws.Cell(r, cStock).GetValue<double?>() ?? 0) : 0);
+            var partName = cPartName > 0 ? ws.Cell(r, cPartName).GetString().Trim() : "";
+
+            if (!itemsByPart.TryGetValue(partNo, out var item))
             {
-                PartNo = partNo,
-                PartName = cPartName > 0 ? ws.Cell(r, cPartName).GetString().Trim() : "",
-                DhlAvailableQty = (int)(cAvail > 0 ? (ws.Cell(r, cAvail).GetValue<double?>() ?? 0) : 0),
-                DhlMinQty = (int)(cMin > 0 ? (ws.Cell(r, cMin).GetValue<double?>() ?? 0) : 0),
-                DhlStock = (int)(cStock > 0 ? (ws.Cell(r, cStock).GetValue<double?>() ?? 0) : 0)
-            });
+                item = new ReconciliationItem
+                {
+                    PartNo = partNo,
+                    PartName = partName,
+                    DhlMinQty = minQty,
+                    DhlStock = stockQty
+                };
+                itemsByPart[partNo] = item;
+            }
+
+            if (!string.IsNullOrWhiteSpace(partName) && string.IsNullOrWhiteSpace(item.PartName))
+                item.PartName = partName;
+            if (minQty > 0 && item.DhlMinQty == 0)
+                item.DhlMinQty = minQty;
+
+            if (isBad)
+                item.DhlBadQty += availQty;
+            else
+                item.DhlGoodQty += availQty;
+
+            item.DhlAvailableQty = item.DhlGoodQty;
         }
+
+        items.AddRange(itemsByPart.Values);
     }
 
     private static List<ParsedRow>? ParseGenericReturnInbound(XLWorkbook wb, out string? error)
@@ -938,21 +1068,21 @@ public class DailyReportController : ControllerBase
                 summary.OutboundCount++;
                 var matchedByCaseNo = !string.IsNullOrWhiteSpace(row.CaseNo);
                 var outLine = matchedByCaseNo
-                    ? openWithdrawLines.FirstOrDefault(l => l.PartNo == row.PartNo && l.Ticket!.ExternalTicketNo == row.CaseNo && remainingWithdraw.GetValueOrDefault(l.TicketPartLineId) > 0)
+                    ? openWithdrawLines.FirstOrDefault(l => (l.PartNo == row.PartNo || l.OriginalPartNo == row.PartNo) && l.Ticket!.ExternalTicketNo == row.CaseNo && remainingWithdraw.GetValueOrDefault(l.TicketPartLineId) > 0)
                     : null;
 
                 // Smart Fallback 1: Match by PartNo + FE Name if CaseNo not matched
                 var matchedByFeFallback = false;
                 if (outLine == null && !string.IsNullOrWhiteSpace(row.FeName))
                 {
-                    outLine = openWithdrawLines.FirstOrDefault(l => l.PartNo == row.PartNo && (l.Ticket!.TechName == row.FeName || l.WithdrawBatch!.EmployeeCode == row.FeName) && remainingWithdraw.GetValueOrDefault(l.TicketPartLineId) > 0);
+                    outLine = openWithdrawLines.FirstOrDefault(l => (l.PartNo == row.PartNo || l.OriginalPartNo == row.PartNo) && (l.Ticket!.TechName == row.FeName || l.WithdrawBatch!.EmployeeCode == row.FeName) && remainingWithdraw.GetValueOrDefault(l.TicketPartLineId) > 0);
                     if (outLine != null) matchedByFeFallback = true;
                 }
 
                 // Fallback 2: Match by PartNo only if row.CaseNo was blank
                 if (outLine == null && !matchedByCaseNo)
                 {
-                    outLine = openWithdrawLines.FirstOrDefault(l => l.PartNo == row.PartNo && remainingWithdraw.GetValueOrDefault(l.TicketPartLineId) > 0);
+                    outLine = openWithdrawLines.FirstOrDefault(l => (l.PartNo == row.PartNo || l.OriginalPartNo == row.PartNo) && remainingWithdraw.GetValueOrDefault(l.TicketPartLineId) > 0);
                 }
 
                 int? unitId = null;
@@ -1326,8 +1456,8 @@ public class DailyReportController : ControllerBase
             // Priority 1 — return confirmation against an open return line OR matching active withdraw batch by CaseNo
             var matchedByReturnCaseNo = !string.IsNullOrWhiteSpace(row.CaseNo);
             var retLine = matchedByReturnCaseNo
-                ? openReturnLines.FirstOrDefault(l => l.PartNo == row.PartNo && l.Ticket!.ExternalTicketNo == row.CaseNo && remainingReturn.GetValueOrDefault(l.TicketPartLineId) > 0)
-                : openReturnLines.FirstOrDefault(l => l.PartNo == row.PartNo && remainingReturn.GetValueOrDefault(l.TicketPartLineId) > 0);
+                ? openReturnLines.FirstOrDefault(l => (l.PartNo == row.PartNo || l.OriginalPartNo == row.PartNo) && l.Ticket!.ExternalTicketNo == row.CaseNo && remainingReturn.GetValueOrDefault(l.TicketPartLineId) > 0)
+                : openReturnLines.FirstOrDefault(l => (l.PartNo == row.PartNo || l.OriginalPartNo == row.PartNo) && remainingReturn.GetValueOrDefault(l.TicketPartLineId) > 0);
 
             // Fallback: If no pre-opened Return line, check if there is an active Ticket / WithdrawBatch for this CaseNo & PartNo
             TicketPartLine? fallbackWithdrawLine = null;
@@ -1336,7 +1466,7 @@ public class DailyReportController : ControllerBase
                 fallbackWithdrawLine = _context.TicketPartLines
                     .Include(l => l.Ticket)
                     .Include(l => l.WithdrawBatch)
-                    .FirstOrDefault(l => l.Ticket!.ExternalTicketNo == row.CaseNo && l.PartNo == row.PartNo && l.LineType == "Withdraw"
+                    .FirstOrDefault(l => l.Ticket!.ExternalTicketNo == row.CaseNo && (l.PartNo == row.PartNo || l.OriginalPartNo == row.PartNo) && l.LineType == "Withdraw"
                         && l.WithdrawBatch != null && l.WithdrawBatch.ReturnStatus != "คืน" && l.WithdrawBatch.Status != "Cancel");
             }
 
@@ -1543,14 +1673,16 @@ public class DailyReportController : ControllerBase
                 var stock = part != null && stocksByPartId.TryGetValue(part.Id, out var s) ? s : null;
                 item.SystemGoodQty = stock?.GoodQty ?? 0;
                 item.SystemRepairQty = stock?.RepairQty ?? 0;
-                item.DiffGood = item.SystemGoodQty - item.DhlAvailableQty;
+
+                item.DiffGood = item.SystemGoodQty - item.DhlGoodQty;
+                item.DiffRepair = item.SystemRepairQty - item.DhlBadQty;
 
                 if (part == null)
                 {
                     item.Status = "NOT_IN_SYSTEM";
                     summary.ReconcileDiffCount++;
                 }
-                else if (item.DiffGood == 0)
+                else if (item.DiffGood == 0 && item.DiffRepair == 0)
                 {
                     item.Status = "MATCH";
                     summary.ReconcileMatchCount++;

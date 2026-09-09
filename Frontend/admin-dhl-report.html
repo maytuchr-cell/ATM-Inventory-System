@@ -6,7 +6,7 @@
   <title>Daily Report — ATM Inventory</title>
   <link rel="stylesheet" href="shared/styles.css?v=81">
   <style>
-    .dr-stats { display:grid; grid-template-columns:repeat(6, 1fr); gap:10px; margin:14px 0 18px; }
+    .dr-stats { display:grid; grid-template-columns:repeat(5, 1fr); gap:10px; margin:14px 0 18px; }
     @media (max-width: 1024px) {
       .dr-stats { grid-template-columns:repeat(3, 1fr); }
     }
@@ -58,6 +58,9 @@
     .badge-diff { background:#fee2e2; color:#b91c1c; padding:2px 8px; border-radius:12px; font-weight:700; font-size:11px; }
     .badge-match { background:#dcfce7; color:#15803d; padding:2px 8px; border-radius:12px; font-weight:700; font-size:11px; }
     .badge-missing { background:#fef3c7; color:#b45309; padding:2px 8px; border-radius:12px; font-weight:700; font-size:11px; }
+    .badge-good { background:#dcfce7; color:#15803d; padding:2px 7px; border-radius:10px; font-weight:700; font-size:11px; display:inline-block; }
+    .badge-bad { background:#fee2e2; color:#b91c1c; padding:2px 7px; border-radius:10px; font-weight:700; font-size:11px; display:inline-block; }
+    .badge-none { background:#f1f5f9; color:#64748b; padding:2px 7px; border-radius:10px; font-weight:600; font-size:11px; display:inline-block; }
 
     .dr-filter-bar {
       display: flex;
@@ -95,6 +98,27 @@
       width: auto;
       min-width: 180px;
     }
+
+    /* Sticky table headers with 100% opaque solid background so rows won't bleed through on scroll */
+    .tbl-wrap thead th {
+      position: sticky;
+      top: 0;
+      z-index: 10;
+      background-color: var(--bg-card, #ffffff) !important;
+      box-shadow: 0 1px 0 var(--border);
+    }
+    .th-good {
+      text-align: right !important;
+      color: var(--green, #16a34a) !important;
+      background-color: var(--bg-card, #ffffff) !important;
+      background-image: linear-gradient(rgba(34, 197, 94, 0.08), rgba(34, 197, 94, 0.08)) !important;
+    }
+    .th-repair {
+      text-align: right !important;
+      color: var(--orange, #ea580c) !important;
+      background-color: var(--bg-card, #ffffff) !important;
+      background-image: linear-gradient(rgba(234, 88, 12, 0.08), rgba(234, 88, 12, 0.08)) !important;
+    }
   </style>
 </head>
 <body>
@@ -104,7 +128,7 @@
       <div class="topbar">
         <div>
           <div class="topbar-title">รายงานประจำวัน DHL (Daily Report)</div>
-          <div class="topbar-sub">นำเข้าไฟล์ Daily Report — ประมวลผล จ่ายออก (Outbound), รับคืน (Return), ซ่อมเสร็จ (Inbound Normal) และกระทบยอดสต็อก (Minimum Stock)</div>
+          <div class="topbar-sub">นำเข้าไฟล์ Daily Report — ประมวลผลส่งมอบอะไหล่ (Outbound), รับคืน (Return) และซ่อมเสร็จ (Inbound Normal)</div>
         </div>
       </div>
 
@@ -129,11 +153,20 @@
             </div>
 
             <div id="dr-preview-section" style="display:none;">
-              <!-- Summary Statistics Cards -->
-              <div class="dr-stats">
-                <div class="dr-stat outbound" onclick="filterSheet('OUTBOUND')" title="คลิกเพื่อดูกลุ่มจ่ายออก">
+              <!-- Date Gap Warning Banner -->
+              <div id="dr-date-gap-banner" style="display:none;margin-bottom:16px;padding:12px 16px;background:#fffbeb;border:1px solid #fde68a;border-radius:8px;color:#92400e;font-size:13px;align-items:flex-start;gap:10px;">
+                <iconify-icon icon="mdi:alert-outline" width="20" style="color:#d97706;flex-shrink:0;margin-top:2px;"></iconify-icon>
+                <div>
+                  <div style="font-weight:700;margin-bottom:2px;">คำเตือน: ตรวจพบช่วงวันขาดตอน (Date Sequence Gap)</div>
+                  <div id="dr-date-gap-msg"></div>
+                </div>
+              </div>
+
+              <!-- Summary Statistics Cards (5 cards) -->
+              <div class="dr-stats" style="grid-template-columns:repeat(auto-fit, minmax(160px, 1fr));">
+                <div class="dr-stat outbound" onclick="filterSheet('OUTBOUND')" title="คลิกเพื่อดูกลุ่มส่งมอบอะไหล่">
                   <div class="dr-stat-num" id="stat-outbound">0</div>
-                  <div class="dr-stat-label">จ่ายออก Outbound</div>
+                  <div class="dr-stat-label">ส่งมอบอะไหล่ (Outbound)</div>
                   <div class="dr-stat-sub" id="stat-outbound-sub">—</div>
                 </div>
                 <div class="dr-stat good" onclick="filterSheet('RETURN')" title="คลิกเพื่อดูกลุ่มรับคืน">
@@ -146,19 +179,14 @@
                   <div class="dr-stat-label">รับเข้า Inbound Normal</div>
                   <div class="dr-stat-sub" id="stat-inbound-sub">—</div>
                 </div>
-                <div class="dr-stat prior" onclick="filterSheet('PRIOR')" title="คลิกเพื่อดูรายการก่อนวันตั้งต้น">
-                  <div class="dr-stat-num" id="stat-prior">0</div>
-                  <div class="dr-stat-label">ก่อนวันตั้งต้น (3 ก.ย.)</div>
-                  <div class="dr-stat-sub" id="stat-prior-sub">บันทึก S/N (ไม่ปรับสต็อกซ้ำ)</div>
-                </div>
                 <div class="dr-stat warn" onclick="filterSheet('NEW')" title="คลิกเพื่อดูรายการใหม่รอปรับสต็อก">
                   <div class="dr-stat-num" id="stat-new">0</div>
-                  <div class="dr-stat-label">รายการใหม่รอปรับสต็อก</div>
-                  <div class="dr-stat-sub" id="stat-new-sub">—</div>
+                  <div class="dr-stat-label">⚡ รวมรายการใหม่ปรับสต็อก</div>
+                  <div class="dr-stat-sub" id="stat-new-sub">ตัด/เพิ่มสต็อกคลังจริง</div>
                 </div>
-                <div class="dr-stat reconcile" onclick="filterSheet('RECONCILE')" title="คลิกเพื่อดูการกระทบยอด Minimum Stock">
+                <div class="dr-stat reconcile" onclick="filterSheet('RECONCILE')" title="คลิกเพื่อดูกระทบยอด Minimum Stock">
                   <div class="dr-stat-num" id="stat-reconcile">0 / 0</div>
-                  <div class="dr-stat-label">กระทบยอด (ตรง / ต่าง)</div>
+                  <div class="dr-stat-label">🔍 กระทบยอด (ตรง / ต่าง)</div>
                   <div class="dr-stat-sub" id="stat-reconcile-sub">Minimum Stock</div>
                 </div>
               </div>
@@ -166,23 +194,22 @@
               <!-- Sheet Filter Tabs -->
               <div class="dr-subtabs">
                 <button class="dr-subtab active" id="filter-all" onclick="filterSheet('ALL')">ทั้งหมด (<span id="count-all">0</span>)</button>
-                <button class="dr-subtab" id="filter-outbound" onclick="filterSheet('OUTBOUND')">จ่ายออก Outbound (<span id="count-outbound">0</span>)</button>
-                <button class="dr-subtab" id="filter-return" onclick="filterSheet('RETURN')">รับคืน Return Inbound (<span id="count-return">0</span>)</button>
-                <button class="dr-subtab" id="filter-inbound" onclick="filterSheet('INBOUND')">รับเข้าซ่อม Inbound Normal (<span id="count-inbound">0</span>)</button>
+                <button class="dr-subtab" id="filter-outbound" onclick="filterSheet('OUTBOUND')">📤 ส่งมอบอะไหล่ Outbound (<span id="count-outbound">0</span>)</button>
+                <button class="dr-subtab" id="filter-return" onclick="filterSheet('RETURN')">📥 รับคืน Return Inbound (<span id="count-return">0</span>)</button>
+                <button class="dr-subtab" id="filter-inbound" onclick="filterSheet('INBOUND')">🔧 รับเข้าซ่อม Inbound Normal (<span id="count-inbound">0</span>)</button>
                 <button class="dr-subtab" id="filter-new" onclick="filterSheet('NEW')">⚡ รายการใหม่รอปรับสต็อก (<span id="count-new">0</span>)</button>
-                <button class="dr-subtab" id="filter-prior" onclick="filterSheet('PRIOR')">📌 ก่อนวันตั้งต้น (<span id="count-prior">0</span>)</button>
                 <button class="dr-subtab" id="filter-reconcile" onclick="filterSheet('RECONCILE')">🔍 ตรวจสอบสต็อก Minimum Stock (<span id="count-reconcile">0</span>)</button>
               </div>
 
-              <!-- Filter Toolbar for Preview & Reconciliation -->
+              <!-- Filter Toolbar for Preview -->
               <div class="dr-filter-bar" id="preview-filter-bar">
                 <input id="dr-search-input" type="text" class="dr-filter-input" placeholder="🔍 ค้นหา Part No, S/N, ช่าง, เลขเคส..." oninput="applyActiveFilters()">
                 
                 <select id="dr-match-filter" class="dr-filter-select" onchange="applyActiveFilters()">
                   <option value="">ทุกผลการจับคู่ (All Match Types)</option>
-                  <option value="OutboundConfirmed">📤 จ่ายออกตามใบเบิก</option>
+                  <option value="OutboundConfirmed">📤 ส่งมอบตามใบเบิก</option>
                   <option value="OutboundAutoTicket">✨ สร้างใบเบิกอัตโนมัติ</option>
-                  <option value="OutboundUnmatched">📤 จ่ายออกนอกระบบ (ไม่ผูกใบเบิก)</option>
+                  <option value="OutboundUnmatched">📤 ส่งมอบนอกระบบ (ไม่ผูกใบเบิก)</option>
                   <option value="ReturnConfirmed">✅ คืนสำเร็จ (ปิดใบเบิก)</option>
                   <option value="ExportRepair">🚚 ส่งไปศูนย์ซ่อม (D1 Room Repair)</option>
                   <option value="InboundRepaired">📥 รับเข้าอะไหล่ซ่อม</option>
@@ -193,12 +220,25 @@
                   <option value="AlreadyImported">🔁 เคยนำเข้าแล้ว</option>
                 </select>
 
-                <div id="reconcile-filter-wrap" style="display:none;align-items:center;gap:8px;">
+                <div id="reconcile-filter-wrap" style="display:none;align-items:center;gap:10px;">
+                  <select id="dr-reconcile-status-filter" class="dr-filter-select" onchange="applyActiveFilters()" style="min-width:140px;">
+                    <option value="">ทุกสถานะ (All Items)</option>
+                    <option value="DIFF">⚠️ มีผลต่าง (Diff Only)</option>
+                    <option value="DIFF_GOOD">🟢 ต่างเฉพาะของดี (Good Diff)</option>
+                    <option value="DIFF_REPAIR">🔴 ต่างเฉพาะรอซ่อม (Repair Diff)</option>
+                    <option value="MATCH">✅ ตรงกันทั้งหมด (Match Only)</option>
+                  </select>
                   <label style="display:inline-flex;align-items:center;gap:6px;font-size:12.5px;cursor:pointer;font-weight:600;color:var(--text-main);">
                     <input type="checkbox" id="dr-diff-only" onchange="applyActiveFilters()">
-                    <span>⚠️ แสดงเฉพาะที่มีผลต่าง (Diff Only)</span>
+                    <span>⚠️ เฉพาะที่มีผลต่าง</span>
                   </label>
                 </div>
+
+                <!-- Checkbox to toggle inclusion of historical rows before baseline (hidden by default) -->
+                <label id="wrap-show-prior" style="display:inline-flex;align-items:center;gap:6px;font-size:12px;cursor:pointer;font-weight:600;color:var(--text-secondary);background:var(--surface,#fff);padding:6px 11px;border-radius:7px;border:1px solid var(--border);user-select:none;">
+                  <input type="checkbox" id="dr-show-prior" onchange="applyActiveFilters()">
+                  <span>📌 รวมประวัติก่อนวันตั้งต้น (<span id="count-prior-badge">0</span>)</span>
+                </label>
 
                 <div style="margin-left:auto;display:flex;align-items:center;gap:10px;">
                   <span id="dr-filter-count" style="font-size:12px;color:var(--text-secondary);font-weight:600;">แสดง 0 รายการ</span>
@@ -207,7 +247,7 @@
               </div>
 
               <!-- Table: Transactions (Outbound, Return, Inbound) -->
-              <div id="section-rows-table" class="tbl-wrap" style="max-height:450px;overflow-y:auto;">
+              <div id="section-rows-table" class="tbl-wrap" style="max-height:480px;overflow-y:auto;">
                 <table>
                   <thead>
                     <tr>
@@ -227,17 +267,20 @@
               </div>
 
               <!-- Table: Reconciliation Audit (Minimum Stock vs System) -->
-              <div id="section-reconcile-table" class="tbl-wrap" style="display:none;max-height:450px;overflow-y:auto;">
+              <div id="section-reconcile-table" class="tbl-wrap" style="display:none;max-height:480px;overflow-y:auto;">
                 <table>
                   <thead>
                     <tr>
                       <th>รหัสอะไหล่ (Part No.)</th>
                       <th>ชื่ออะไหล่ (Part Description)</th>
-                      <th style="text-align:right;">ยอดคลัง DHL (Available)</th>
-                      <th style="text-align:right;">ยอดในระบบ (Good Qty)</th>
-                      <th style="text-align:right;">ผลต่าง</th>
-                      <th style="text-align:right;">Min Stock</th>
-                      <th>สถานะ</th>
+                      <th class="th-good">DHL ดี</th>
+                      <th class="th-good">ระบบ ดี</th>
+                      <th class="th-good">ผลต่างดี</th>
+                      <th class="th-repair">DHL รอซ่อม</th>
+                      <th class="th-repair">ระบบ ซ่อม</th>
+                      <th class="th-repair">ผลต่างซ่อม</th>
+                      <th style="text-align:center;">สถานะ</th>
+                      <th style="text-align:center;">จัดการ</th>
                     </tr>
                   </thead>
                   <tbody id="reconcile-tbody"></tbody>
@@ -265,7 +308,7 @@
                     <th>วันที่ Import</th>
                     <th>ชื่อไฟล์</th>
                     <th>ผู้นำเข้า</th>
-                    <th style="text-align:right;">จ่ายออก</th>
+                    <th style="text-align:right;">ส่งมอบ</th>
                     <th style="text-align:right;">คืนสำเร็จ</th>
                     <th style="text-align:right;">ซ่อมเสร็จ</th>
                     <th style="text-align:right;">รับเข้าซ่อม</th>
@@ -329,33 +372,61 @@
           </div>
         </div>
 
+        <!-- Section 1: Breakdown by Sheet / Operation (Sums to 100% of Total Rows) -->
         <div style="margin-bottom:16px;">
-          <div style="font-weight:700; margin-bottom:8px; color:var(--text-primary);">สรุปรายการที่จะดำเนินการ:</div>
-          <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px;">
-            <div style="background:var(--bg-subtle); padding:8px 12px; border-radius:8px; border:1px solid var(--border);">
-              <div style="font-size:11px; color:var(--text-secondary);">รวมทั้งหมด</div>
-              <div style="font-size:16px; font-weight:800; color:var(--text-primary);" id="cm-total">0</div>
+          <div style="font-size:12.5px; font-weight:700; margin-bottom:8px; color:var(--text-primary); display:flex; justify-content:space-between; align-items:center;">
+            <span>1. จำแนกตามชีต / ประเภทงาน (รายการในไฟล์):</span>
+            <span style="font-size:12px; font-weight:800; color:var(--orange);">รวมทั้งหมด <span id="cm-total">0</span> รายการ</span>
+          </div>
+          <div style="display:grid; grid-template-columns:repeat(3, 1fr); gap:8px;">
+            <div style="background:var(--bg-subtle); padding:10px 12px; border-radius:8px; border:1px solid var(--border); text-align:center;">
+              <div style="font-size:11px; color:var(--text-secondary);">📤 ส่งมอบอะไหล่ (Outbound)</div>
+              <div style="font-size:18px; font-weight:800; color:#2563eb; margin-top:2px;" id="cm-outbound">0</div>
+              <div style="font-size:10px; color:var(--text-muted); margin-top:2px;">ชีต Outbound & 24x7</div>
             </div>
-            <div style="background:var(--bg-subtle); padding:8px 12px; border-radius:8px; border:1px solid var(--border);">
-              <div style="font-size:11px; color:var(--text-secondary);">รายการใหม่กระทบสต็อกจริง</div>
-              <div style="font-size:16px; font-weight:800; color:#b45309;" id="cm-new">0</div>
+            <div style="background:var(--bg-subtle); padding:10px 12px; border-radius:8px; border:1px solid var(--border); text-align:center;">
+              <div style="font-size:11px; color:var(--text-secondary);">📥 รับคืน (Return)</div>
+              <div style="font-size:18px; font-weight:800; color:var(--green); margin-top:2px;" id="cm-return">0</div>
+              <div style="font-size:10px; color:var(--text-muted); margin-top:2px;">ชีต Return inbound</div>
             </div>
-            <div style="background:var(--bg-subtle); padding:8px 12px; border-radius:8px; border:1px solid var(--border);">
-              <div style="font-size:11px; color:var(--text-secondary);">จ่ายออก (Outbound)</div>
-              <div style="font-size:15px; font-weight:700; color:#2563eb;" id="cm-outbound">0</div>
+            <div style="background:var(--bg-subtle); padding:10px 12px; border-radius:8px; border:1px solid var(--border); text-align:center;">
+              <div style="font-size:11px; color:var(--text-secondary);">🔧 รับเข้าซ่อม (Inbound)</div>
+              <div style="font-size:18px; font-weight:800; color:var(--orange); margin-top:2px;" id="cm-inbound">0</div>
+              <div style="font-size:10px; color:var(--text-muted); margin-top:2px;">ชีต Inbound normal</div>
             </div>
-            <div style="background:var(--bg-subtle); padding:8px 12px; border-radius:8px; border:1px solid var(--border);">
-              <div style="font-size:11px; color:var(--text-secondary);">รับคืน (Return)</div>
-              <div style="font-size:15px; font-weight:700; color:var(--green);" id="cm-return">0</div>
+          </div>
+          <div style="font-size:11px; color:var(--text-muted); margin-top:5px; text-align:right;" id="cm-math-explanation">
+            * ผลรวม: ส่งมอบ + รับคืน + รับเข้าซ่อม = ยอดรวมทั้งหมดในไฟล์พอดีเป๊ะ
+          </div>
+        </div>
+
+        <!-- Section 2: Breakdown by Stock Impact -->
+        <div style="margin-bottom:16px;">
+          <div style="font-size:12.5px; font-weight:700; margin-bottom:8px; color:var(--text-primary);">
+            2. ผลกระทบต่อสต็อกสินค้า (Stock Processing):
+          </div>
+          <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px;">
+            <div style="background:#fefce8; padding:12px 14px; border-radius:8px; border:1.5px solid #fde047; display:flex; flex-direction:column; justify-content:space-between;">
+              <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:10px;">
+                <span style="font-size:12px; font-weight:700; color:#854d0e; line-height:1.35;">⚡ รายการใหม่ตัด/เพิ่มสต็อกจริง</span>
+                <span style="font-size:22px; font-weight:800; color:#ca8a04; line-height:1; flex-shrink:0;" id="cm-new">0</span>
+              </div>
+              <div style="font-size:10.5px; color:#a16207; margin-top:8px; line-height:1.4;">
+                รายการธุรกรรมรอบนี้ที่จะไปปรับยอดคงคลัง
+              </div>
             </div>
-            <div style="background:var(--bg-subtle); padding:8px 12px; border-radius:8px; border:1px solid var(--border);">
-              <div style="font-size:11px; color:var(--text-secondary);">รับเข้าซ่อม (Inbound)</div>
-              <div style="font-size:15px; font-weight:700; color:var(--orange);" id="cm-inbound">0</div>
+            <div style="background:var(--bg-subtle); padding:12px 14px; border-radius:8px; border:1px solid var(--border); display:flex; flex-direction:column; justify-content:space-between;">
+              <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:10px;">
+                <span style="font-size:12px; font-weight:700; color:var(--text-secondary); line-height:1.35;">ℹ️ รายการเดิม / ไม่ปรับสต็อกซ้ำ</span>
+                <span style="font-size:22px; font-weight:800; color:var(--text-primary); line-height:1; flex-shrink:0;" id="cm-unchanged">0</span>
+              </div>
+              <div style="font-size:10.5px; color:var(--text-muted); margin-top:8px; line-height:1.4;">
+                ประวัติย้อนหลังและรายการเดิม (บันทึก S/N ไม่แตะยอดสต็อกซ้ำ)
+              </div>
             </div>
-            <div style="background:var(--bg-subtle); padding:8px 12px; border-radius:8px; border:1px solid var(--border);">
-              <div style="font-size:11px; color:var(--text-secondary);">ก่อนวันตั้งต้น (บันทึก S/N)</div>
-              <div style="font-size:15px; font-weight:700; color:#7e22ce;" id="cm-prior">0</div>
-            </div>
+          </div>
+          <div style="font-size:11px; color:var(--text-muted); margin-top:6px; text-align:right;" id="cm-stock-math-explanation">
+            * ผลรวม: รายการใหม่ + รายการเดิม = ยอดรวม 2,001 รายการครบถ้วน
           </div>
         </div>
 
@@ -397,36 +468,26 @@
 
         <div style="margin-bottom:16px;">
           <div style="font-weight:700; margin-bottom:8px; color:var(--text-primary);">สรุปผลการประมวลผลข้อมูล:</div>
-          <div style="display:grid; grid-template-columns:repeat(3, 1fr); gap:10px;">
+          <div style="display:grid; grid-template-columns:repeat(4, 1fr); gap:10px;">
             <div style="background:var(--bg-subtle); padding:10px; border-radius:10px; border:1px solid var(--border); text-align:center;">
               <div style="font-size:11px; color:var(--text-secondary);">รวมทั้งหมด</div>
               <div style="font-size:20px; font-weight:800; color:var(--text-primary);" id="rm-total">0</div>
-              <div style="font-size:10px; color:var(--text-muted); margin-top:2px;">รายการ</div>
+              <div style="font-size:10px; color:var(--text-muted); margin-top:2px;">รายการในไฟล์</div>
             </div>
             <div style="background:var(--bg-subtle); padding:10px; border-radius:10px; border:1px solid var(--border); text-align:center;">
-              <div style="font-size:11px; color:var(--text-secondary);">จ่ายออก (Outbound)</div>
+              <div style="font-size:11px; color:var(--text-secondary);">ส่งมอบ (Outbound)</div>
               <div style="font-size:20px; font-weight:800; color:#2563eb;" id="rm-outbound">0</div>
-              <div style="font-size:10px; color:var(--text-muted); margin-top:2px;">ตัดสต็อก/บันทึกช่าง</div>
+              <div style="font-size:10px; color:var(--text-muted); margin-top:2px;">ตัดสต็อก/ช่างถือ</div>
             </div>
             <div style="background:var(--bg-subtle); padding:10px; border-radius:10px; border:1px solid var(--border); text-align:center;">
               <div style="font-size:11px; color:var(--text-secondary);">รับคืน (Return)</div>
               <div style="font-size:20px; font-weight:800; color:var(--green);" id="rm-return">0</div>
-              <div style="font-size:10px; color:var(--text-muted); margin-top:2px;">รับคืนเข้าสต็อก/S/N</div>
+              <div style="font-size:10px; color:var(--text-muted); margin-top:2px;">รับคืนเข้าคลัง/S/N</div>
             </div>
             <div style="background:var(--bg-subtle); padding:10px; border-radius:10px; border:1px solid var(--border); text-align:center;">
               <div style="font-size:11px; color:var(--text-secondary);">รับเข้าซ่อม (Inbound)</div>
               <div style="font-size:20px; font-weight:800; color:var(--orange);" id="rm-inbound">0</div>
-              <div style="font-size:10px; color:var(--text-muted); margin-top:2px;">ซ่อมเสร็จ/เข้าคลัง</div>
-            </div>
-            <div style="background:var(--bg-subtle); padding:10px; border-radius:10px; border:1px solid var(--border); text-align:center;">
-              <div style="font-size:11px; color:var(--text-secondary);">ก่อนวันตั้งต้น (3 ก.ย.)</div>
-              <div style="font-size:20px; font-weight:800; color:#7e22ce;" id="rm-prior">0</div>
-              <div style="font-size:10px; color:var(--text-muted); margin-top:2px;">บันทึก S/N ไม่แตะสต็อก</div>
-            </div>
-            <div style="background:var(--bg-subtle); padding:10px; border-radius:10px; border:1px solid var(--border); text-align:center;">
-              <div style="font-size:11px; color:var(--text-secondary);">ยังไม่จับคู่ (Unmatched)</div>
-              <div style="font-size:20px; font-weight:800; color:#b45309;" id="rm-unmatched">0</div>
-              <div style="font-size:10px; color:var(--text-muted); margin-top:2px;">รอตรวจสอบ</div>
+              <div style="font-size:10px; color:var(--text-muted); margin-top:2px;">ซ่อมเสร็จเข้าคลัง</div>
             </div>
           </div>
         </div>
@@ -444,6 +505,52 @@
         <button type="button" class="btn btn-secondary" onclick="closeResultModal()">ปิดหน้าต่าง</button>
         <button type="button" class="btn btn-primary" id="btn-view-imported-batch" onclick="viewImportedBatchDetails()">
           <iconify-icon icon="mdi:clipboard-list-outline" width="16"></iconify-icon> ดูรายการละเอียดในประวัติ (Batch Details) ↗
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal 3: ปรับยอดสต็อกให้ตรงกับ DHL (Sync & Adjust) -->
+  <div class="modal-overlay hidden" id="sync-modal-overlay" onclick="if(event.target===this)closeSyncModal()">
+    <div class="modal" style="max-width:500px; width:100%;">
+      <div class="modal-header" style="border-bottom:1px solid var(--border); padding-bottom:12px; margin-bottom:16px;">
+        <div class="modal-title" style="display:flex; align-items:center; gap:8px; color:var(--orange); font-size:16px; font-weight:700;">
+          <iconify-icon icon="mdi:sync" width="22" height="22"></iconify-icon>
+          <span>ปรับยอดสต็อกให้ตรงกับ DHL (Sync & Adjust)</span>
+        </div>
+      </div>
+      <div class="modal-body" style="font-size:13px; line-height:1.6;">
+        <p style="font-size:12.5px; color:var(--text-secondary); margin-bottom:12px;">
+          ระบบจะปรับปรุงยอดสต็อกคลังกลาง <code>DHL-BKK</code> และบันทึกประวัติลงใน <code>StockMovements</code> (ประเภท <b>StockCountAdjust</b>) พร้อม Audit Trail
+        </p>
+        <div style="background:var(--bg-subtle); border:1px solid var(--border); border-radius:8px; padding:12px; margin-bottom:14px;">
+          <div><b>Part No:</b> <code id="sync-partno" style="font-size:13.5px; color:var(--orange);"></code></div>
+          <div style="margin-top:4px;"><b>ชื่ออะไหล่:</b> <span id="sync-partname"></span></div>
+          <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-top:10px; border-top:1px dashed var(--border); padding-top:8px;">
+            <div>
+              <div style="font-size:11.5px; color:var(--text-secondary);">ของดี (Good Stock)</div>
+              <div>เดิม: <b id="sync-old-good"></b> ➔ ปรับเป็น: <b id="sync-new-good" style="color:var(--green,#16a34a);"></b></div>
+            </div>
+            <div>
+              <div style="font-size:11.5px; color:var(--text-secondary);">รอซ่อม (Repair Stock)</div>
+              <div>เดิม: <b id="sync-old-repair"></b> ➔ ปรับเป็น: <b id="sync-new-repair" style="color:var(--orange,#ea580c);"></b></div>
+            </div>
+          </div>
+        </div>
+        <div class="form-group" style="margin-bottom:16px;">
+          <label class="form-label" style="font-size:12.5px; font-weight:600; margin-bottom:6px; display:block;">ระบุเหตุผลในการปรับปรุงยอด (Audit Reason) *</label>
+          <select id="sync-reason-select" class="form-select" style="width:100%; padding:8px 10px; font-size:13px; border-radius:6px; border:1px solid var(--border);">
+            <option value="นับสต็อกจริงคลัง DHL (Physical Cycle Count)">📋 นับสต็อกจริงคลัง DHL (Physical Cycle Count)</option>
+            <option value="สินค้าสูญหาย/ชำรุดในคลัง DHL (Warehouse Shrinkage)">⚠️ สินค้าสูญหาย/ชำรุดในคลัง DHL (Warehouse Shrinkage)</option>
+            <option value="ปรับยอดตัดรอบบัญชี (Account Adjustment)">📊 ปรับยอดตัดรอบบัญชี (Account Adjustment)</option>
+            <option value="ปรับตามเอกสารส่งมอบย้อนหลัง">📦 ปรับตามเอกสารส่งมอบย้อนหลัง</option>
+          </select>
+        </div>
+      </div>
+      <div class="modal-footer" style="display:flex; justify-content:flex-end; gap:10px; margin-top:16px; border-top:1px solid var(--border); padding-top:12px;">
+        <button type="button" class="btn btn-secondary" onclick="closeSyncModal()">ยกเลิก</button>
+        <button type="button" class="btn btn-primary" id="sync-confirm-btn" onclick="confirmSyncAdjustment()">
+          <iconify-icon icon="mdi:check" width="16"></iconify-icon> ยืนยันปรับยอดสต็อก
         </button>
       </div>
     </div>
@@ -474,9 +581,9 @@
     }
 
     const MATCH_LABEL = {
-      OutboundConfirmed:  '📤 จ่ายออกตามใบเบิก',
+      OutboundConfirmed:  '📤 ส่งมอบตามใบเบิก',
       OutboundAutoTicket: '✨ สร้างใบเบิกอัตโนมัติ',
-      OutboundUnmatched:  '📤 จ่ายออกนอกระบบ (ไม่ผูกใบเบิก)',
+      OutboundUnmatched:  '📤 ส่งมอบนอกระบบ (ไม่ผูกใบเบิก)',
       ReturnConfirmed:   '✅ คืนสำเร็จ (ปิดใบเบิก)',
       ExportRepair:      '🚚 ส่งไปศูนย์ซ่อม (D1 Room Repair)',
       RepairCompleted:   '🔧 ซ่อมเสร็จ',
@@ -495,7 +602,7 @@
         const res = await api.dailyReport.preview(file);
         lastPreviewRows = res.rows || [];
         lastReconciliation = res.reconciliation || [];
-        renderPreview(lastPreviewRows, res.summary || {}, lastReconciliation);
+        renderPreview(lastPreviewRows, res.summary || {}, lastReconciliation, res.dateGapWarning);
         document.getElementById('dr-filename').textContent = `ไฟล์: ${file.name} (${lastPreviewRows.length} รายการ)`;
       } catch (e) {
         showToast?.(e.message || t('toast.error'), 'error');
@@ -504,7 +611,19 @@
       }
     }
 
-    function renderPreview(rows, summary, reconciliation) {
+    function renderPreview(rows, summary, reconciliation, dateGapWarning) {
+      // Date gap warning banner
+      const dateGapBanner = document.getElementById('dr-date-gap-banner');
+      const dateGapMsg = document.getElementById('dr-date-gap-msg');
+      if (dateGapBanner && dateGapMsg) {
+        if (dateGapWarning) {
+          dateGapMsg.textContent = dateGapWarning;
+          dateGapBanner.style.display = 'flex';
+        } else {
+          dateGapBanner.style.display = 'none';
+        }
+      }
+
       // Grouping rows
       const outboundRows = rows.filter(r => r.sourceSheet.startsWith('Outbound') || r.sourceSheet.includes('24x7'));
       const returnRows = rows.filter(r => r.sourceSheet.startsWith('Return'));
@@ -521,24 +640,30 @@
       const newInbound = inboundRows.filter(r => r.matchType !== 'PriorToBaseline' && r.matchType !== 'AlreadyImported').length;
       const priorInbound = inboundRows.length - newInbound;
 
-      // Update Summary Cards
-      document.getElementById('stat-outbound').textContent = outboundRows.length.toLocaleString();
-      document.getElementById('stat-outbound-sub').textContent = newOutbound > 0 ? `ใหม่ ${newOutbound} • ก่อน 3 ก.ย. ${priorOutbound}` : `ประวัติก่อนวันตั้งต้นทั้งหมด`;
+      // Update Summary Cards (5 Cards focused on operations & reconciliation)
+      document.getElementById('stat-outbound').textContent = newOutbound.toLocaleString();
+      document.getElementById('stat-outbound-sub').textContent = `ทั้งหมดในไฟล์ ${outboundRows.length.toLocaleString()} รายการ`;
 
-      document.getElementById('stat-confirmed').textContent = returnRows.length.toLocaleString();
-      document.getElementById('stat-confirmed-sub').textContent = newReturn > 0 ? `ใหม่ ${newReturn} • ก่อน 3 ก.ย. ${priorReturn}` : `ประวัติก่อนวันตั้งต้นทั้งหมด`;
+      document.getElementById('stat-confirmed').textContent = newReturn.toLocaleString();
+      document.getElementById('stat-confirmed-sub').textContent = `ทั้งหมดในไฟล์ ${returnRows.length.toLocaleString()} รายการ`;
 
-      document.getElementById('stat-inbound').textContent = inboundRows.length.toLocaleString();
-      document.getElementById('stat-inbound-sub').textContent = newInbound > 0 ? `ใหม่ ${newInbound} • ก่อน 3 ก.ย. ${priorInbound}` : (inboundRows.length > 0 ? `ใหม่ ${newInbound} • ก่อน 3 ก.ย. ${priorInbound}` : `ไม่มีรายการ`);
-
-      document.getElementById('stat-prior').textContent = priorRows.length.toLocaleString();
-      document.getElementById('stat-prior-sub').textContent = `บันทึก S/N (ไม่ปรับสต็อกซ้ำ)`;
+      document.getElementById('stat-inbound').textContent = newInbound.toLocaleString();
+      document.getElementById('stat-inbound-sub').textContent = `ทั้งหมดในไฟล์ ${inboundRows.length.toLocaleString()} รายการ`;
 
       document.getElementById('stat-new').textContent = newImpactRows.length.toLocaleString();
-      document.getElementById('stat-new-sub').textContent = newImpactRows.length > 0 ? `ตัด/เพิ่มสต็อกคลังจริง` : `ไม่มีรายการใหม่ที่กระทบสต็อก`;
+      document.getElementById('stat-new-sub').textContent = `ตัด/เพิ่มสต็อกคลังจริง`;
 
-      document.getElementById('stat-reconcile').textContent = `${summary.reconcileMatchCount ?? 0} / ${summary.reconcileDiffCount ?? 0}`;
-      document.getElementById('stat-reconcile-sub').textContent = `Minimum Stock (${reconciliation.length} รายการ)`;
+      // Card 5: กระทบยอด Minimum Stock
+      const matchCount = summary.reconcileMatchCount ?? reconciliation.filter(i => i.status === 'MATCH').length;
+      const diffCount = summary.reconcileDiffCount ?? reconciliation.filter(i => i.status !== 'MATCH').length;
+      const elStatRec = document.getElementById('stat-reconcile');
+      if (elStatRec) elStatRec.textContent = `${matchCount.toLocaleString()} / ${diffCount.toLocaleString()}`;
+      const elStatRecSub = document.getElementById('stat-reconcile-sub');
+      if (elStatRecSub) elStatRecSub.textContent = `ตรง ${matchCount.toLocaleString()} • ต่าง ${diffCount.toLocaleString()}`;
+
+      // Update badge for historical rows
+      const elPriorBadge = document.getElementById('count-prior-badge');
+      if (elPriorBadge) elPriorBadge.textContent = priorRows.length.toLocaleString();
 
       // Tab count labels
       document.getElementById('count-all').textContent = rows.length.toLocaleString();
@@ -546,8 +671,8 @@
       document.getElementById('count-return').textContent = returnRows.length.toLocaleString();
       document.getElementById('count-inbound').textContent = inboundRows.length.toLocaleString();
       document.getElementById('count-new').textContent = newImpactRows.length.toLocaleString();
-      document.getElementById('count-prior').textContent = priorRows.length.toLocaleString();
-      document.getElementById('count-reconcile').textContent = reconciliation.length.toLocaleString();
+      const elCountRec = document.getElementById('count-reconcile');
+      if (elCountRec) elCountRec.textContent = reconciliation.length.toLocaleString();
 
       resetActiveFilters(false);
       filterSheet('ALL');
@@ -579,18 +704,21 @@
         document.getElementById('section-rows-table').style.display = 'none';
         document.getElementById('section-reconcile-table').style.display = 'block';
         document.getElementById('dr-match-filter').style.display = 'none';
+        const wrapPrior = document.getElementById('wrap-show-prior');
+        if (wrapPrior) wrapPrior.style.display = 'none';
         document.getElementById('reconcile-filter-wrap').style.display = 'flex';
       } else {
         if (filter === 'OUTBOUND') document.getElementById('filter-outbound')?.classList.add('active');
         else if (filter === 'RETURN') document.getElementById('filter-return')?.classList.add('active');
         else if (filter === 'INBOUND') document.getElementById('filter-inbound')?.classList.add('active');
         else if (filter === 'NEW') document.getElementById('filter-new')?.classList.add('active');
-        else if (filter === 'PRIOR') document.getElementById('filter-prior')?.classList.add('active');
         else document.getElementById('filter-all')?.classList.add('active');
 
         document.getElementById('section-rows-table').style.display = 'block';
         document.getElementById('section-reconcile-table').style.display = 'none';
         document.getElementById('dr-match-filter').style.display = 'inline-block';
+        const wrapPrior = document.getElementById('wrap-show-prior');
+        if (wrapPrior) wrapPrior.style.display = 'inline-flex';
         document.getElementById('reconcile-filter-wrap').style.display = 'none';
       }
 
@@ -602,9 +730,16 @@
 
       if (currentFilter === 'RECONCILE') {
         const diffOnly = document.getElementById('dr-diff-only')?.checked || false;
+        const statusFilter = document.getElementById('dr-reconcile-status-filter')?.value || '';
         let filtered = lastReconciliation;
-        if (diffOnly) {
+        if (diffOnly || statusFilter === 'DIFF') {
           filtered = filtered.filter(item => item.status !== 'MATCH');
+        } else if (statusFilter === 'DIFF_GOOD') {
+          filtered = filtered.filter(item => item.diffGood !== 0);
+        } else if (statusFilter === 'DIFF_REPAIR') {
+          filtered = filtered.filter(item => item.diffRepair !== 0);
+        } else if (statusFilter === 'MATCH') {
+          filtered = filtered.filter(item => item.status === 'MATCH');
         }
         if (q) {
           filtered = filtered.filter(item => 
@@ -618,8 +753,15 @@
       }
 
       const matchFilter = document.getElementById('dr-match-filter')?.value || '';
+      const showPrior = document.getElementById('dr-show-prior')?.checked || false;
+
       const base = getBaseFilteredRows(currentFilter);
       let filtered = base;
+
+      // Filter out PriorToBaseline rows by default unless user checked the toggle
+      if (!showPrior && currentFilter !== 'PRIOR') {
+        filtered = filtered.filter(r => r.matchType !== 'PriorToBaseline');
+      }
 
       if (matchFilter) {
         filtered = filtered.filter(r => r.matchType === matchFilter);
@@ -635,7 +777,12 @@
           (r.externalTicketNo && r.externalTicketNo.toLowerCase().includes(q))
         );
       }
-      document.getElementById('dr-filter-count').textContent = `แสดง ${filtered.length.toLocaleString()} จาก ${base.length.toLocaleString()} รายการ`;
+
+      const totalBase = (!showPrior && currentFilter !== 'PRIOR')
+        ? base.filter(r => r.matchType !== 'PriorToBaseline').length
+        : base.length;
+
+      document.getElementById('dr-filter-count').textContent = `แสดง ${filtered.length.toLocaleString()} จาก ${totalBase.toLocaleString()} รายการ`;
       renderRowsTable(filtered);
     }
 
@@ -644,8 +791,12 @@
       if (s) s.value = '';
       const m = document.getElementById('dr-match-filter');
       if (m) m.value = '';
+      const p = document.getElementById('dr-show-prior');
+      if (p) p.checked = false;
       const d = document.getElementById('dr-diff-only');
       if (d) d.checked = false;
+      const rf = document.getElementById('dr-reconcile-status-filter');
+      if (rf) rf.value = '';
       if (triggerApply) applyActiveFilters();
     }
 
@@ -673,22 +824,107 @@
             const isMissing = item.status === 'NOT_IN_SYSTEM';
             const badge = isMatch
               ? `<span class="badge-match">ตรงกัน</span>`
-              : (isMissing ? `<span class="badge-missing">ไม่มีในระบบ</span>` : `<span class="badge-diff">ผลต่าง ${item.diffGood > 0 ? '+' : ''}${item.diffGood}</span>`);
+              : (isMissing ? `<span class="badge-missing">ไม่มีในระบบ</span>` : `<span class="badge-diff">มีผลต่าง</span>`);
+
+            const diffGoodText = item.diffGood === 0
+              ? `<span style="color:var(--green);font-weight:600;">0</span>`
+              : `<span style="color:${item.diffGood > 0 ? 'var(--orange)' : 'var(--red)'};font-weight:700;">${item.diffGood > 0 ? '+' : ''}${item.diffGood}</span>`;
+
+            const diffRepairText = item.diffRepair === 0
+              ? `<span style="color:var(--green);font-weight:600;">0</span>`
+              : `<span style="color:${item.diffRepair > 0 ? 'var(--orange)' : 'var(--red)'};font-weight:700;">${item.diffRepair > 0 ? '+' : ''}${item.diffRepair}</span>`;
+
+            const safePartNo = escapeHtml(item.partNo);
+            const safePartName = escapeHtml(item.partName || '');
+            const actionBtn = (!isMatch && !isMissing)
+              ? `<button type="button" class="btn btn-secondary btn-xs" onclick="openSyncModal('${safePartNo}', '${safePartName}', ${item.systemGoodQty}, ${item.dhlGoodQty}, ${item.systemRepairQty}, ${item.dhlBadQty})" style="white-space:nowrap;font-size:11px;padding:3px 8px;display:inline-flex;align-items:center;gap:3px;"><iconify-icon icon="mdi:sync" width="12"></iconify-icon> ปรับยอด</button>`
+              : `—`;
+
             return `
               <tr>
                 <td><code>${item.partNo}</code></td>
                 <td>${item.partName || '—'}</td>
-                <td style="text-align:right;font-weight:700;">${item.dhlAvailableQty.toLocaleString()}</td>
-                <td style="text-align:right;font-weight:700;">${item.systemGoodQty.toLocaleString()}</td>
-                <td style="text-align:right;font-weight:700;color:${item.diffGood === 0 ? 'var(--green)' : 'var(--red)'};">
-                  ${item.diffGood > 0 ? '+' : ''}${item.diffGood}
-                </td>
-                <td style="text-align:right;">${item.dhlMinQty.toLocaleString()}</td>
-                <td>${badge}</td>
+                <td style="text-align:right;font-weight:700;color:var(--green,#16a34a);background:rgba(34,197,94,0.03);">${item.dhlGoodQty.toLocaleString()}</td>
+                <td style="text-align:right;font-weight:700;color:var(--green,#16a34a);background:rgba(34,197,94,0.03);">${item.systemGoodQty.toLocaleString()}</td>
+                <td style="text-align:right;background:rgba(34,197,94,0.03);">${diffGoodText}</td>
+                <td style="text-align:right;font-weight:700;color:var(--orange,#ea580c);background:rgba(234,88,12,0.03);">${item.dhlBadQty.toLocaleString()}</td>
+                <td style="text-align:right;font-weight:700;color:var(--orange,#ea580c);background:rgba(234,88,12,0.03);">${item.systemRepairQty.toLocaleString()}</td>
+                <td style="text-align:right;background:rgba(234,88,12,0.03);">${diffRepairText}</td>
+                <td style="text-align:center;">${badge}</td>
+                <td style="text-align:center;">${actionBtn}</td>
               </tr>
             `;
           }).join('')
-        : `<tr><td colspan="7" class="empty-state">ไฟล์นี้ไม่มีชีต Minimum Stock สำหรับกระทบยอด</td></tr>`;
+        : `<tr><td colspan="10" class="empty-state">ไฟล์นี้ไม่มีชีต Minimum Stock สำหรับกระทบยอด</td></tr>`;
+    }
+
+    let currentSyncItem = null;
+
+    function openSyncModal(partNo, partName, oldGood, newGood, oldRepair, newRepair) {
+      currentSyncItem = { partNo, partName, oldGood, newGood, oldRepair, newRepair };
+      document.getElementById('sync-partno').textContent = partNo;
+      document.getElementById('sync-partname').textContent = partName || '—';
+      document.getElementById('sync-old-good').textContent = oldGood.toLocaleString();
+      document.getElementById('sync-new-good').textContent = newGood.toLocaleString();
+      document.getElementById('sync-old-repair').textContent = oldRepair.toLocaleString();
+      document.getElementById('sync-new-repair').textContent = newRepair.toLocaleString();
+      document.getElementById('sync-modal-overlay').classList.remove('hidden');
+    }
+
+    function closeSyncModal() {
+      currentSyncItem = null;
+      document.getElementById('sync-modal-overlay').classList.add('hidden');
+    }
+
+    async function confirmSyncAdjustment() {
+      if (!currentSyncItem) return;
+      const reason = document.getElementById('sync-reason-select').value;
+      const btn = document.getElementById('sync-confirm-btn');
+      btn.disabled = true;
+      btn.textContent = 'กำลังบันทึก...';
+
+      try {
+        await api.dailyReport.adjustReconcile({
+          adjustments: [{
+            partNo: currentSyncItem.partNo,
+            targetGood: currentSyncItem.newGood,
+            targetRepair: currentSyncItem.newRepair,
+            reason: reason
+          }]
+        });
+
+        // Update in-memory reconciliation item
+        const item = lastReconciliation.find(i => i.partNo === currentSyncItem.partNo);
+        if (item) {
+          item.systemGoodQty = currentSyncItem.newGood;
+          item.systemRepairQty = currentSyncItem.newRepair;
+          item.diffGood = 0;
+          item.diffRepair = 0;
+          item.status = 'MATCH';
+        }
+
+        // Update summary stats
+        const matchCount = lastReconciliation.filter(i => i.status === 'MATCH').length;
+        const diffCount = lastReconciliation.filter(i => i.status !== 'MATCH').length;
+        const elStatRec = document.getElementById('stat-reconcile');
+        if (elStatRec) elStatRec.textContent = `${matchCount.toLocaleString()} / ${diffCount.toLocaleString()}`;
+        const elStatRecSub = document.getElementById('stat-reconcile-sub');
+        if (elStatRecSub) elStatRecSub.textContent = `ตรง ${matchCount.toLocaleString()} • ต่าง ${diffCount.toLocaleString()}`;
+
+        closeSyncModal();
+        applyActiveFilters();
+        showToast?.('ปรับปรุงยอดสต็อกให้ตรงกับ DHL สำเร็จเรียบร้อย', 'success');
+      } catch (e) {
+        showToast?.('เกิดข้อผิดพลาด: ' + e.message, 'error');
+      } finally {
+        btn.disabled = false;
+        btn.textContent = 'ยืนยันปรับยอดสต็อก';
+      }
+    }
+
+    function escapeHtml(str) {
+      if (!str) return '';
+      return String(str).replace(/'/g, "\\'").replace(/"/g, '&quot;');
     }
 
     function cancelPreview() {
@@ -709,19 +945,31 @@
 
     function openConfirmModal() {
       document.getElementById('cm-filename').textContent = pendingFile?.name || 'Daily Report';
-      document.getElementById('cm-total').textContent = (lastPreviewRows.length).toLocaleString();
+      const totalRows = lastPreviewRows.length;
+      document.getElementById('cm-total').textContent = totalRows.toLocaleString();
       
       const outboundCount = lastPreviewRows.filter(r => r.sourceSheet.startsWith('Outbound') || r.sourceSheet.includes('24x7')).length;
       const returnCount = lastPreviewRows.filter(r => r.sourceSheet.startsWith('Return')).length;
       const inboundCount = lastPreviewRows.filter(r => r.sourceSheet.startsWith('Inbound')).length;
-      const priorCount = lastPreviewRows.filter(r => r.matchType === 'PriorToBaseline').length;
       const newImpactCount = lastPreviewRows.filter(r => r.matchType !== 'PriorToBaseline' && r.matchType !== 'AlreadyImported').length;
+      const unchangedCount = totalRows - newImpactCount;
 
       document.getElementById('cm-outbound').textContent = outboundCount.toLocaleString();
       document.getElementById('cm-return').textContent = returnCount.toLocaleString();
       document.getElementById('cm-inbound').textContent = inboundCount.toLocaleString();
-      document.getElementById('cm-prior').textContent = priorCount.toLocaleString();
       document.getElementById('cm-new').textContent = newImpactCount.toLocaleString();
+      const elUnchanged = document.getElementById('cm-unchanged');
+      if (elUnchanged) elUnchanged.textContent = unchangedCount.toLocaleString();
+
+      const mathExpl = document.getElementById('cm-math-explanation');
+      if (mathExpl) {
+        mathExpl.innerHTML = `* ผลรวม: ส่งมอบ (<strong>${outboundCount.toLocaleString()}</strong>) + รับคืน (<strong>${returnCount.toLocaleString()}</strong>) + รับเข้าซ่อม (<strong>${inboundCount.toLocaleString()}</strong>) = <strong>${totalRows.toLocaleString()}</strong> รายการ`;
+      }
+
+      const stockMathExpl = document.getElementById('cm-stock-math-explanation');
+      if (stockMathExpl) {
+        stockMathExpl.innerHTML = `* ผลรวม: รายการใหม่ (<strong>${newImpactCount.toLocaleString()}</strong>) + รายการเดิม (<strong>${unchangedCount.toLocaleString()}</strong>) = <strong>${totalRows.toLocaleString()}</strong> รายการครบถ้วน`;
+      }
 
       document.getElementById('confirm-import-modal').classList.remove('hidden');
     }
@@ -760,16 +1008,16 @@
       document.getElementById('rm-outbound').textContent = (s.outboundCount ?? b.outboundCount ?? 0).toLocaleString();
       document.getElementById('rm-return').textContent = (s.returnConfirmedCount ?? b.returnConfirmedCount ?? 0).toLocaleString();
       document.getElementById('rm-inbound').textContent = (s.inboundRepairedCount ?? b.inboundRepairedCount ?? 0).toLocaleString();
-      document.getElementById('rm-prior').textContent = (s.priorToBaselineCount ?? 0).toLocaleString();
-      document.getElementById('rm-unmatched').textContent = (s.unmatchedCount ?? b.unmatchedCount ?? 0).toLocaleString();
 
       const recWrap = document.getElementById('rm-reconcile-wrap');
-      if (s.reconcileMatchCount != null || s.reconcileDiffCount != null) {
-        recWrap.style.display = 'block';
-        document.getElementById('rm-reconcile-text').textContent =
-          `ยอดสต็อกตรงกับคลัง DHL: ${s.reconcileMatchCount || 0} รายการ • มีผลต่าง: ${s.reconcileDiffCount || 0} รายการ`;
-      } else {
-        recWrap.style.display = 'none';
+      if (recWrap) {
+        if (s.reconcileMatchCount != null || s.reconcileDiffCount != null) {
+          recWrap.style.display = 'block';
+          document.getElementById('rm-reconcile-text').textContent =
+            `ยอดสต็อกตรงกับคลัง DHL: ${(s.reconcileMatchCount || 0).toLocaleString()} รายการ • มีผลต่าง: ${(s.reconcileDiffCount || 0).toLocaleString()} รายการ`;
+        } else {
+          recWrap.style.display = 'none';
+        }
       }
 
       document.getElementById('result-summary-modal').classList.remove('hidden');

@@ -35,6 +35,17 @@ public class DailyReportRealFileTests
         throw new FileNotFoundException($"Could not find Document/{fileName}");
     }
 
+    private static FileStream OpenFileShared(string path)
+    {
+        return new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
+    }
+
+    private static XLWorkbook OpenWorkbookShared(string path)
+    {
+        var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
+        return new XLWorkbook(stream);
+    }
+
     [Fact]
     public void Preview_Real0405SepReport_ParsesMultiSheetsAndReconciliation()
     {
@@ -55,7 +66,7 @@ public class DailyReportRealFileTests
         var audit = new AuditService(context);
         var controller = new DailyReportController(context, stock, audit);
 
-        using var stream = File.OpenRead(filePath);
+        using var stream = OpenFileShared(filePath);
         var file = new FormFile(stream, 0, stream.Length, "file", Path.GetFileName(filePath))
         {
             Headers = new HeaderDictionary(),
@@ -94,7 +105,7 @@ public class DailyReportRealFileTests
         var audit = new AuditService(context);
         var controller = new DailyReportController(context, stock, audit);
 
-        using var stream = File.OpenRead(filePath);
+        using var stream = OpenFileShared(filePath);
         var file = new FormFile(stream, 0, stream.Length, "file", Path.GetFileName(filePath))
         {
             Headers = new HeaderDictionary(),
@@ -118,8 +129,8 @@ public class DailyReportRealFileTests
     {
         var filePath07 = FindDocumentFile("Dataone Daily Report 07 Sep 2026_.xlsx");
         var filePath0405 = FindDocumentFile("Dataone Daily Report 04-05 Sep 2026_.xlsx");
-        using var wb07 = new XLWorkbook(filePath07);
-        using var wb0405 = new XLWorkbook(filePath0405);
+        using var wb07 = OpenWorkbookShared(filePath07);
+        using var wb0405 = OpenWorkbookShared(filePath0405);
 
         _output.WriteLine("=== SHEETS IN 07 SEP FILE ===");
         _output.WriteLine("=== INSPECTION OF COLUMNS AND LOCATIONS IN EXCEL ===");
@@ -304,7 +315,7 @@ public class DailyReportRealFileTests
             var controller = new DailyReportController(context, stock, audit);
 
             var filePath07 = FindDocumentFile("Dataone Daily Report 07 Sep 2026_.xlsx");
-            using var stream = File.OpenRead(filePath07);
+            using var stream = OpenFileShared(filePath07);
             var formFile = new FormFile(stream, 0, stream.Length, "file", Path.GetFileName(filePath07))
             {
                 Headers = new HeaderDictionary(),
@@ -328,7 +339,7 @@ public class DailyReportRealFileTests
             _output.WriteLine($"  PriorToBaseline: {summary.PriorToBaselineCount}");
 
             // Now test Confirm of 07 Sep directly!
-            using var stream2 = File.OpenRead(filePath07);
+            using var stream2 = OpenFileShared(filePath07);
             var formFile2 = new FormFile(stream2, 0, stream2.Length, "file", Path.GetFileName(filePath07))
             {
                 Headers = new HeaderDictionary(),
@@ -364,7 +375,7 @@ public class DailyReportRealFileTests
                 var controllerSeq = new DailyReportController(contextSeq, stockSeq, auditSeq);
 
                 var filePath0405 = FindDocumentFile("Dataone Daily Report 04-05 Sep 2026_.xlsx");
-                using var stream0405 = File.OpenRead(filePath0405);
+                using var stream0405 = OpenFileShared(filePath0405);
                 var formFile0405 = new FormFile(stream0405, 0, stream0405.Length, "file", Path.GetFileName(filePath0405))
                 {
                     Headers = new HeaderDictionary(),
@@ -374,7 +385,7 @@ public class DailyReportRealFileTests
                 Assert.IsType<OkObjectResult>(confirm0405);
                 _output.WriteLine("Step 1: 04-05 Sep Confirm SUCCEEDED!");
 
-                using var stream07Seq = File.OpenRead(filePath07);
+                using var stream07Seq = OpenFileShared(filePath07);
                 var formFile07Seq = new FormFile(stream07Seq, 0, stream07Seq.Length, "file", Path.GetFileName(filePath07))
                 {
                     Headers = new HeaderDictionary(),
@@ -517,7 +528,7 @@ public class DailyReportRealFileTests
             var controller = new DailyReportController(context, stock, audit);
 
             var filePath = FindDocumentFile("Dataone Daily Report 04-05 Sep 2026_.xlsx");
-            using var wb = new XLWorkbook(filePath);
+            using var wb = OpenWorkbookShared(filePath);
 
             var outSheet = wb.Worksheet("Outbound Order ");
             var headers = new List<string>();
@@ -686,7 +697,7 @@ public class DailyReportRealFileTests
             context.SaveChanges();
 
             // Now run Preview on 04-05 Sep with this context!
-            using var stream = File.OpenRead(filePath);
+            using var stream = OpenFileShared(filePath);
             var formFile = new FormFile(stream, 0, stream.Length, "file", Path.GetFileName(filePath))
             {
                 Headers = new HeaderDictionary(),
@@ -708,7 +719,7 @@ public class DailyReportRealFileTests
             _output.WriteLine($"Scenario 3 (Typo in CaseNo #{target3.CaseNo}): MatchType={match3?.MatchType}, WithdrawBatchId={match3?.WithdrawBatchId}, Note={match3?.Note}");
 
             // Now run Confirm on 04-05 Sep to check actual stock deduction!
-            using var stream2 = File.OpenRead(filePath);
+            using var stream2 = OpenFileShared(filePath);
             var formFile2 = new FormFile(stream2, 0, stream2.Length, "file", Path.GetFileName(filePath))
             {
                 Headers = new HeaderDictionary(),
@@ -750,7 +761,7 @@ public class DailyReportRealFileTests
             var fpath = FindDocumentFile(fname);
             if (!File.Exists(fpath)) continue;
             _output.WriteLine($"\n================== FILE: {fname} ==================");
-            using var wb = new ClosedXML.Excel.XLWorkbook(fpath);
+            using var wb = OpenWorkbookShared(fpath);
             foreach (var ws in wb.Worksheets)
             {
                 var sname = ws.Name;
@@ -815,7 +826,7 @@ public class DailyReportRealFileTests
         var controller = new DailyReportController(context, stock, audit);
 
         var filePath07 = FindDocumentFile("Dataone Daily Report 07 Sep 2026_.xlsx");
-        using var stream = File.OpenRead(filePath07);
+        using var stream = OpenFileShared(filePath07);
         var formFile = new FormFile(stream, 0, stream.Length, "file", Path.GetFileName(filePath07))
         {
             Headers = new HeaderDictionary(),

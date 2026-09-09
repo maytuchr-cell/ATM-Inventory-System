@@ -5,6 +5,54 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Locations — ATM Inventory</title>
   <link rel="stylesheet" href="shared/styles.css?v=80">
+  <style>
+    .loc-stats {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 16px;
+      margin-bottom: 20px;
+    }
+    .loc-stat-card {
+      background: var(--bg-card);
+      border: 1.5px solid var(--border);
+      border-radius: 12px;
+      padding: 14px 16px;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      transition: transform .15s, box-shadow .15s;
+    }
+    .loc-stat-card:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 6px 16px rgba(0,0,0,0.06);
+    }
+    .loc-stat-title {
+      font-size: 12px;
+      font-weight: 700;
+      color: var(--text-secondary);
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      margin-bottom: 6px;
+    }
+    .loc-stat-num {
+      font-size: 22px;
+      font-weight: 800;
+      font-variant-numeric: tabular-nums;
+      line-height: 1.1;
+      margin-bottom: 3px;
+    }
+    .loc-stat-sub {
+      font-size: 11px;
+      color: var(--text-muted);
+    }
+    @media (max-width: 992px) {
+      .loc-stats { grid-template-columns: 1fr 1fr; }
+    }
+    @media (max-width: 560px) {
+      .loc-stats { grid-template-columns: 1fr; }
+    }
+  </style>
 </head>
 <body>
   <div class="app-layout">
@@ -13,7 +61,7 @@
       <div class="topbar">
         <div>
           <div class="topbar-title" data-i18n="loc.title">Locations</div>
-          <div class="topbar-sub"   data-i18n="loc.sub">Warehouse and storage location registry</div>
+          <div class="topbar-sub">ทะเบียนคลังและศูนย์จัดเก็บอะไหล่ พร้อมยอดคงเหลือจริงในแต่ละสถานที่</div>
         </div>
         <div class="topbar-controls">
           <button class="btn btn-primary" onclick="openModal()">
@@ -23,6 +71,36 @@
       </div>
 
       <div class="page-body">
+        <!-- KPI Summary Cards -->
+        <div class="loc-stats">
+          <div class="loc-stat-card">
+            <div class="loc-stat-title">🏢 สถานที่ทั้งหมด</div>
+            <div class="loc-stat-num" id="stat-total-locs" style="color:var(--text-primary);">—</div>
+            <div class="loc-stat-sub">คลัง / ฮับ / สต็อกช่าง ในระบบ</div>
+          </div>
+          <div class="loc-stat-card">
+            <div class="loc-stat-title">🏬 คลังหลัก (DHL-BKK)</div>
+            <div class="loc-stat-num" id="stat-dhl-stock" style="color:#16a34a;">—</div>
+            <div class="loc-stat-sub" id="stat-dhl-sub">สต็อกของดีพร้อมเบิก</div>
+          </div>
+          <div class="loc-stat-card">
+            <div class="loc-stat-title">🔧 ศูนย์ซ่อม SVOA (WH-RAT)</div>
+            <div class="loc-stat-num" id="stat-rat-stock" style="color:#ea580c;">—</div>
+            <div class="loc-stat-sub" id="stat-rat-sub">สต็อกระหว่างซ่อม / แล็บ</div>
+          </div>
+          <div class="loc-stat-card">
+            <div class="loc-stat-title">👤 สต็อกกับช่าง (OL-TECH)</div>
+            <div class="loc-stat-num" id="stat-tech-stock" style="color:#2563eb;">—</div>
+            <div class="loc-stat-sub" id="stat-tech-sub">เบิกไปถือครองหน้างาน</div>
+          </div>
+        </div>
+
+        <!-- Clarification Banner -->
+        <div style="background:var(--bg-card);border:1px solid var(--border);border-left:4px solid var(--orange);border-radius:8px;padding:10px 14px;margin-bottom:16px;font-size:12px;color:var(--text-secondary);display:flex;align-items:center;gap:8px;">
+          <iconify-icon icon="mdi:information-outline" width="18" style="color:var(--orange);flex-shrink:0;"></iconify-icon>
+          <span><strong>คำอธิบายตำแหน่งสต็อก:</strong> สต็อกอะไหล่ส่วนใหญ่จะประจำอยู่ที่ <strong>DHL-BKK</strong> (คลังกลาง), <strong>WH-RAT</strong> (ศูนย์ซ่อมแล็บ SVOA ราษฎร์บูรณะ), และ <strong>OL-TECH</strong> (สต็อกลอยกับช่าง) ส่วนฮับอื่นๆ เช่น สนามบิน หรือ Scrap เป็นจุดผ่านทางชั่วคราว จึงมียอดคงคลังเป็น 0 ตามปกติ</span>
+        </div>
+
         <div class="card">
           <div class="filter-bar">
             <select class="form-select" id="type-filter" onchange="renderTable()" style="max-width:220px;">
@@ -41,12 +119,16 @@
                   <th data-i18n="loc.col.code">Code</th>
                   <th data-i18n="loc.col.name">Location Name</th>
                   <th data-i18n="loc.col.type">Type</th>
+                  <th style="text-align:right;">🟢 ของดี (Good)</th>
+                  <th style="text-align:right;">🔴 รอซ่อม (Repair)</th>
+                  <th style="text-align:center;">🏷️ S/N ประจำคลัง</th>
+                  <th style="text-align:right;">📦 จำนวนชนิด (SKUs)</th>
                   <th data-i18n="col.status">Status</th>
                   <th data-i18n="col.actions">Actions</th>
                 </tr>
               </thead>
               <tbody id="loc-tbody">
-                <tr><td colspan="5" class="empty-state" data-i18n="connecting">Connecting…</td></tr>
+                <tr><td colspan="9" class="empty-state" data-i18n="connecting">Connecting…</td></tr>
               </tbody>
             </table>
           </div>

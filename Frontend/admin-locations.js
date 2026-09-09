@@ -28,12 +28,38 @@ async function init() {
 async function loadLocations() {
   try {
     allLocations = await api.locations.getAll();
+    updateLocationStats();
     renderTable();
   } catch (e) {
     showToast(t('toast.network'), 'error');
     document.getElementById('loc-tbody').innerHTML =
-      `<tr><td colspan="5" class="empty-state">${t('error.connect')}</td></tr>`;
+      `<tr><td colspan="9" class="empty-state">${t('error.connect')}</td></tr>`;
   }
+}
+
+function updateLocationStats() {
+  const elTotal = document.getElementById('stat-total-locs');
+  const elDhl = document.getElementById('stat-dhl-stock');
+  const elDhlSub = document.getElementById('stat-dhl-sub');
+  const elRat = document.getElementById('stat-rat-stock');
+  const elRatSub = document.getElementById('stat-rat-sub');
+  const elTech = document.getElementById('stat-tech-stock');
+  const elTechSub = document.getElementById('stat-tech-sub');
+
+  if (elTotal) elTotal.textContent = allLocations.length.toLocaleString() + ' แห่ง';
+
+  const dhl = allLocations.find(l => l.code === 'DHL-BKK') || {};
+  const rat = allLocations.find(l => l.code === 'WH-RAT' || l.locationType === 'RATCHABURANA') || {};
+  const tech = allLocations.find(l => l.code === 'OL-TECH' || l.locationType === 'OL_TECHNICIAN') || {};
+
+  if (elDhl) elDhl.textContent = (dhl.goodQty || 0).toLocaleString() + ' ชิ้น';
+  if (elDhlSub) elDhlSub.textContent = `ดี ${(dhl.goodQty || 0).toLocaleString()} | ซ่อม ${(dhl.repairQty || 0).toLocaleString()} | S/N ${(dhl.serialUnitsCount || 0).toLocaleString()}`;
+
+  if (elRat) elRat.textContent = (rat.repairQty || 0).toLocaleString() + ' ชิ้น';
+  if (elRatSub) elRatSub.textContent = `รอซ่อม ${(rat.repairQty || 0).toLocaleString()} | S/N ${(rat.serialUnitsCount || 0).toLocaleString()} ตัว`;
+
+  if (elTech) elTech.textContent = (tech.goodQty || 0).toLocaleString() + ' ชิ้น';
+  if (elTechSub) elTechSub.textContent = `ช่างถือ ${(tech.goodQty || 0).toLocaleString()} | S/N ${(tech.serialUnitsCount || 0).toLocaleString()} ตัว`;
 }
 
 const LOCATION_ICONS = {
@@ -60,7 +86,7 @@ function renderTable() {
 
   const tbody = document.getElementById('loc-tbody');
   if (!rows.length) {
-    tbody.innerHTML = `<tr><td colspan="5" class="empty-state">${t('loc.empty')}</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="9" class="empty-state">${t('loc.empty')}</td></tr>`;
     return;
   }
   tbody.innerHTML = rows.map(l => {
@@ -73,6 +99,23 @@ function renderTable() {
       ? `<button class="btn btn-secondary btn-xs" onclick="openModal(${l.id})">${t('btn.edit')}</button>
          <button class="btn btn-danger btn-xs" onclick="deleteLocation(${l.id})">${t('btn.delete')}</button>`
       : '';
+
+    const goodCell = (l.goodQty || 0) > 0
+      ? `<strong style="color:#16a34a;">${(l.goodQty || 0).toLocaleString()}</strong> <span style="font-size:11px;color:var(--text-secondary);">ชิ้น</span>`
+      : `<span style="color:var(--text-muted);font-size:12px;">0</span>`;
+
+    const repairCell = (l.repairQty || 0) > 0
+      ? `<strong style="color:#ea580c;">${(l.repairQty || 0).toLocaleString()}</strong> <span style="font-size:11px;color:var(--text-secondary);">ชิ้น</span>`
+      : `<span style="color:var(--text-muted);font-size:12px;">0</span>`;
+
+    const snCell = (l.serialUnitsCount || 0) > 0
+      ? `<a href="admin-serials.html?search=${encodeURIComponent(l.code)}" class="badge" style="background:rgba(249,115,22,0.12);color:var(--orange);text-decoration:none;font-weight:700;" title="คลิกดู Serial Numbers ในคลังนี้">${(l.serialUnitsCount || 0).toLocaleString()} ตัว</a>`
+      : `<span style="color:var(--text-muted);font-size:12px;">—</span>`;
+
+    const skusCell = (l.partTypesCount || 0) > 0
+      ? `<span style="font-weight:600;">${(l.partTypesCount || 0).toLocaleString()}</span> <span style="font-size:11px;color:var(--text-secondary);">รายการ</span>`
+      : `<span style="color:var(--text-muted);font-size:12px;">0</span>`;
+
     return `<tr>
       <td><code>${l.code}</code></td>
       <td>
@@ -82,6 +125,10 @@ function renderTable() {
         </div>
       </td>
       <td>${typeBadge}</td>
+      <td style="text-align:right;">${goodCell}</td>
+      <td style="text-align:right;">${repairCell}</td>
+      <td style="text-align:center;">${snCell}</td>
+      <td style="text-align:right;">${skusCell}</td>
       <td>${statusBadge}</td>
       <td style="display:flex;gap:6px;">${actions}</td>
     </tr>`;

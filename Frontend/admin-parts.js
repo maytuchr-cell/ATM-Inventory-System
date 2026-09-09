@@ -49,24 +49,30 @@ async function loadParts() {
   } catch (e) {
     showToast(t('toast.network'), 'error');
     document.getElementById('parts-tbody').innerHTML =
-      `<tr><td colspan="12" class="empty-state">${t('inv.empty')}</td></tr>`;
+      `<tr><td colspan="10" class="empty-state">${t('inv.empty')}</td></tr>`;
   }
 }
 
 function updateStats() {
   const total = allParts.length;
   const good = allParts.reduce((sum, p) => sum + (p.warehouseStock || 0), 0);
+  const tech = allParts.reduce((sum, p) => sum + (p.techStock || 0), 0);
   const repair = allParts.reduce((sum, p) => sum + (p.repairStock || 0), 0);
+  const snParts = allParts.filter(p => (p.serialUnitsCount || 0) > 0).length;
   const low = allParts.filter(p => (p.warehouseStock || 0) < (p.minStock || 0)).length;
 
   const elTotal = document.getElementById('stat-total-parts');
   const elGood = document.getElementById('stat-good-stock');
+  const elTech = document.getElementById('stat-tech-stock');
   const elRepair = document.getElementById('stat-repair-stock');
+  const elSn = document.getElementById('stat-sn-parts');
   const elLow = document.getElementById('stat-low-stock');
 
   if (elTotal) elTotal.textContent = total.toLocaleString();
   if (elGood) elGood.textContent = good.toLocaleString();
+  if (elTech) elTech.textContent = tech.toLocaleString();
   if (elRepair) elRepair.textContent = repair.toLocaleString();
+  if (elSn) elSn.textContent = snParts.toLocaleString();
   if (elLow) elLow.textContent = low.toLocaleString();
 }
 
@@ -127,17 +133,25 @@ function renderTable() {
   }
 
   tbody.innerHTML = rows.map(p => {
-    const catName = p.category?.name ?? (allCategories.find(c => c.id === p.categoryId)?.name ?? '—');
-    const whQty   = p.warehouseStock ?? 0;
-    const minQty  = p.minStock ?? 0;
-    const snCount = p.serialUnitsCount ?? 0;
+    const catName   = p.category?.name ?? (allCategories.find(c => c.id === p.categoryId)?.name ?? '—');
+    const whQty     = p.warehouseStock ?? 0;
+    const minQty    = p.minStock ?? 0;
+    const snCount   = p.serialUnitsCount ?? 0;
+    const inStockSn = p.inStockUnitsCount ?? 0;
+    const issuedSn  = p.issuedUnitsCount ?? 0;
+    const inRepairSn = p.inRepairUnitsCount ?? 0;
+    const unregInWh = Math.max(0, whQty - inStockSn);
 
     const statusBadge = p.isActive
       ? `<span class="badge badge-green">${t('lbl.active')}</span>`
       : `<span class="badge badge-gray">${t('lbl.inactive')}</span>`;
 
+    const snTooltip = snCount > 0
+      ? `S/N ทั้งหมด ${snCount} ตัวในระบบ:\n• พร้อมใช้ในคลัง: ${inStockSn} ตัว\n• อยู่กับช่าง: ${issuedSn} ตัว\n• ส่งซ่อม: ${inRepairSn} ตัว`
+      : 'ไม่มี Serial Number';
+
     const snBtn = snCount > 0
-      ? `<a href="admin-serials.html?partNo=${encodeURIComponent(p.partNo)}" class="btn btn-secondary btn-xs" title="ดู Serial Numbers (${snCount} S/N ในระบบ)" style="text-decoration:none;display:inline-flex;align-items:center;gap:3px;font-weight:600;"><iconify-icon icon="mdi:barcode-scan" width="13" style="color:var(--orange)"></iconify-icon> S/N <span class="badge" style="padding:0 5px;font-size:10px;background:rgba(249,115,22,0.15);color:var(--orange);border-radius:10px;">${snCount}</span></a>`
+      ? `<a href="admin-serials.html?partNo=${encodeURIComponent(p.partNo)}" class="btn btn-secondary btn-xs" title="${snTooltip}" style="text-decoration:none;display:inline-flex;align-items:center;gap:3px;font-weight:600;"><iconify-icon icon="mdi:barcode-scan" width="13" style="color:var(--orange)"></iconify-icon> S/N <span class="badge" style="padding:1px 5px;font-size:10px;background:rgba(249,115,22,0.15);color:var(--orange);border-radius:8px;" title="ในคลัง ${inStockSn} / ทั้งหมด ${snCount}">คลัง ${inStockSn} <span style="opacity:0.65;">(${snCount})</span></span></a>`
       : `<button class="btn btn-xs" disabled title="อะไหล่ชิ้นนี้ไม่มี Serial Number (นับสต็อกตามจำนวนชิ้น)" style="opacity:0.4;cursor:not-allowed;border:1px dashed var(--border);color:var(--text-muted);background:transparent;display:inline-flex;align-items:center;gap:3px;"><iconify-icon icon="mdi:barcode-off" width="13"></iconify-icon> ไม่มี S/N</button>`;
 
     const actions = p.isActive
@@ -155,12 +169,34 @@ function renderTable() {
       ? `<a href="admin-serials.html?partNo=${encodeURIComponent(p.partNo)}" title="คลิกเพื่อดู Serial Numbers (${snCount} S/N ในระบบ)" style="text-decoration:none;"><code style="cursor:pointer;color:var(--orange);font-weight:700;">${p.partNo}</code></a>`
       : `<code title="อะไหล่ไม่มี Serial Number (นับสต็อกตามจำนวนชิ้น)" style="color:var(--text-secondary);">${p.partNo}</code>`;
 
+    const stockCellContent = `
+      <div style="font-weight:700;color:${whQty < minQty ? 'var(--red)' : 'var(--text-primary)'};">${whQty.toLocaleString()} <span style="font-size:11px;font-weight:normal;color:var(--text-secondary);">${p.unit || 'ชิ้น'}</span></div>
+      ${snCount > 0 ? `
+        <div style="font-size:10.5px;color:var(--text-muted);font-weight:normal;line-height:1.2;margin-top:2px;">
+          S/N ในคลัง: <strong style="color:var(--text-primary);">${inStockSn}</strong>
+          ${unregInWh > 0 ? `<span title="มีของดีในคลังอีก ${unregInWh} ชิ้นที่ยังไม่เคยถูกสแกน S/N เข้าระบบ" style="color:#d97706;margin-left:3px;">(+${unregInWh} ไม่มี S/N)</span>` : ''}
+        </div>` : ''}
+    `;
+
+    const techQty = p.techStock ?? 0;
+    const repairQty = p.repairStock ?? 0;
+
+    const techCellContent = techQty > 0
+      ? `<div style="font-weight:700;color:#2563eb;">${techQty.toLocaleString()} <span style="font-size:11px;font-weight:normal;color:var(--text-secondary);">${p.unit || 'ชิ้น'}</span></div>${snCount > 0 && issuedSn > 0 ? `<div style="font-size:10.5px;color:var(--text-muted);">(S/N: ${issuedSn})</div>` : ''}`
+      : `<span style="color:var(--text-muted);font-size:12px;">0</span>`;
+
+    const repairCellContent = repairQty > 0
+      ? `<div style="font-weight:700;color:#ea580c;">${repairQty.toLocaleString()} <span style="font-size:11px;font-weight:normal;color:var(--text-secondary);">${p.unit || 'ชิ้น'}</span></div>${snCount > 0 && inRepairSn > 0 ? `<div style="font-size:10.5px;color:var(--text-muted);">(S/N: ${inRepairSn})</div>` : ''}`
+      : `<span style="color:var(--text-muted);font-size:12px;">0</span>`;
+
     return `<tr>
       <td>${partNoCell}</td>
       <td><a href="#" class="part-name-link" onclick="openPartDetail(${p.id});return false;">${imgIcon}<strong>${p.partName}</strong></a></td>
       <td><span class="badge badge-gray" style="font-size:11px;">${p.project || '—'}</span></td>
       <td>${catName}</td>
-      <td style="text-align:right;font-weight:700;color:${whQty < minQty ? 'var(--red)' : 'var(--text-primary)'};">${whQty.toLocaleString()} ชิ้น</td>
+      <td style="text-align:right;">${stockCellContent}</td>
+      <td style="text-align:right;">${techCellContent}</td>
+      <td style="text-align:right;">${repairCellContent}</td>
       <td style="text-align:right;">${minQty.toLocaleString()}</td>
       <td>${statusBadge}</td>
       <td style="white-space:nowrap;display:flex;gap:6px;">${actions}</td>
@@ -187,14 +223,39 @@ function openPartDetail(id) {
   pdIndex = 0;
   renderPdImage(p.partName);
 
-  const snCount = p.serialUnitsCount ?? 0;
+  const snCount   = p.serialUnitsCount ?? 0;
+  const inStockSn = p.inStockUnitsCount ?? 0;
+  const issuedSn  = p.issuedUnitsCount ?? 0;
+  const inRepairSn = p.inRepairUnitsCount ?? 0;
+  const unregInWh = Math.max(0, (p.warehouseStock ?? 0) - inStockSn);
+
   const snRowContent = snCount > 0
     ? `<code>${p.partNo}</code> <a href="admin-serials.html?partNo=${encodeURIComponent(p.partNo)}" class="btn btn-secondary btn-xs" style="margin-left:8px;text-decoration:none;display:inline-flex;align-items:center;gap:3px;"><iconify-icon icon="mdi:barcode-scan" width="13"></iconify-icon> ดู S/N ทั้งหมด (${snCount} ตัว) ↗</a>`
     : `<code>${p.partNo}</code> <span class="badge badge-gray" style="margin-left:8px;font-size:11px;font-weight:normal;color:var(--text-muted);display:inline-flex;align-items:center;gap:4px;"><iconify-icon icon="mdi:barcode-off" width="13"></iconify-icon> ไม่มี Serial Number (นับสต็อกตามจำนวนชิ้น)</span>`;
 
-  const stockRowContent = snCount > 0
-    ? `${p.stockQuantity} รวม &nbsp;(คลังกลาง ${p.warehouseStock ?? 0} / อยู่กับช่าง ${p.techStock ?? 0}) <a href="admin-serials.html?partNo=${encodeURIComponent(p.partNo)}" style="margin-left:8px;font-size:12px;text-decoration:none;color:var(--orange);">[เช็คสถานะ ${snCount} S/N ↗]</a>`
-    : `${p.stockQuantity} รวม &nbsp;(คลังกลาง ${p.warehouseStock ?? 0} / อยู่กับช่าง ${p.techStock ?? 0})`;
+  const stockRowContent = `
+    <div style="display:flex;flex-direction:column;gap:6px;width:100%;">
+      <div style="display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid var(--border);padding-bottom:4px;">
+        <span>🏬 <strong>คลังกลาง DHL (ของดี):</strong> ${(p.warehouseStock ?? 0).toLocaleString()} ชิ้น</span>
+        ${snCount > 0 ? `<span style="font-size:11.5px;color:var(--text-secondary);">ลงทะเบียน S/N ในคลังแล้ว <strong>${inStockSn}</strong> ตัว ${unregInWh > 0 ? `<span style="color:#d97706;">(ยังไม่ระบุ S/N ${unregInWh} ชิ้น)</span>` : ''}</span>` : ''}
+      </div>
+      <div style="display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid var(--border);padding-bottom:4px;font-size:12.5px;">
+        <span>👤 <strong>อยู่กับช่าง (จ่ายออก):</strong> ${(p.techStock ?? 0).toLocaleString()} ชิ้น</span>
+        ${snCount > 0 ? `<span style="color:var(--text-secondary);">มี S/N ถือครอง <strong>${issuedSn}</strong> ตัว</span>` : ''}
+      </div>
+      <div style="display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid var(--border);padding-bottom:4px;font-size:12.5px;">
+        <span>🔧 <strong>ส่งซ่อม/ชำรุด:</strong> ${(p.repairStock ?? 0).toLocaleString()} ชิ้น</span>
+        ${snCount > 0 ? `<span style="color:var(--text-secondary);">มี S/N ส่งซ่อม <strong>${inRepairSn}</strong> ตัว</span>` : ''}
+      </div>
+      ${snCount > 0 ? `
+      <div style="margin-top:4px;text-align:right;">
+        <a href="admin-serials.html?partNo=${encodeURIComponent(p.partNo)}" class="btn btn-secondary btn-xs" style="text-decoration:none;display:inline-flex;align-items:center;gap:4px;">
+          <iconify-icon icon="mdi:barcode-scan" width="13" style="color:var(--orange)"></iconify-icon>
+          ดูรายละเอียด S/N ทั้งหมด ${snCount} ตัวในระบบ ↗
+        </a>
+      </div>` : ''}
+    </div>
+  `;
 
   const rows = [
     ['parts.pd.partno', snRowContent],

@@ -1,4 +1,4 @@
-﻿# สรุปภาพรวมการเปลี่ยนแปลงใน Branch `ForDailyReport_Boom`
+# สรุปภาพรวมการเปลี่ยนแปลงใน Branch `ForDailyReport_Boom`
 
 เอกสารนี้สรุปรายละเอียดการปรับปรุงระบบ พัฒนาฟีเจอร์ใหม่ การแก้ปัญหา และการจัดเตรียมฐานข้อมูลใน Branch **`ForDailyReport_Boom`** ของโครงการ **ATM Inventory System V2**
 
@@ -110,33 +110,54 @@
 
 ## 7. ชุดการทดสอบระบบอัตโนมัติ (Automated Test Suite)
 
-ระบบมีชุดทดสอบครอบคลุมทั้ง Unit Tests และ Integration Tests รวม **77 ข้อ**:
-* `DailyReportControllerTests.cs`: ทดสอบ Logic การจับคู่, การตัดสต็อก, การคืนของ, การปิด auto-ticket, การป้องกันการนำเข้าซ้ำ, และการ Undo
-* `DailyReportRealFileTests.cs`: ทดสอบการ Parse ข้อมูลจากไฟล์ Excel จริงของ DHL
+ระบบมีชุดทดสอบครอบคลุมทั้ง Unit Tests และ Integration Tests รวม **78 ข้อ**:
+* `DailyReportControllerTests.cs`: ทดสอบ Logic การจับคู่, การตัดสต็อก, การคืนของ, การปิด auto-ticket, การป้องกันการนำเข้าซ้ำ, การ Undo, และการ Sync & Adjust ผ่าน `AdjustReconcile`
+* `DailyReportRealFileTests.cs`: ทดสอบการ Parse ข้อมูลจากไฟล์ Excel จริงของ DHL และการคำนวณกระทบยอดแบบแยก Good/Repair
 * **ผลการทดสอบล่าสุด**:
   ```text
-  Passed! - Failed: 0, Passed: 76, Skipped: 1, Total: 77, Duration: 1 m 8 s
+  Passed! - Failed: 0, Passed: 77, Skipped: 1, Total: 78, Duration: 1 m 20 s
   ```
 
 ---
 
-## 8. รายการไฟล์ที่มีการเปลี่ยนแปลง (Files Modified / Added)
+## 8. ระบบกระทบยอดและปรับปรุงสต็อก (Reconciliation & Audit-Logged Sync)
+
+### การแก้ปัญหายอดคงเหลือไม่สอดคล้องกับ DHL:
+1. **แยกประเภทสต็อก Good vs Bad (Repair) อย่างชัดเจน**:
+   - ในชีต Minimum Stock ของ DHL มีอะไหล่ 64 รายการที่ปรากฏ 2 บรรทัด (แยกของดี `GOOD` และของเสีย `BAD`)
+   - เดิมระบบรวมยอดเข้าด้วยกัน ทำให้เกิดผลต่างเท็จ (False Diff) เช่น UPS Santak 46 ตัวในสถานะเสีย ถูกนำไปเทียบกับของดี
+   - ระบบใหม่ทำการ Group By `PartNo` และเปรียบเทียบแยกเป็น:
+     - `DhlGoodQty` เทียบกับ `SystemGoodQty` (ผลต่าง: `DiffGood`)
+     - `DhlBadQty` เทียบกับ `SystemRepairQty` (ผลต่าง: `DiffRepair`)
+   - ทำให้ยอดกระทบยอดแม่นยำขึ้นทันที โดย 741/796 รายการ (93.1%) ของดีตรงกันสมบูรณ์
+2. **ระบบแจ้งเตือนเมื่อข้ามไฟล์ (Date Gap Warning)**:
+   - ตรวจสอบวันที่มีการ Import ล่าสุด หากผู้ใช้อัปโหลดไฟล์ข้ามช่วงวัน (เช่น จาก 03 ก.ย. ข้ามไป 07 ก.ย. โดยยังไม่ได้นำเข้า 04-05 ก.ย.) ระบบจะแสดงแถบแจ้งเตือนสีส้มทันที เพื่อป้องกันยอดสต็อกคลาดเคลื่อนจากการขาดข้อมูลการตัดจ่าย
+3. **ฟังก์ชันปรับยอดสต็อกพร้อมบันทึก Audit Trail (Sync & Adjust)**:
+   - ผู้ดูแลระบบสามารถกดปุ่ม **"ปรับยอด"** ในตาราง Reconcile ได้โดยตรง
+   - มี Modal ให้ตรวจสอบยอดเดิม -> ยอดใหม่ พร้อมบังคับเลือกเหตุผลในการปรับปรุง (เช่น Physical Cycle Count, Warehouse Shrinkage)
+   - บันทึกการเปลี่ยนแปลงลง `StockMovements` ด้วยประเภท `StockCountAdjust` และบันทึก `AuditLogs` อย่างโปร่งใส ตรวจสอบย้อนหลังได้ทุกครั้ง
+
+---
+
+## 9. รายการไฟล์ที่มีการเปลี่ยนแปลง (Files Modified / Added)
 
 ### Backend
-* `Backend/Api/Controllers/DailyReportController.cs`: Engine หลักสำหรับ Import Excel, Matching, Stock Adjustments, และ Undo
+* `Backend/Api/Controllers/DailyReportController.cs`: Engine หลักสำหรับ Import Excel, Matching, Stock Adjustments, แยก Good/Bad Reconcile, Date Gap Warning, และ Sync & Adjust API
 * `Backend/Api/Program.cs`: เพิ่ม Location WH-RAT, ล้าง Seed Demo Data, ปรับ DB Migrations
 * `Backend/Api/Models/DailyReportImport.cs`: โมเดลเก็บประวัติ Batch และแถวการ Import
-* `Backend/Api.Tests/DailyReportControllerTests.cs`: ชุด Unit Tests ปรับตาม Logic ล่าสุด
-* `Backend/Api.Tests/DailyReportRealFileTests.cs`: ชุด Integration Tests ทดสอบกับไฟล์ Excel จริง
+* `Backend/Api.Tests/DailyReportControllerTests.cs`: ชุด Unit Tests รวมการทดสอบ `AdjustReconcile`
+* `Backend/Api.Tests/DailyReportRealFileTests.cs`: ชุด Integration Tests ทดสอบกับไฟล์ Excel จริงด้วย Safe Shared Streams
 
 ### Frontend
-* `Frontend/admin-dhl-report.html`: หน้าจอจัดการ DHL Daily Report
+* `Frontend/admin-dhl-report.html`: หน้าจอจัดการ DHL Daily Report, ตาราง Reconcile แบบแยก Good/Repair, แถบแจ้งเตือน Date Gap, และ Modal Sync & Adjust
+* `Frontend/shared/api.js`: เพิ่ม `api.dailyReport.adjustReconcile`
 * `Frontend/admin-serials.html`: หน้าจอสืบค้นและติดตาม Serial Number
 * `Frontend/admin-locations.js`: ตัวจัดการป้ายชื่อและคลังสินค้า
 * `Frontend/admin-tickets.html`: ปรับปรุงมุมมองรายการใบเบิก
-* `Frontend/version.json`: อัปเดตเวอร์ชันเป็น `v1.0.135`
+* `Frontend/version.json`: อัปเดตเวอร์ชันระบบ
 
 ### Documentation
 * `BRANCH_CHANGES_SUMMARY.md`: เอกสารสรุปการเปลี่ยนแปลงของ Branch นี้
 * `DAILY_REPORT_DATA_MANAGEMENT.md`: คู่มือการจัดการและนำเข้าข้อมูล Daily Report
 * `DAILY_REPORT_INTEGRATION_PLAN.md`: แผนการทำงานและสถาปัตยกรรมของ Daily Report Engine
+

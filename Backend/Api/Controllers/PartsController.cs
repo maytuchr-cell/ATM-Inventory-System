@@ -150,12 +150,17 @@ public class PartsController : ControllerBase
         var (whGood, whRepair, techStock) = StockByBucket(parts.Select(p => p.Id));
         var images = ImagesByPart(parts.Select(p => p.Id));
 
-        // PartUnit counts
+        // PartUnit counts by status
         var partIds = parts.Select(p => p.Id).ToList();
-        var unitCounts = _context.PartUnits
+        var rawUnits = _context.PartUnits
             .Where(u => partIds.Contains(u.PartId) && u.Status != "Disposed")
-            .GroupBy(u => u.PartId)
-            .ToDictionary(g => g.Key, g => g.Count());
+            .Select(u => new { u.PartId, u.Status })
+            .ToList();
+
+        var unitCounts = rawUnits.GroupBy(u => u.PartId).ToDictionary(g => g.Key, g => g.Count());
+        var inStockUnitCounts = rawUnits.Where(u => u.Status == "InStock").GroupBy(u => u.PartId).ToDictionary(g => g.Key, g => g.Count());
+        var issuedUnitCounts = rawUnits.Where(u => u.Status == "Issued").GroupBy(u => u.PartId).ToDictionary(g => g.Key, g => g.Count());
+        var inRepairUnitCounts = rawUnits.Where(u => u.Status == "InRepair").GroupBy(u => u.PartId).ToDictionary(g => g.Key, g => g.Count());
 
         // attach known serial numbers from StockMovements
         var serialMap = _context.StockMovements
@@ -170,6 +175,9 @@ public class PartsController : ControllerBase
             RepairStock = whRepair.GetValueOrDefault(p.Id, 0),
             TechStock = techStock.GetValueOrDefault(p.Id, 0),
             SerialUnitsCount = unitCounts.GetValueOrDefault(p.Id, 0),
+            InStockUnitsCount = inStockUnitCounts.GetValueOrDefault(p.Id, 0),
+            IssuedUnitsCount = issuedUnitCounts.GetValueOrDefault(p.Id, 0),
+            InRepairUnitsCount = inRepairUnitCounts.GetValueOrDefault(p.Id, 0),
             p.CategoryId, p.MinStock, p.MaxStock,
             p.ReorderPoint, p.CostPerUnit, p.CatalogueRef, p.SerialNo,
             p.MainUnit, p.Remark, p.ImagePath, p.Zone, p.DeviceType, p.AddedBy, p.Lot, p.Project, p.AddedDate,

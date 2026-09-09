@@ -104,6 +104,14 @@ const api = {
       return apiUpload('/Parts/import/confirm', fd);
     },
   },
+  dashboard: {
+    inventorySummary: ()            => apiFetch('/Dashboard/inventory-summary'),
+    stock:            ()            => apiFetch('/Dashboard/stock'),
+    alerts:           ()            => apiFetch('/Dashboard/alerts'),
+    aging:            (days = 30)   => apiFetch(`/Dashboard/aging?days=${days}`),
+    topBottom:        ()            => apiFetch('/Dashboard/top-bottom'),
+    recurrentFailures:(days = 30)   => apiFetch(`/Dashboard/recurrent-failures?days=${days}`),
+  },
   savedAddresses: {
     getAll:  (techEmail)   => apiFetch('/SavedAddress?' + new URLSearchParams({ techEmail })),
     create:  (data)        => apiFetch('/SavedAddress',      { method: 'POST',   body: JSON.stringify(data) }),
@@ -263,6 +271,7 @@ const api = {
     history: () => apiFetch('/DailyReport/history'),
     batch:   (id) => apiFetch(`/DailyReport/batches/${id}`),
     undoRow: (id) => apiFetch(`/DailyReport/rows/${id}/undo`, { method: 'PUT' }),
+    adjustReconcile: (data) => apiFetch('/DailyReport/reconcile/adjust', { method: 'POST', body: JSON.stringify(data) }),
   },
   feContacts: {
     getAll:  ()          => apiFetch('/FeContact'),

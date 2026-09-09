@@ -56,10 +56,57 @@ public class DashboardController : ControllerBase
                 locationId   = g.Key,
                 locationName = locMap.GetValueOrDefault(g.Key, "—"),
                 goodQty      = g.Sum(s => s.GoodQty),
-                badQty = g.Sum(s => s.BadQty),
+                badQty       = g.Sum(s => s.RepairQty + s.BadQty),
             });
 
         return Ok(grouped);
+    }
+
+    // GET /api/Dashboard/inventory-summary — system-wide inventory overview across DHL, Tech, Repair & S/N
+    [HttpGet("inventory-summary")]
+    public IActionResult GetInventorySummary()
+    {
+        var whLoc = _context.Locations.FirstOrDefault(l => l.Code == "DHL-BKK");
+        var techLoc = _context.Locations.FirstOrDefault(l => l.LocationType == "OL_TECHNICIAN");
+        var ratLoc = _context.Locations.FirstOrDefault(l => l.Code == "WH-RAT" || l.LocationType == "RATCHABURANA");
+
+        var whId = whLoc?.Id ?? 0;
+        var techId = techLoc?.Id ?? 0;
+        var ratId = ratLoc?.Id ?? 0;
+
+        var allStock = _context.PartStocks.ToList();
+        var dhlGood = allStock.Where(s => s.LocationId == whId).Sum(s => s.GoodQty);
+        var dhlRepair = allStock.Where(s => s.LocationId == whId).Sum(s => s.RepairQty + s.BadQty);
+        var techGood = allStock.Where(s => s.LocationId == techId).Sum(s => s.GoodQty);
+        var ratRepair = allStock.Where(s => s.LocationId == ratId).Sum(s => s.RepairQty + s.BadQty);
+        var totalGood = allStock.Sum(s => s.GoodQty);
+        var totalRepair = allStock.Sum(s => s.RepairQty + s.BadQty);
+
+        var totalParts = _context.Parts.Count(p => p.IsActive);
+
+        var serialUnits = _context.PartUnits.Where(u => u.Status != "Disposed").ToList();
+        var totalSerials = serialUnits.Count;
+        var inStockSerials = serialUnits.Count(u => u.Status == "InStock");
+        var issuedSerials = serialUnits.Count(u => u.Status == "Issued");
+        var inRepairSerials = serialUnits.Count(u => u.Status == "InRepair");
+
+        return Ok(new
+        {
+            totalParts,
+            centralGoodStock = dhlGood,
+            techFloatingStock = techGood,
+            centralRepairStock = dhlRepair,
+            ratRepairStock = ratRepair,
+            totalRepairStock = totalRepair,
+            totalGoodStock = totalGood,
+            serialUnits = new
+            {
+                total = totalSerials,
+                inStock = inStockSerials,
+                issued = issuedSerials,
+                inRepair = inRepairSerials
+            }
+        });
     }
 
     // GET /api/Dashboard/aging?days=30 — parts whose stock hasn't moved in N days

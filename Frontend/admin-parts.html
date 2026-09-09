@@ -5,6 +5,54 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Parts Master — ATM Inventory</title>
   <link rel="stylesheet" href="shared/styles.css?v=80">
+  <style>
+    .parts-stats {
+      display: grid;
+      grid-template-columns: repeat(6, 1fr);
+      gap: 14px;
+      margin-bottom: 20px;
+    }
+    .parts-stat-card {
+      background: var(--bg-card);
+      border: 1.5px solid var(--border);
+      border-radius: 12px;
+      padding: 12px 14px;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      transition: transform .15s, box-shadow .15s;
+    }
+    .parts-stat-card:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 4px 12px rgba(0,0,0,0.06);
+    }
+    .parts-stat-title {
+      font-size: 11.5px;
+      font-weight: 700;
+      color: var(--text-secondary);
+      display: flex;
+      align-items: center;
+      gap: 5px;
+      margin-bottom: 6px;
+    }
+    .parts-stat-num {
+      font-size: 20px;
+      font-weight: 800;
+      font-variant-numeric: tabular-nums;
+      line-height: 1.1;
+      margin-bottom: 2px;
+    }
+    .parts-stat-sub {
+      font-size: 10.5px;
+      color: var(--text-muted);
+    }
+    @media (max-width: 1200px) {
+      .parts-stats { grid-template-columns: repeat(3, 1fr); }
+    }
+    @media (max-width: 640px) {
+      .parts-stats { grid-template-columns: 1fr 1fr; }
+    }
+  </style>
 </head>
 <body>
   <div class="app-layout">
@@ -25,6 +73,40 @@
       </div>
 
       <div class="page-body">
+        <!-- KPI Summary Stats Grid -->
+        <div class="parts-stats">
+          <div class="parts-stat-card">
+            <div class="parts-stat-title">📦 รายการอะไหล่ทั้งหมด</div>
+            <div class="parts-stat-num" id="stat-total-parts" style="color:var(--text-primary);">—</div>
+            <div class="parts-stat-sub">รายการ (SKUs) ในระบบ</div>
+          </div>
+          <div class="parts-stat-card">
+            <div class="parts-stat-title">🏬 คลัง DHL (ของดี)</div>
+            <div class="parts-stat-num" id="stat-good-stock" style="color:#16a34a;">—</div>
+            <div class="parts-stat-sub">ชิ้น พร้อมส่ง/เบิกจ่าย</div>
+          </div>
+          <div class="parts-stat-card">
+            <div class="parts-stat-title">👤 อยู่กับช่าง (Tech)</div>
+            <div class="parts-stat-num" id="stat-tech-stock" style="color:#2563eb;">—</div>
+            <div class="parts-stat-sub">ชิ้น เบิกไปใช้งาน</div>
+          </div>
+          <div class="parts-stat-card">
+            <div class="parts-stat-title">🔧 รอซ่อม / ชำรุด</div>
+            <div class="parts-stat-num" id="stat-repair-stock" style="color:#ea580c;">—</div>
+            <div class="parts-stat-sub">ชิ้น DHL & ศูนย์ซ่อม</div>
+          </div>
+          <div class="parts-stat-card">
+            <div class="parts-stat-title">🏷️ มีทะเบียน S/N</div>
+            <div class="parts-stat-num" id="stat-sn-parts" style="color:#8b5cf6;">—</div>
+            <div class="parts-stat-sub">รายการที่ติดตาม S/N ได้</div>
+          </div>
+          <div class="parts-stat-card">
+            <div class="parts-stat-title">⚠️ สต็อกต่ำกว่า Min</div>
+            <div class="parts-stat-num" id="stat-low-stock" style="color:var(--red);">—</div>
+            <div class="parts-stat-sub">รายการที่ต้องเติมของ</div>
+          </div>
+        </div>
+
         <div class="card">
           <div class="filter-bar" style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
             <input class="form-input" id="search-input" style="min-width:240px;"
@@ -55,14 +137,16 @@
                   <th data-i18n="parts.col.name">Part Name</th>
                   <th>โครงการ / กลุ่ม</th>
                   <th data-i18n="parts.col.cat">Category</th>
-                  <th style="text-align:right;" title="สต็อกพร้อมเบิกในคลังกลาง DHL">สต็อกคงเหลือ</th>
+                  <th style="text-align:right;" title="สต็อกของดีพร้อมเบิกจ่ายในคลังกลาง DHL-BKK">คลัง DHL (ของดี)</th>
+                  <th style="text-align:right;" title="สต็อกที่เบิกจ่ายอยู่กับช่างหน้างาน">อยู่กับช่าง (Tech)</th>
+                  <th style="text-align:right;" title="สต็อกของเสีย/รอซ่อม">รอซ่อม (Repair)</th>
                   <th style="text-align:right;" data-i18n="parts.col.min">Min Stock</th>
                   <th data-i18n="col.status">Status</th>
                   <th data-i18n="col.actions">Actions</th>
                 </tr>
               </thead>
               <tbody id="parts-tbody">
-                <tr><td colspan="8" class="empty-state" data-i18n="connecting">Connecting…</td></tr>
+                <tr><td colspan="10" class="empty-state" data-i18n="connecting">Connecting…</td></tr>
               </tbody>
             </table>
           </div>

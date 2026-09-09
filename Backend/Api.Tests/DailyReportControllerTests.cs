@@ -845,6 +845,44 @@ public class DailyReportControllerTests
         Assert.Empty(context.Tickets);
     }
 
+    [Fact]
+    public void AdjustReconcile_UpdatesPartStockAndAppendsMovements()
+    {
+        var (tickets, dailyReport, context, mainWh, _) = Create();
+        var stock = context.PartStocks.First(s => s.LocationId == mainWh.Id);
+        stock.GoodQty = 100;
+        stock.RepairQty = 5;
+        context.SaveChanges();
+
+        var request = new DailyReportController.ReconcileAdjustRequest
+        {
+            Adjustments = new List<DailyReportController.ReconcileAdjustItem>
+            {
+                new DailyReportController.ReconcileAdjustItem
+                {
+                    PartNo = PartNo,
+                    TargetGood = 95,
+                    TargetRepair = 8,
+                    Reason = "นับสต็อกจริงคลัง DHL"
+                }
+            }
+        };
+
+        var result = dailyReport.AdjustReconcile(request);
+        Assert.IsType<OkObjectResult>(result);
+
+        context.Entry(stock).Reload();
+        Assert.Equal(95, stock.GoodQty);
+        Assert.Equal(8, stock.RepairQty);
+
+        var movements = context.StockMovements
+            .Where(m => m.PartNo == PartNo && m.MovementType == "StockCountAdjust")
+            .ToList();
+        Assert.Equal(2, movements.Count);
+        Assert.Contains(movements, m => m.Condition == "Good" && m.Qty == 5);
+        Assert.Contains(movements, m => m.Condition == "Repair" && m.Qty == 3);
+    }
+
     private class FakeEnv : IWebHostEnvironment
     {
         public string WebRootPath { get; set; } = "";
