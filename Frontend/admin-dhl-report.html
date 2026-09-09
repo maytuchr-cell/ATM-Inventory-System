@@ -89,6 +89,24 @@
                 </table>
               </div>
 
+              <div id="reconcile-section" style="display:none;margin-top:20px;">
+                <div style="font-weight:700;margin-bottom:6px;">📊 ปรับยอดคลังให้ตรงกับ DHL (จากชีต "Minimum Stock")</div>
+                <div class="dr-note" style="margin-bottom:10px;">เขียนทับยอดคลังกลาง (DHL-BKK) ให้ตรงกับตัวเลขล่าสุดที่ DHL รายงานมา — ไม่ใช่การบวก/ลบสะสม</div>
+                <div class="dr-stats" style="grid-template-columns:repeat(3,1fr);">
+                  <div class="dr-stat"><div class="dr-stat-num" id="stat-recon-matched">0</div><div class="dr-stat-label">อะไหล่ที่จับคู่ได้</div></div>
+                  <div class="dr-stat good"><div class="dr-stat-num" id="stat-recon-changed">0</div><div class="dr-stat-label">ยอดที่จะเปลี่ยน</div></div>
+                  <div class="dr-stat warn"><div class="dr-stat-num" id="stat-recon-notfound">0</div><div class="dr-stat-label">ไม่พบ Part No. ในระบบ</div></div>
+                </div>
+                <div class="tbl-wrap" style="max-height:280px;overflow-y:auto;">
+                  <table>
+                    <thead>
+                      <tr><th>รหัสอะไหล่</th><th>ชื่ออะไหล่</th><th>สถานะ</th><th>ยอดเดิม</th><th>ยอดใหม่ (จาก DHL)</th></tr>
+                    </thead>
+                    <tbody id="reconcile-tbody"></tbody>
+                  </table>
+                </div>
+              </div>
+
               <div style="display:flex;gap:10px;margin-top:16px;">
                 <button class="btn" onclick="cancelPreview()">ยกเลิก</button>
                 <button class="btn btn-primary" id="confirm-btn" onclick="confirmImport()">✅ ยืนยัน Import</button>
@@ -180,6 +198,7 @@
         const res = await api.dailyReport.preview(file);
         lastPreviewRows = res.rows;
         renderPreview(res.rows, res.summary);
+        renderReconcile(res.reconcileRows, res.reconcileSummary);
         document.getElementById('dr-filename').textContent = `ไฟล์: ${file.name}`;
       } catch (e) {
         showToast?.(e.message || t('toast.error'), 'error');
@@ -210,10 +229,34 @@
       document.getElementById('dr-preview-section').style.display = 'block';
     }
 
+    // reconcileRows/reconcileSummary come back null for an older Daily Report file that has no
+    // "Minimum Stock" sheet — nothing to reconcile, just hide the section entirely.
+    function renderReconcile(rows, summary) {
+      const section = document.getElementById('reconcile-section');
+      if (!summary) { section.style.display = 'none'; return; }
+      section.style.display = 'block';
+      document.getElementById('stat-recon-matched').textContent = summary.partsMatched ?? 0;
+      document.getElementById('stat-recon-changed').textContent = summary.partsChanged ?? 0;
+      document.getElementById('stat-recon-notfound').textContent = summary.notFoundCount ?? 0;
+
+      const changed = (rows || []).filter(r => r.changed);
+      document.getElementById('reconcile-tbody').innerHTML = changed.length
+        ? changed.map(r => `
+          <tr>
+            <td><code>${r.partNo}</code></td>
+            <td>${r.partName}</td>
+            <td>${r.bucket === 'Repair' ? '🔧 ซ่อม' : '✅ ดี'}</td>
+            <td>${r.oldQty}</td>
+            <td style="font-weight:700;">${r.newQty}</td>
+          </tr>`).join('')
+        : `<tr><td colspan="5" class="empty-state">ยอดคลังตรงกับ DHL อยู่แล้วทุกตัว ไม่มีอะไรต้องเปลี่ยน</td></tr>`;
+    }
+
     function cancelPreview() {
       pendingFile = null;
       lastPreviewRows = [];
       document.getElementById('dr-preview-section').style.display = 'none';
+      document.getElementById('reconcile-section').style.display = 'none';
       document.getElementById('dr-filename').textContent = '';
       document.getElementById('dr-file-input').value = '';
     }
@@ -225,7 +268,8 @@
       btn.textContent = 'กำลัง Import...';
       try {
         const res = await api.dailyReport.confirm(pendingFile);
-        showToast?.(`Import สำเร็จ — คืนสำเร็จ ${res.summary.returnConfirmed}, ซ่อมเสร็จ ${res.summary.repairCompleted}`, 'success');
+        const reconMsg = res.reconcileSummary ? ` — ปรับยอดคลัง ${res.reconcileSummary.partsChanged} รายการให้ตรงกับ DHL` : '';
+        showToast?.(`Import สำเร็จ — คืนสำเร็จ ${res.summary.returnConfirmed}, ซ่อมเสร็จ ${res.summary.repairCompleted}${reconMsg}`, 'success');
         cancelPreview();
         switchTab('history');
       } catch (e) {

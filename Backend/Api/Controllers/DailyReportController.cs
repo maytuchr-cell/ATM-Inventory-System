@@ -37,7 +37,14 @@ public class DailyReportController : ControllerBase
         if (error != null) return BadRequest(new { message = error });
 
         var (rowResults, summary) = Process(parsed!, commit: false, userName: CurrentUser());
-        return Ok(new { rows = rowResults, summary });
+
+        var minStockRows = ParseMinimumStock(file!);
+        List<ReconcileRow>? reconcileRows = null;
+        ReconcileSummary? reconcileSummary = null;
+        if (minStockRows != null)
+            (reconcileRows, reconcileSummary) = ReconcileStock(minStockRows, commit: false, userName: CurrentUser());
+
+        return Ok(new { rows = rowResults, summary, reconcileRows, reconcileSummary });
     }
 
     // POST /DailyReport/confirm — re-parses the same uploaded file and this time persists every
@@ -90,7 +97,17 @@ public class DailyReportController : ControllerBase
         _audit.Log(User, "DailyReportImportBatch", batch.Id.ToString(), "IMPORT",
             null, new { batch.FileName, batch.TotalRows, summary });
 
-        return Ok(new { message = "Import เสร็จสิ้น", batch, rows = rowResults, summary });
+        var minStockRows = ParseMinimumStock(file!);
+        List<ReconcileRow>? reconcileRows = null;
+        ReconcileSummary? reconcileSummary = null;
+        if (minStockRows != null)
+        {
+            (reconcileRows, reconcileSummary) = ReconcileStock(minStockRows, commit: true, userName: userName);
+            _audit.Log(User, "DailyReportImportBatch", batch.Id.ToString(), "RECONCILE_STOCK",
+                null, new { batch.FileName, reconcileSummary });
+        }
+
+        return Ok(new { message = "Import เสร็จสิ้น", batch, rows = rowResults, summary, reconcileRows, reconcileSummary });
     }
 
     // GET /DailyReport/history
@@ -288,6 +305,120 @@ public class DailyReportController : ControllerBase
             error = $"อ่านไฟล์ไม่สำเร็จ: {ex.Message}";
             return null;
         }
+    }
+
+    // ── Stock reconciliation (Minimum Stock sheet) ──────────────────────────────
+    // The "Return inbound" sheet is transactional (each row is one event) and, being a running
+    // log DHL never trims, self-heals from a skipped day on its own once the next file is
+    // imported. But it only ever reflects what DHL told us happened — any drift from a source
+    // outside that (a missed report entirely, a manual correction on DHL's side, a miscount)
+    // never gets corrected by it. "Minimum Stock" is DHL's own current on-hand count, so treating
+    // it as the source of truth and overwriting our DHL-BKK quantities to match — every time,
+    // not just once at setup — means the numbers can never drift for more than one day no matter
+    // what else went wrong. Runs in the same Preview/Confirm pass as the Return inbound rows,
+    // from the same uploaded file, so Admin never has to remember a second step.
+    public class ReconcileRow
+    {
+        public string PartNo { get; set; } = string.Empty;
+        public string PartName { get; set; } = string.Empty;
+        public string? OldQty { get; set; }
+        public string NewQty { get; set; } = string.Empty;
+        public string Bucket { get; set; } = string.Empty; // "Good" or "Repair"
+        public bool Changed { get; set; }
+    }
+
+    public class ReconcileSummary
+    {
+        public int PartsMatched { get; set; }
+        public int PartsChanged { get; set; }
+        public int NotFoundCount { get; set; }
+        public List<string> NotFoundSample { get; set; } = new();
+    }
+
+    // Reads "Minimum Stock" from the same workbook — Part Number / AVAILABLE_QTY / INVENTORY_STS
+    // (GOOD/BAD/NO INVENTORY). Optional: an older-format Daily Report simply won't have this
+    // sheet, and that's fine — Return inbound processing still runs on its own.
+    private List<(string PartNo, int AvailableQty, string Status)>? ParseMinimumStock(IFormFile file)
+    {
+        using var stream = file.OpenReadStream();
+        using var wb = new XLWorkbook(stream);
+        if (!wb.Worksheets.Contains("Minimum Stock")) return null;
+
+        var ws = wb.Worksheet("Minimum Stock");
+        int headerRow = -1, pnCol = -1, qtyCol = -1, stsCol = -1;
+        var lastRowScan = Math.Min(5, ws.LastRowUsed()?.RowNumber() ?? 1);
+        var lastColScan = ws.LastColumnUsed()?.ColumnNumber() ?? 1;
+        for (int r = 1; r <= lastRowScan; r++)
+            for (int c = 1; c <= lastColScan; c++)
+            {
+                var val = ws.Cell(r, c).GetString().Trim();
+                if (val.Equals("Part Number", StringComparison.OrdinalIgnoreCase)) { pnCol = c; headerRow = r; }
+                else if (val.Equals("AVAILABLE_QTY", StringComparison.OrdinalIgnoreCase)) qtyCol = c;
+                else if (val.Equals("INVENTORY_STS", StringComparison.OrdinalIgnoreCase)) stsCol = c;
+            }
+        if (pnCol < 0 || qtyCol < 0 || stsCol < 0) return null;
+
+        var rows = new List<(string, int, string)>();
+        var lastRow = ws.LastRowUsed()?.RowNumber() ?? headerRow;
+        for (int r = headerRow + 1; r <= lastRow; r++)
+        {
+            var partNo = ws.Cell(r, pnCol).GetString().Trim();
+            if (string.IsNullOrWhiteSpace(partNo)) continue;
+            var qty = (int)(ws.Cell(r, qtyCol).GetValue<double?>() ?? 0);
+            var status = ws.Cell(r, stsCol).GetString().Trim().ToUpperInvariant();
+            rows.Add((partNo, qty, status));
+        }
+        return rows;
+    }
+
+    // BAD → the RepairQty bucket (DHL is holding it for repair, same convention Rule 1/3 above
+    // use). Everything else (GOOD, NO INVENTORY, anything unrecognized) → GoodQty — NO INVENTORY
+    // rows carry AVAILABLE_QTY 0 anyway, so this just zeroes GoodQty for those, which is correct.
+    // Only the bucket the row names gets touched; the other condition's quantity is left alone,
+    // since one row never speaks to both at once.
+    private (List<ReconcileRow> Rows, ReconcileSummary Summary) ReconcileStock(
+        List<(string PartNo, int AvailableQty, string Status)> minStockRows, bool commit, string userName)
+    {
+        var mainWh = _context.Locations.FirstOrDefault(l => l.Code == "DHL-BKK");
+        var partsByNo = _context.Parts.ToDictionary(p => p.PartNo, p => p);
+        var results = new List<ReconcileRow>();
+        var summary = new ReconcileSummary();
+        var notFound = new HashSet<string>();
+
+        foreach (var row in minStockRows)
+        {
+            if (!partsByNo.TryGetValue(row.PartNo, out var part))
+            {
+                notFound.Add(row.PartNo);
+                continue;
+            }
+            summary.PartsMatched++;
+
+            var bucket = row.Status == "BAD" ? "Repair" : "Good";
+            var stock = _context.PartStocks.FirstOrDefault(s => s.PartId == part.Id && s.LocationId == (mainWh != null ? mainWh.Id : 0));
+            var currentQty = stock == null ? 0 : (bucket == "Repair" ? stock.RepairQty : stock.GoodQty);
+            var delta = row.AvailableQty - currentQty;
+            var changed = delta != 0;
+            if (changed) summary.PartsChanged++;
+
+            results.Add(new ReconcileRow
+            {
+                PartNo = row.PartNo, PartName = part.PartName, Bucket = bucket,
+                OldQty = currentQty.ToString(), NewQty = row.AvailableQty.ToString(), Changed = changed
+            });
+
+            if (commit && changed)
+            {
+                _stock.AdjustStock(row.PartNo, mainWh?.Id ?? 0, delta, bucket,
+                    "Reconcile", "DailyReportMinimumStock", null, userName,
+                    $"ปรับยอดให้ตรงกับ Minimum Stock ของ DHL ({currentQty} → {row.AvailableQty})");
+            }
+        }
+
+        summary.NotFoundCount = notFound.Count;
+        summary.NotFoundSample = notFound.Take(30).ToList();
+        if (commit) _context.SaveChanges();
+        return (results, summary);
     }
 
     // ── Matching ─────────────────────────────────────────────────────────────
