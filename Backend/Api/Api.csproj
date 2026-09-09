@@ -54,13 +54,45 @@
     also copy the static Frontend site into the sibling folder next to the published API output,
     so the result matches the IIS layout: <PublishDir>\..\ = site root (Frontend), <PublishDir> = /api sub-app.
   -->
-  <Target Name="CopyFrontendAfterPublish" AfterTargets="Publish">
+  <Target Name="CopyFrontendAfterPublish" AfterTargets="Publish" Condition="'$(SkipFrontendCopy)' != 'true'">
     <ItemGroup>
       <FrontendFiles Include="$(MSBuildProjectDirectory)\..\..\Frontend\**\*" />
     </ItemGroup>
     <Copy SourceFiles="@(FrontendFiles)"
           DestinationFolder="$(PublishDir)..\%(RecursiveDir)"
           SkipUnchangedFiles="true" />
+  </Target>
+
+  <!-- Auto-calculate version from Git commit count: v1.0.{CommitCount} -->
+  <Target Name="SetGitVersion" BeforeTargets="PrepareForBuild;GetAssemblyVersion;GenerateAssemblyInfo;Publish">
+    <Exec Command="git rev-list --count HEAD" ConsoleToMSBuild="true" StandardOutputImportance="low" IgnoreExitCode="true">
+      <Output TaskParameter="ConsoleOutput" PropertyName="GitCommitCount" />
+    </Exec>
+    <Exec Command="git rev-parse --short HEAD" ConsoleToMSBuild="true" StandardOutputImportance="low" IgnoreExitCode="true">
+      <Output TaskParameter="ConsoleOutput" PropertyName="GitCommitHash" />
+    </Exec>
+    <Exec Command="git rev-parse --abbrev-ref HEAD" ConsoleToMSBuild="true" StandardOutputImportance="low" IgnoreExitCode="true">
+      <Output TaskParameter="ConsoleOutput" PropertyName="GitBranch" />
+    </Exec>
+    <PropertyGroup>
+      <GitCommitCount Condition="'$(GitCommitCount)' == ''">0</GitCommitCount>
+      <Version>1.0.$(GitCommitCount)</Version>
+      <AssemblyVersion>1.0.$(GitCommitCount).0</AssemblyVersion>
+      <FileVersion>1.0.$(GitCommitCount).0</FileVersion>
+      <InformationalVersion Condition="'$(GitCommitHash)' != ''">1.0.$(GitCommitCount)+$(GitCommitHash)</InformationalVersion>
+    </PropertyGroup>
+    <ItemGroup>
+      <VersionLines Include="{" />
+      <VersionLines Include="  &quot;version&quot;: &quot;v1.0.$(GitCommitCount)&quot;," />
+      <VersionLines Include="  &quot;commit&quot;: &quot;$(GitCommitHash)&quot;," />
+      <VersionLines Include="  &quot;branch&quot;: &quot;$(GitBranch)&quot;," />
+      <VersionLines Include="  &quot;buildTime&quot;: &quot;$([System.DateTime]::Now.ToString('yyyy-MM-dd HH:mm:ss'))&quot;" />
+      <VersionLines Include="}" />
+    </ItemGroup>
+    <WriteLinesToFile File="$(MSBuildProjectDirectory)\..\..\Frontend\version.json"
+                      Lines="@(VersionLines)"
+                      Overwrite="true"
+                      Encoding="UTF-8" />
   </Target>
 
 </Project>

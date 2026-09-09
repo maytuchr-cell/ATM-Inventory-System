@@ -31,10 +31,12 @@ public class DailyReportControllerTests
         var part = new Part { PartNo = PartNo, PartName = "Test Part", IsActive = true };
         var mainWh = new Location { Code = "DHL-BKK", Name = "DHL Center Bangkok", LocationType = "DHL_CENTER", IsActive = true };
         var techLoc = new Location { Code = "OL-TECH", Name = "Technician Stock", LocationType = "OL_TECHNICIAN", IsActive = true };
+        var ratWh = new Location { Code = "WH-RAT", Name = "Ratchaburana Warehouse", LocationType = "RATCHABURANA", IsActive = true };
         context.Parts.Add(part);
-        context.Locations.AddRange(mainWh, techLoc);
+        context.Locations.AddRange(mainWh, techLoc, ratWh);
         context.SaveChanges();
         context.PartStocks.Add(new PartStock { PartId = part.Id, LocationId = mainWh.Id, GoodQty = 100, BadQty = 0 });
+        context.PartStocks.Add(new PartStock { PartId = part.Id, LocationId = ratWh.Id, GoodQty = 0, BadQty = 0, RepairQty = 0 });
         context.SaveChanges();
 
         var stock = new StockService(context);
@@ -334,6 +336,513 @@ public class DailyReportControllerTests
 
         Assert.IsType<OkObjectResult>(result);
         Assert.Equal("คืน", context.WithdrawBatches.First(b => b.WithdrawBatchId == batch.WithdrawBatchId).ReturnStatus);
+    }
+
+    private static IFormFile BuildOutboundDailyReportFile(params (string PartNo, string PartName, string Serial, int Qty, string FeName, string CaseNo)[] rows)
+    {
+        using var wb = new XLWorkbook();
+        var ws = wb.Worksheets.Add("Outbound Order ");
+        ws.Cell(1, 1).Value = "No";
+        ws.Cell(1, 2).Value = "Part Number";
+        ws.Cell(1, 3).Value = "Part Description";
+        ws.Cell(1, 4).Value = "SERIAL_NUMBER";
+        ws.Cell(1, 5).Value = "QTY";
+        ws.Cell(1, 6).Value = "FE Name";
+        ws.Cell(1, 20).Value = "Case No";
+        ws.Cell(1, 26).Value = "Inventory Status";
+
+        int r = 2;
+        foreach (var row in rows)
+        {
+            ws.Cell(r, 1).Value = r - 1;
+            ws.Cell(r, 2).Value = row.PartNo;
+            ws.Cell(r, 3).Value = row.PartName;
+            ws.Cell(r, 4).Value = row.Serial;
+            ws.Cell(r, 5).Value = row.Qty;
+            ws.Cell(r, 6).Value = row.FeName;
+            ws.Cell(r, 20).Value = row.CaseNo;
+            ws.Cell(r, 26).Value = "GOOD";
+            r++;
+        }
+
+        var stream = new MemoryStream();
+        wb.SaveAs(stream);
+        stream.Position = 0;
+        return new FormFile(stream, 0, stream.Length, "file", "daily-report-outbound.xlsx") { Headers = new HeaderDictionary(), ContentType = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" };
+    }
+
+    private static IFormFile BuildOutboundDailyReportFileWithDate(params (string PartNo, string PartName, string Serial, int Qty, string FeName, string CaseNo, DateTime? Date)[] rows)
+    {
+        using var wb = new XLWorkbook();
+        var ws = wb.Worksheets.Add("Outbound Order ");
+        ws.Cell(1, 1).Value = "No";
+        ws.Cell(1, 2).Value = "Part Number";
+        ws.Cell(1, 3).Value = "Part Description";
+        ws.Cell(1, 4).Value = "SERIAL_NUMBER";
+        ws.Cell(1, 5).Value = "QTY";
+        ws.Cell(1, 6).Value = "FE Name";
+        ws.Cell(1, 20).Value = "Case No";
+        ws.Cell(1, 25).Value = "CREATION_DATE";
+        ws.Cell(1, 26).Value = "Inventory Status";
+
+        int r = 2;
+        foreach (var row in rows)
+        {
+            ws.Cell(r, 1).Value = r - 1;
+            ws.Cell(r, 2).Value = row.PartNo;
+            ws.Cell(r, 3).Value = row.PartName;
+            ws.Cell(r, 4).Value = row.Serial;
+            ws.Cell(r, 5).Value = row.Qty;
+            ws.Cell(r, 6).Value = row.FeName;
+            ws.Cell(r, 20).Value = row.CaseNo;
+            if (row.Date.HasValue) ws.Cell(r, 25).Value = row.Date.Value;
+            ws.Cell(r, 26).Value = "GOOD";
+            r++;
+        }
+
+        var stream = new MemoryStream();
+        wb.SaveAs(stream);
+        stream.Position = 0;
+        return new FormFile(stream, 0, stream.Length, "file", "daily-report-outbound-date.xlsx") { Headers = new HeaderDictionary(), ContentType = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" };
+    }
+
+    private static IFormFile BuildMultiSheetReportFile(
+        (string PartNo, string Serial, int Qty, string CaseNo, string FeName)[] outbound,
+        (string PartNo, string Serial, int Qty)[] inboundNormal,
+        (string PartNo, int AvailQty, int MinQty)[] minStock,
+        (string PartNo, string Serial, int Qty, string CaseNo, string CustSite)[]? outboundExport = null)
+    {
+        using var wb = new XLWorkbook();
+
+        // Outbound sheet
+        var wsOut = wb.Worksheets.Add("Outbound Order ");
+        wsOut.Cell(1, 1).Value = "No";
+        wsOut.Cell(1, 2).Value = "Part Number";
+        wsOut.Cell(1, 3).Value = "Part Description";
+        wsOut.Cell(1, 4).Value = "SERIAL_NUMBER";
+        wsOut.Cell(1, 5).Value = "QTY";
+        wsOut.Cell(1, 6).Value = "FE Name";
+        wsOut.Cell(1, 20).Value = "Case No";
+        int r = 2;
+        foreach (var row in outbound)
+        {
+            wsOut.Cell(r, 1).Value = r - 1;
+            wsOut.Cell(r, 2).Value = row.PartNo;
+            wsOut.Cell(r, 4).Value = row.Serial;
+            wsOut.Cell(r, 5).Value = row.Qty;
+            wsOut.Cell(r, 6).Value = row.FeName;
+            wsOut.Cell(r, 20).Value = row.CaseNo;
+            r++;
+        }
+
+        // Outbound Orde Export sheet (sending defective items to repair center D1 Room Repair / WH-RAT)
+        if (outboundExport != null && outboundExport.Length > 0)
+        {
+            var wsExp = wb.Worksheets.Add("Outbound Orde Export");
+            wsExp.Cell(1, 1).Value = "No";
+            wsExp.Cell(1, 2).Value = "Part Number";
+            wsExp.Cell(1, 3).Value = "Part Description";
+            wsExp.Cell(1, 4).Value = "SERIAL_NUMBER";
+            wsExp.Cell(1, 5).Value = "QTY";
+            wsExp.Cell(1, 7).Value = "Customer site";
+            wsExp.Cell(1, 8).Value = "Address";
+            wsExp.Cell(1, 20).Value = "Case No";
+            wsExp.Cell(1, 26).Value = "Inventory Status";
+            int rExp = 2;
+            foreach (var row in outboundExport)
+            {
+                wsExp.Cell(rExp, 1).Value = rExp - 1;
+                wsExp.Cell(rExp, 2).Value = row.PartNo;
+                wsExp.Cell(rExp, 4).Value = row.Serial;
+                wsExp.Cell(rExp, 5).Value = row.Qty;
+                wsExp.Cell(rExp, 7).Value = row.CustSite;
+                wsExp.Cell(rExp, 8).Value = "SVOA ราษฎร์บูรณะ เลขที่ 131 ถนนราษฎร์บูรณะ";
+                wsExp.Cell(rExp, 20).Value = row.CaseNo;
+                wsExp.Cell(rExp, 26).Value = "BAD";
+                rExp++;
+            }
+        }
+
+        // Inbound normal sheet
+        var wsIn = wb.Worksheets.Add("Inbound normal");
+        wsIn.Cell(1, 1).Value = "No";
+        wsIn.Cell(1, 3).Value = "Part Number";
+        wsIn.Cell(1, 4).Value = "Part Description";
+        wsIn.Cell(1, 5).Value = "SERIAL_NUMBER";
+        wsIn.Cell(1, 6).Value = "QTY";
+        wsIn.Cell(1, 7).Value = "INVENTORY STATUS";
+        wsIn.Cell(1, 16).Value = "Shipped from";
+        r = 2;
+        foreach (var row in inboundNormal)
+        {
+            wsIn.Cell(r, 1).Value = r - 1;
+            wsIn.Cell(r, 3).Value = row.PartNo;
+            wsIn.Cell(r, 5).Value = row.Serial;
+            wsIn.Cell(r, 6).Value = row.Qty;
+            wsIn.Cell(r, 7).Value = "GOOD";
+            wsIn.Cell(r, 16).Value = "D1 Room Repair";
+            r++;
+        }
+
+        // Minimum stock sheet
+        var wsMin = wb.Worksheets.Add("Minimum Stock");
+        wsMin.Cell(1, 1).Value = "No.";
+        wsMin.Cell(1, 2).Value = "Part Number";
+        wsMin.Cell(1, 3).Value = "Part Description";
+        wsMin.Cell(1, 4).Value = "AVAILABLE_QTY";
+        wsMin.Cell(1, 7).Value = "MIN QTY";
+        wsMin.Cell(1, 8).Value = "STOCK";
+        r = 2;
+        foreach (var row in minStock)
+        {
+            wsMin.Cell(r, 1).Value = r - 1;
+            wsMin.Cell(r, 2).Value = row.PartNo;
+            wsMin.Cell(r, 4).Value = row.AvailQty;
+            wsMin.Cell(r, 7).Value = row.MinQty;
+            wsMin.Cell(r, 8).Value = row.AvailQty - row.MinQty;
+            r++;
+        }
+
+        var stream = new MemoryStream();
+        wb.SaveAs(stream);
+        stream.Position = 0;
+        return new FormFile(stream, 0, stream.Length, "file", "daily-report-multi.xlsx") { Headers = new HeaderDictionary(), ContentType = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" };
+    }
+
+    [Fact]
+    public void Confirm_OutboundOrdeExport_MovesUnitLocationToRatchaburanaAndTransfersStock()
+    {
+        var (tickets, dailyReport, context, mainWh, _) = Create();
+        var part = context.Parts.First(p => p.PartNo == PartNo);
+        var ratWh = context.Locations.First(l => l.Code == "WH-RAT");
+
+        // Initial state: Unit is at DHL-BKK in InRepair
+        var unit = new PartUnit
+        {
+            PartId = part.Id,
+            SerialNo = "SN-EXP-01",
+            Status = "InRepair",
+            Condition = "Bad",
+            LocationId = mainWh.Id
+        };
+        context.PartUnits.Add(unit);
+        var mainStock = context.PartStocks.First(s => s.LocationId == mainWh.Id);
+        mainStock.RepairQty = 5;
+        var ratStock = context.PartStocks.First(s => s.LocationId == ratWh.Id);
+        ratStock.RepairQty = 0;
+        context.SaveChanges();
+
+        // DHL sends unit to D1 Room Repair (SVOA ราษฎร์บูรณะ)
+        var file = BuildMultiSheetReportFile(
+            outbound: Array.Empty<(string, string, int, string, string)>(),
+            inboundNormal: Array.Empty<(string, string, int)>(),
+            minStock: Array.Empty<(string, int, int)>(),
+            outboundExport: new[] { (PartNo, "SN-EXP-01", 1, "EXPORT-GRGLOT35-2026", "D1 Room Repair") }
+        );
+
+        var result = dailyReport.Confirm(file);
+        Assert.IsType<OkObjectResult>(result);
+
+        context.Entry(mainStock).Reload();
+        context.Entry(ratStock).Reload();
+        context.Entry(unit).Reload();
+
+        // 1. PartUnit location should move to WH-RAT (Ratchaburana Warehouse)
+        Assert.Equal(ratWh.Id, unit.LocationId);
+        Assert.Equal("InRepair", unit.Status);
+        Assert.Equal("Bad", unit.Condition);
+
+        // 2. Stock should transfer from DHL-BKK to WH-RAT
+        Assert.Equal(4, mainStock.RepairQty);
+        Assert.Equal(1, ratStock.RepairQty);
+
+        // 3. Complete the loop: Unit is repaired and returns in Inbound normal
+        var returnFile = BuildMultiSheetReportFile(
+            outbound: Array.Empty<(string, string, int, string, string)>(),
+            inboundNormal: new[] { (PartNo, "SN-EXP-01", 1) },
+            minStock: Array.Empty<(string, int, int)>()
+        );
+
+        var returnResult = dailyReport.Confirm(returnFile);
+        Assert.IsType<OkObjectResult>(returnResult);
+
+        context.Entry(mainStock).Reload();
+        context.Entry(ratStock).Reload();
+        context.Entry(unit).Reload();
+
+        // Repaired unit should be back at DHL-BKK in Good condition, RepairQty deducted from WH-RAT
+        Assert.Equal(mainWh.Id, unit.LocationId);
+        Assert.Equal("InStock", unit.Status);
+        Assert.Equal("Good", unit.Condition);
+        Assert.Equal(0, ratStock.RepairQty);
+        Assert.Equal(101, mainStock.GoodQty);
+    }
+
+    [Fact]
+    public void Confirm_OutboundOrder_MatchesWithdrawTicket_MovesStockToTechAndIssuesPartUnit()
+    {
+        var (tickets, dailyReport, context, mainWh, techLoc) = Create();
+        tickets.SyncFromAservice(new SyncTicketDto { ExternalTicketNo = "OUT-1", TechName = "Tech Somchai" });
+        var ticket = context.Tickets.First(t => t.ExternalTicketNo == "OUT-1");
+        tickets.SubmitWithdraw(ticket.TicketId, new SubmitLinesDto { Lines = new() { new LineDto { PartNo = PartNo, Quantity = 1 } }, Address = "Site A" });
+        var batch = context.WithdrawBatches.First(b => b.TicketId == ticket.TicketId);
+        tickets.ApproveBatch(ticket.TicketId, batch.WithdrawBatchId);
+        tickets.SendEmailConfirmedBatch(ticket.TicketId, batch.WithdrawBatchId);
+
+        var initialMainStock = context.PartStocks.First(s => s.LocationId == mainWh.Id).GoodQty;
+        var initialTechStock = context.PartStocks.FirstOrDefault(s => s.LocationId == techLoc.Id)?.GoodQty ?? 0;
+
+        var file = BuildOutboundDailyReportFile((PartNo, "Test Part", "SN-OUT-001", 1, "Tech Somchai", "OUT-1"));
+        var result = dailyReport.Confirm(file);
+
+        Assert.IsType<OkObjectResult>(result);
+        var finalMainStock = context.PartStocks.First(s => s.LocationId == mainWh.Id).GoodQty;
+        var finalTechStock = context.PartStocks.First(s => s.LocationId == techLoc.Id).GoodQty;
+
+        // Stock was already deducted when ApproveBatch ran (100 -> 99).
+        // Confirming Outbound Order records S/N and moves stock to tech, without deducting main warehouse a second time.
+        Assert.Equal(initialMainStock, finalMainStock);
+        Assert.Equal(initialTechStock + 1, finalTechStock);
+
+        var unit = context.PartUnits.FirstOrDefault(u => u.SerialNo == "SN-OUT-001");
+        Assert.NotNull(unit);
+        Assert.Equal("Issued", unit.Status);
+        Assert.Equal(techLoc.Id, unit.LocationId);
+
+        var withdrawBatch = context.WithdrawBatches.First(b => b.WithdrawBatchId == batch.WithdrawBatchId);
+        Assert.Equal("เดินทาง", withdrawBatch.Status);
+    }
+
+    [Fact]
+    public void Confirm_InboundNormal_RepairedUnit_ClosesRepairLoop()
+    {
+        var (tickets, dailyReport, context, mainWh, _) = Create();
+        var part = context.Parts.First(p => p.PartNo == PartNo);
+
+        // Put a unit InRepair with stock
+        var unit = new PartUnit { PartId = part.Id, SerialNo = "SN-REP-01", Status = "InRepair", Condition = "Bad", LocationId = mainWh.Id };
+        context.PartUnits.Add(unit);
+        var stock = context.PartStocks.First(s => s.LocationId == mainWh.Id);
+        stock.RepairQty = 5;
+        stock.GoodQty = 50;
+        context.SaveChanges();
+
+        var file = BuildMultiSheetReportFile(
+            outbound: Array.Empty<(string, string, int, string, string)>(),
+            inboundNormal: new[] { (PartNo, "SN-REP-01", 1) },
+            minStock: Array.Empty<(string, int, int)>()
+        );
+
+        var result = dailyReport.Confirm(file);
+        Assert.IsType<OkObjectResult>(result);
+
+        context.Entry(stock).Reload();
+        context.Entry(unit).Reload();
+
+        Assert.Equal(4, stock.RepairQty);
+        Assert.Equal(51, stock.GoodQty);
+        Assert.Equal("InStock", unit.Status);
+        Assert.Equal("Good", unit.Condition);
+    }
+
+    [Fact]
+    public void Preview_WithMinimumStock_CalculatesReconciliationAudit()
+    {
+        var (tickets, dailyReport, context, mainWh, _) = Create();
+        var stock = context.PartStocks.First(s => s.LocationId == mainWh.Id);
+        stock.GoodQty = 100; // system has 100
+        context.SaveChanges();
+
+        // DHL has 95 in file -> difference of +5
+        var file = BuildMultiSheetReportFile(
+            outbound: Array.Empty<(string, string, int, string, string)>(),
+            inboundNormal: Array.Empty<(string, string, int)>(),
+            minStock: new[] { (PartNo, 95, 20) }
+        );
+
+        var result = dailyReport.Preview(file);
+        var ok = Assert.IsType<OkObjectResult>(result);
+
+        var reconciliation = (List<DailyReportController.ReconciliationItem>)ok.Value!.GetType().GetProperty("reconciliation")!.GetValue(ok.Value)!;
+        Assert.Single(reconciliation);
+        Assert.Equal(PartNo, reconciliation[0].PartNo);
+        Assert.Equal(95, reconciliation[0].DhlAvailableQty);
+        Assert.Equal(100, reconciliation[0].SystemGoodQty);
+        Assert.Equal(5, reconciliation[0].DiffGood);
+        Assert.Equal("DIFF", reconciliation[0].Status);
+    }
+
+    [Fact]
+    public void Confirm_OutboundOrder_UnmatchedTicket_DirectDeductsStock_WithoutCreatingTicket()
+    {
+        var (tickets, dailyReport, context, mainWh, techLoc) = Create();
+        context.FeContacts.Add(new FeContact { FeName = "Tech Somchai", FeId = "FE-007", Address = "Site 123" });
+        context.SaveChanges();
+
+        var initialMainStock = context.PartStocks.First(s => s.LocationId == mainWh.Id).GoodQty;
+        var initialTechStock = context.PartStocks.FirstOrDefault(s => s.LocationId == techLoc.Id)?.GoodQty ?? 0;
+
+        var file = BuildOutboundDailyReportFile((PartNo, "Test Part", "SN-AUTO-01", 1, "Tech Somchai", "CASE-NEW-999"));
+        var result = dailyReport.Confirm(file);
+        Assert.IsType<OkObjectResult>(result);
+
+        // Verify NO Ticket created
+        Assert.Empty(context.Tickets);
+        Assert.Empty(context.WithdrawBatches);
+        Assert.Empty(context.TicketPartLines);
+
+        // Verify Stock adjustments
+        var finalMainStock = context.PartStocks.First(s => s.LocationId == mainWh.Id).GoodQty;
+        var finalTechStock = context.PartStocks.First(s => s.LocationId == techLoc.Id).GoodQty;
+        Assert.Equal(initialMainStock - 1, finalMainStock);
+        Assert.Equal(initialTechStock + 1, finalTechStock);
+
+        // Verify PartUnit status
+        var unit = context.PartUnits.FirstOrDefault(u => u.SerialNo == "SN-AUTO-01");
+        Assert.NotNull(unit);
+        Assert.Equal("Issued", unit.Status);
+        Assert.Equal(techLoc.Id, unit.LocationId);
+    }
+
+    [Fact]
+    public void UndoRow_OutboundRow_RevertsStockAndRestoresPartUnit()
+    {
+        var (tickets, dailyReport, context, mainWh, techLoc) = Create();
+        var initialMainStock = context.PartStocks.First(s => s.LocationId == mainWh.Id).GoodQty;
+
+        var file = BuildOutboundDailyReportFile((PartNo, "Test Part", "SN-UNDO-01", 1, "Tech Somchai", ""));
+        var result = dailyReport.Confirm(file);
+        Assert.IsType<OkObjectResult>(result);
+
+        var afterConfirmMainStock = context.PartStocks.First(s => s.LocationId == mainWh.Id).GoodQty;
+        Assert.Equal(initialMainStock - 1, afterConfirmMainStock);
+
+        var row = context.DailyReportImportRows.First(r => r.SerialNo == "SN-UNDO-01");
+        var undoResult = dailyReport.UndoRow(row.Id);
+        Assert.IsType<OkObjectResult>(undoResult);
+
+        var afterUndoMainStock = context.PartStocks.First(s => s.LocationId == mainWh.Id).GoodQty;
+        Assert.Equal(initialMainStock, afterUndoMainStock);
+
+        var unit = context.PartUnits.First(u => u.SerialNo == "SN-UNDO-01");
+        Assert.Equal("InStock", unit.Status);
+        Assert.Equal(mainWh.Id, unit.LocationId);
+    }
+
+    [Fact]
+    public void Confirm_OutboundOrder_MultipleRowsSameCaseNo_ProcessesAllRowsDirectly_WithoutCreatingTicket()
+    {
+        var (tickets, dailyReport, context, mainWh, techLoc) = Create();
+        var part2 = new Part { PartNo = "DR-TEST-PART2", PartName = "Part 2", IsActive = true };
+        context.Parts.Add(part2);
+        context.PartStocks.Add(new PartStock { PartId = part2.Id, LocationId = mainWh.Id, GoodQty = 50, BadQty = 0 });
+        context.SaveChanges();
+
+        var part1 = context.Parts.First(p => p.PartNo == PartNo);
+        var initialMainStock1 = context.PartStocks.First(s => s.LocationId == mainWh.Id && s.PartId == part1.Id).GoodQty;
+        var initialMainStock2 = context.PartStocks.First(s => s.LocationId == mainWh.Id && s.PartId == part2.Id).GoodQty;
+
+        var file = BuildOutboundDailyReportFile(
+            (PartNo, "Test Part", "SN-SAME-01", 1, "Tech Somchai", "CASE-SHARED-101"),
+            ("DR-TEST-PART2", "Part 2", "SN-SAME-02", 1, "Tech Somchai", "CASE-SHARED-101")
+        );
+        var result = dailyReport.Confirm(file);
+        Assert.IsType<OkObjectResult>(result);
+
+        // No ticket should be created
+        Assert.Empty(context.Tickets);
+        Assert.Empty(context.WithdrawBatches);
+
+        // Both stocks deducted
+        var finalStock1 = context.PartStocks.First(s => s.LocationId == mainWh.Id && s.PartId == part1.Id).GoodQty;
+        var finalStock2 = context.PartStocks.First(s => s.LocationId == mainWh.Id && s.PartId == part2.Id).GoodQty;
+        Assert.Equal(initialMainStock1 - 1, finalStock1);
+        Assert.Equal(initialMainStock2 - 1, finalStock2);
+
+        // Both PartUnits created as Issued
+        var u1 = context.PartUnits.FirstOrDefault(u => u.SerialNo == "SN-SAME-01");
+        var u2 = context.PartUnits.FirstOrDefault(u => u.SerialNo == "SN-SAME-02");
+        Assert.NotNull(u1);
+        Assert.Equal("Issued", u1.Status);
+        Assert.NotNull(u2);
+        Assert.Equal("Issued", u2.Status);
+    }
+
+    [Fact]
+    public void Confirm_OutboundOrder_DirectIssue_DeductsStockAndRegistersIssued()
+    {
+        var (tickets, dailyReport, context, mainWh, techLoc) = Create();
+        var initialMainStock = context.PartStocks.First(s => s.LocationId == mainWh.Id).GoodQty;
+
+        var file = BuildOutboundDailyReportFile((PartNo, "Test Part", "SN-BLANK-01", 1, "Tech Somchai", ""));
+        var result = dailyReport.Confirm(file);
+        Assert.IsType<OkObjectResult>(result);
+
+        var unit = context.PartUnits.FirstOrDefault(u => u.SerialNo == "SN-BLANK-01");
+        Assert.NotNull(unit);
+        Assert.Equal("Issued", unit.Status);
+
+        // No dummy ticket is created
+        Assert.Empty(context.Tickets);
+
+        var finalMainStock = context.PartStocks.First(s => s.LocationId == mainWh.Id).GoodQty;
+        Assert.Equal(initialMainStock - 1, finalMainStock);
+    }
+
+    [Fact]
+    public void Confirm_OutboundOrder_AlreadyIssuedSerial_DoesNotDoubleCount()
+    {
+        var (tickets, dailyReport, context, mainWh, techLoc) = Create();
+        var initialMainStock = context.PartStocks.First(s => s.LocationId == mainWh.Id).GoodQty;
+
+        var file1 = BuildOutboundDailyReportFile((PartNo, "Test Part", "SN-REIMPORT-01", 1, "Tech Somchai", "CASE-111"));
+        var result1 = dailyReport.Confirm(file1);
+        Assert.IsType<OkObjectResult>(result1);
+
+        var stockAfterFirst = context.PartStocks.First(s => s.LocationId == mainWh.Id).GoodQty;
+        Assert.Equal(initialMainStock - 1, stockAfterFirst);
+
+        // Re-confirming the same file
+        var file2 = BuildOutboundDailyReportFile((PartNo, "Test Part", "SN-REIMPORT-01", 1, "Tech Somchai", "CASE-111"));
+        var result2 = dailyReport.Confirm(file2);
+        var ok = Assert.IsType<OkObjectResult>(result2);
+
+        var stockAfterSecond = context.PartStocks.First(s => s.LocationId == mainWh.Id).GoodQty;
+        Assert.Equal(stockAfterFirst, stockAfterSecond); // Stock remains unchanged!
+
+        var rows = (List<DailyReportController.RowResult>)ok.Value!.GetType().GetProperty("rows")!.GetValue(ok.Value)!;
+        Assert.Single(rows);
+        Assert.Equal("AlreadyImported", rows[0].MatchType);
+    }
+
+    [Fact]
+    public void Confirm_PriorToBaseline_Outbound_RegistersPartUnitIssued_WithoutDeductingStock()
+    {
+        var (tickets, dailyReport, context, mainWh, techLoc) = Create();
+        var initialMainStock = context.PartStocks.First(s => s.LocationId == mainWh.Id).GoodQty;
+
+        // Date is 2026-09-02 (before baseline snapshot of 2026-09-03)
+        var priorDate = new DateTime(2026, 9, 2);
+        var file = BuildOutboundDailyReportFileWithDate((PartNo, "Test Part", "SN-BASELINE-01", 1, "Tech Somchai", "CASE-OLD-01", priorDate));
+        var result = dailyReport.Confirm(file);
+        var ok = Assert.IsType<OkObjectResult>(result);
+
+        var rows = (List<DailyReportController.RowResult>)ok.Value!.GetType().GetProperty("rows")!.GetValue(ok.Value)!;
+        Assert.Single(rows);
+        Assert.Equal("OutboundUnmatched", rows[0].MatchType);
+
+        // Stock count must NOT change in main warehouse (exempt from double deduction)
+        var finalMainStock = context.PartStocks.First(s => s.LocationId == mainWh.Id).GoodQty;
+        Assert.Equal(initialMainStock, finalMainStock);
+
+        // But Serial Number MUST be registered as Issued in PartUnits
+        var unit = context.PartUnits.FirstOrDefault(u => u.SerialNo == "SN-BASELINE-01");
+        Assert.NotNull(unit);
+        Assert.Equal("Issued", unit.Status);
+        Assert.Equal(techLoc.Id, unit.LocationId);
+
+        // No dummy ticket is created
+        Assert.Empty(context.Tickets);
     }
 
     private class FakeEnv : IWebHostEnvironment

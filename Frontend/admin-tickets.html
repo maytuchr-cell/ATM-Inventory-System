@@ -107,6 +107,64 @@
         .tab-panel.active { display:block; }
         .btn-confirm { background:var(--green-light); color:var(--green); border:1.5px solid transparent; padding:6px 10px; border-radius:7px; font-family:inherit; font-size:11.5px; font-weight:600; cursor:pointer; display:inline-flex; align-items:center; gap:4px; }
         .btn-confirm:hover { background:var(--green); color:#fff; }
+
+        /* Scrollable table container with sticky header & visible scrollbar */
+        .tbl-scroll-container {
+            max-height: calc(100vh - 280px);
+            min-height: 400px;
+            overflow-y: auto;
+            overflow-x: auto;
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            position: relative;
+        }
+        .tbl-scroll-container thead th {
+            position: sticky;
+            top: 0;
+            z-index: 5;
+            background: var(--bg-card);
+            box-shadow: inset 0 -1.5px 0 var(--border);
+        }
+        /* Custom styled visible scrollbar */
+        .tbl-scroll-container::-webkit-scrollbar {
+            width: 8px;
+            height: 8px;
+        }
+        .tbl-scroll-container::-webkit-scrollbar-track {
+            background: var(--bg-subtle);
+            border-radius: 6px;
+        }
+        .tbl-scroll-container::-webkit-scrollbar-thumb {
+            background: #cbd5e1;
+            border-radius: 6px;
+        }
+        .tbl-scroll-container::-webkit-scrollbar-thumb:hover {
+            background: #94a3b8;
+        }
+        [data-theme="dark"] .tbl-scroll-container::-webkit-scrollbar-thumb {
+            background: #4b5563;
+        }
+        [data-theme="dark"] .tbl-scroll-container::-webkit-scrollbar-thumb:hover {
+            background: #6b7280;
+        }
+
+        /* Pagination Bar */
+        .pagination-bar {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
+            flex-wrap: wrap;
+            padding-top: 14px;
+            margin-top: 12px;
+            font-size: 12.5px;
+            color: var(--text-secondary);
+        }
+        .page-nav {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
     </style>
 </head>
 <body>
@@ -141,9 +199,9 @@
                     <span class="section-count" id="tickets-count">—</span>
                     <div class="tkt-toolbar" style="margin-left:auto;">
                         <input id="tkt-search" type="text" placeholder="🔍 ค้นหา Ticket / ช่าง…"
-                            oninput="renderTicketsTable()"
+                            oninput="tktCurrentPage=1;renderTicketsTable()"
                             style="padding:5px 10px;border:1px solid var(--border);border-radius:7px;font-size:12px;background:var(--surface);color:var(--text);outline:none;width:180px;">
-                        <select id="tkt-status-filter" class="tkt-status-filter" onchange="renderTicketsTable()">
+                        <select id="tkt-status-filter" class="tkt-status-filter" onchange="tktCurrentPage=1;renderTicketsTable()">
                             <option value="">ทุกสถานะ</option>
                             <option value="รอ">รอ</option>
                             <option value="รออะไหล่">รออะไหล่</option>
@@ -163,7 +221,7 @@
                         </button>
                     </div>
                 </div>
-                <div class="tbl-wrap">
+                <div class="tbl-wrap tbl-scroll-container" id="tickets-table-container">
                     <table>
                         <thead>
                             <tr>
@@ -183,6 +241,22 @@
                         </tbody>
                     </table>
                 </div>
+
+                <!-- Bottom Pagination Bar -->
+                <div class="pagination-bar" id="tkt-pagination-bar">
+                    <div style="display:flex;align-items:center;gap:10px;">
+                        <span id="tkt-page-info">แสดง 0 รายการ</span>
+                        <span style="color:var(--border);">|</span>
+                        <span>แสดงต่อหน้า:</span>
+                        <select id="tkt-page-size" class="form-select" style="width:auto;padding:4px 8px;font-size:12px;border:1px solid var(--border);border-radius:6px;background:var(--bg-input);color:var(--text-primary);" onchange="onTktPageSizeChange(this.value)">
+                            <option value="50" selected>50</option>
+                            <option value="100">100</option>
+                            <option value="200">200</option>
+                            <option value="all">ทั้งหมด (All)</option>
+                        </select>
+                    </div>
+                    <div class="page-nav" id="tkt-page-controls"></div>
+                </div>
             </div>
             </div><!-- /tabPanelAll -->
 
@@ -194,7 +268,7 @@
                     <span class="section-title">กำลังคืน (รอ / เดินทาง)</span>
                     <span class="section-count" id="returns-onhand-count">—</span>
                 </div>
-                <div class="tbl-wrap">
+                <div class="tbl-wrap tbl-scroll-container" style="max-height: 460px;">
                     <table>
                         <thead>
                             <tr>
@@ -218,7 +292,7 @@
                     <div class="section-accent"></div>
                     <span class="section-title">ประวัติการคืน</span>
                 </div>
-                <div class="tbl-wrap">
+                <div class="tbl-wrap tbl-scroll-container" style="max-height: 460px;">
                     <table>
                         <thead>
                             <tr>
@@ -259,7 +333,7 @@
                         </button>
                     </div>
                 </div>
-                <div class="tbl-wrap">
+                <div class="tbl-wrap tbl-scroll-container" style="max-height: 460px;">
                     <table>
                         <thead>
                             <tr>
@@ -292,7 +366,7 @@
                         </button>
                     </div>
                 </div>
-                <div class="tbl-wrap">
+                <div class="tbl-wrap tbl-scroll-container" style="max-height: 460px;">
                     <table>
                         <thead>
                             <tr>
@@ -703,6 +777,51 @@
         "Cancel":    { cls: "badge-muted",    label: "ยกเลิก" },
     };
 
+    let tktCurrentPage = 1;
+    let tktPageSize = 50;
+
+    function onTktPageSizeChange(val) {
+        tktPageSize = val === 'all' ? 'all' : parseInt(val) || 50;
+        tktCurrentPage = 1;
+        renderTicketsTable();
+    }
+
+    function gotoTktPage(p) {
+        tktCurrentPage = p;
+        renderTicketsTable();
+        const container = document.getElementById('tickets-table-container');
+        if (container) container.scrollTop = 0;
+    }
+
+    function renderTktPagination(total, totalPages) {
+        const infoEl = document.getElementById('tkt-page-info');
+        const controlsEl = document.getElementById('tkt-page-controls');
+        if (!infoEl || !controlsEl) return;
+
+        if (tktPageSize === 'all') {
+            infoEl.textContent = `แสดงทั้งหมด ${total.toLocaleString()} รายการ`;
+            controlsEl.innerHTML = '';
+            return;
+        }
+
+        const start = (tktCurrentPage - 1) * tktPageSize;
+        const rangeText = total ? `${start + 1}–${Math.min(start + tktPageSize, total)} จาก ${total.toLocaleString()} รายการ` : '0 รายการ';
+        infoEl.textContent = `แสดง ${rangeText}`;
+
+        if (totalPages <= 1) {
+            controlsEl.innerHTML = '';
+            return;
+        }
+
+        controlsEl.innerHTML = `
+            <button class="btn btn-secondary btn-xs" ${tktCurrentPage === 1 ? 'disabled' : ''} onclick="gotoTktPage(1)">⏮ หน้าแรก</button>
+            <button class="btn btn-secondary btn-xs" ${tktCurrentPage === 1 ? 'disabled' : ''} onclick="gotoTktPage(${tktCurrentPage - 1})">◀ ก่อนหน้า</button>
+            <span style="font-weight:700; padding:0 6px; color:var(--text-primary); font-size:12px;">หน้า ${tktCurrentPage} / ${totalPages}</span>
+            <button class="btn btn-secondary btn-xs" ${tktCurrentPage === totalPages ? 'disabled' : ''} onclick="gotoTktPage(${tktCurrentPage + 1})">ถัดไป ▶</button>
+            <button class="btn btn-secondary btn-xs" ${tktCurrentPage === totalPages ? 'disabled' : ''} onclick="gotoTktPage(${totalPages})">หน้าสุดท้าย ⏭</button>
+        `;
+    }
+
     function renderTicketsTable() {
         const search = (document.getElementById('tkt-search')?.value || '').trim().toLowerCase();
         const statusF = document.getElementById('tkt-status-filter')?.value || '';
@@ -731,19 +850,30 @@
             return true;
         });
 
+        const total = rows.length;
+        const totalPages = tktPageSize === 'all' ? 1 : Math.max(1, Math.ceil(total / tktPageSize));
+        if (tktCurrentPage > totalPages) tktCurrentPage = totalPages;
+
+        const startIdx = tktPageSize === 'all' ? 0 : (tktCurrentPage - 1) * tktPageSize;
+        const pageItems = tktPageSize === 'all' ? rows : rows.slice(startIdx, startIdx + tktPageSize);
+
         document.getElementById('tickets-count').textContent = rows.length + ' / ' + allRows.length + ' ' + (getLang()==='th' ? 'ใบเบิก' : 'batches');
         const tbody = document.getElementById("ticketsTableBody");
         tbody.innerHTML = "";
         if (!allRows.length) {
             tbody.innerHTML = `<tr><td colspan="9" class="empty-state">🎉 ${'ไม่มีคำขอเบิกในขณะนี้'}</td></tr>`;
+            renderTktPagination(0, 1);
             return;
         }
         if (!rows.length) {
             tbody.innerHTML = `<tr><td colspan="9" class="empty-state">ไม่พบใบเบิกที่ตรงกับตัวกรอง</td></tr>`;
+            renderTktPagination(0, 1);
             return;
         }
-        rows.forEach(({ tk, batch }) => {
 
+        renderTktPagination(total, totalPages);
+
+        tbody.innerHTML = pageItems.map(({ tk, batch }) => {
             const bBadge = STATUS_BADGE[batch.status] || STATUS_BADGE["รอ"];
             const badge = `<span class="badge ${bBadge.cls}"><span class="badge-dot"></span>${bBadge.label}</span>`;
 
@@ -833,7 +963,7 @@
                 ? `<span style="font-weight:600;color:var(--green);font-size:12.5px;">${new Date(batch.updatedAt).toLocaleString('th-TH', { dateStyle: 'short', timeStyle: 'short' })}</span>`
                 : `<span style="color:var(--text-muted);font-size:12px;">—</span>`;
 
-            tbody.innerHTML += `
+            return `
                 <tr>
                     <td><span style="font-size:12.5px;">${batch.withdrawSlipNo || 'ยังไม่ออกเลข'}</span></td>
                     <td><span class="id-chip ticket-id">${tk.externalTicketNo}</span></td>
@@ -845,7 +975,7 @@
                     <td>${action}</td>
                     <td><button class="btn-detail" onclick="showDetail(${tk.ticketId}, ${batch.withdrawBatchId})">🔍 ดูรายละเอียด</button></td>
                 </tr>`;
-        });
+        }).join('');
     }
 
     // "รออะไหล่" recheck path — just re-runs the stock check, doesn't itself finalize approval,

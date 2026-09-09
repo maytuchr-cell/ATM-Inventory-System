@@ -43,34 +43,72 @@ async function loadCategories() {
 async function loadParts() {
   try {
     allParts = await api.parts.getAll();
+    updateStats();
+    populateProjectFilter();
     renderTable();
   } catch (e) {
     showToast(t('toast.network'), 'error');
     document.getElementById('parts-tbody').innerHTML =
-      `<tr><td colspan="9" class="empty-state">${t('inv.empty')}</td></tr>`;
+      `<tr><td colspan="12" class="empty-state">${t('inv.empty')}</td></tr>`;
   }
 }
 
+function updateStats() {
+  const total = allParts.length;
+  const good = allParts.reduce((sum, p) => sum + (p.warehouseStock || 0), 0);
+  const repair = allParts.reduce((sum, p) => sum + (p.repairStock || 0), 0);
+  const low = allParts.filter(p => (p.warehouseStock || 0) < (p.minStock || 0)).length;
+
+  const elTotal = document.getElementById('stat-total-parts');
+  const elGood = document.getElementById('stat-good-stock');
+  const elRepair = document.getElementById('stat-repair-stock');
+  const elLow = document.getElementById('stat-low-stock');
+
+  if (elTotal) elTotal.textContent = total.toLocaleString();
+  if (elGood) elGood.textContent = good.toLocaleString();
+  if (elRepair) elRepair.textContent = repair.toLocaleString();
+  if (elLow) elLow.textContent = low.toLocaleString();
+}
+
+function populateProjectFilter() {
+  const select = document.getElementById('project-filter');
+  if (!select) return;
+  const curr = select.value;
+  const projects = [...new Set(allParts.map(p => p.project).filter(Boolean))].sort();
+  select.innerHTML = '<option value="">ทุกโครงการ (All Projects)</option>';
+  projects.forEach(proj => {
+    const opt = document.createElement('option');
+    opt.value = proj;
+    opt.textContent = proj;
+    select.appendChild(opt);
+  });
+  select.value = curr;
+}
+
 function renderTable() {
-  const search  = document.getElementById('search-input').value.toLowerCase();
-  const catId   = document.getElementById('cat-filter').value;
-  const status  = document.getElementById('status-filter').value;
+  const search      = document.getElementById('search-input')?.value.toLowerCase() || '';
+  const projectVal  = document.getElementById('project-filter')?.value || '';
+  const catId       = document.getElementById('cat-filter')?.value || '';
+  const status      = document.getElementById('status-filter')?.value || '';
+  const snFilter    = document.getElementById('sn-filter')?.value || '';
 
   const filtered = allParts.filter(p => {
     if (search) {
-      const inName   = p.partName.toLowerCase().includes(search);
-      const inNo     = p.partNo.toLowerCase().includes(search);
-      const inSerial = (p.serialNo || '').toLowerCase().includes(search)
-                    || (p.serialNos || []).some(s => s.toLowerCase().includes(search));
-      if (!inName && !inNo && !inSerial) return false;
+      const inName    = (p.partName || '').toLowerCase().includes(search);
+      const inNo      = (p.partNo || '').toLowerCase().includes(search);
+      const inProject = (p.project || '').toLowerCase().includes(search);
+      if (!inName && !inNo && !inProject) return false;
     }
+    if (projectVal && p.project !== projectVal) return false;
     if (catId === '__none__' && p.categoryId != null) return false;
     if (catId && catId !== '__none__' && String(p.categoryId) !== catId) return false;
     if (status !== '' && String(p.isActive) !== status) return false;
+    if (snFilter === 'has_sn' && (p.serialUnitsCount ?? 0) <= 0) return false;
+    if (snFilter === 'no_sn' && (p.serialUnitsCount ?? 0) > 0) return false;
     return true;
   });
 
-  const total     = filtered.length;
+  const total      = filtered.length;
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
   if (currentPage > totalPages) currentPage = totalPages;
 
@@ -79,40 +117,51 @@ function renderTable() {
 
   // result count
   const countEl = document.getElementById('parts-result-count');
-  if (countEl) countEl.textContent = total ? `${start + 1}–${Math.min(start + PAGE_SIZE, total)} of ${total} parts` : '';
+  if (countEl) countEl.textContent = total ? `${start + 1}–${Math.min(start + PAGE_SIZE, total)} จาก ${total} รายการ` : '';
 
   const tbody = document.getElementById('parts-tbody');
   if (!rows.length) {
-    tbody.innerHTML = `<tr><td colspan="9" class="empty-state">${t('parts.empty')}</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="8" class="empty-state">${t('parts.empty')}</td></tr>`;
     renderPagination(0, 1);
     return;
   }
 
   tbody.innerHTML = rows.map(p => {
     const catName = p.category?.name ?? (allCategories.find(c => c.id === p.categoryId)?.name ?? '—');
-    const stockClass = p.stockQuantity <= p.reorderPoint ? 'danger' : 'ok';
+    const whQty   = p.warehouseStock ?? 0;
+    const minQty  = p.minStock ?? 0;
+    const snCount = p.serialUnitsCount ?? 0;
+
     const statusBadge = p.isActive
       ? `<span class="badge badge-green">${t('lbl.active')}</span>`
       : `<span class="badge badge-gray">${t('lbl.inactive')}</span>`;
+
+    const snBtn = snCount > 0
+      ? `<a href="admin-serials.html?partNo=${encodeURIComponent(p.partNo)}" class="btn btn-secondary btn-xs" title="ดู Serial Numbers (${snCount} S/N ในระบบ)" style="text-decoration:none;display:inline-flex;align-items:center;gap:3px;font-weight:600;"><iconify-icon icon="mdi:barcode-scan" width="13" style="color:var(--orange)"></iconify-icon> S/N <span class="badge" style="padding:0 5px;font-size:10px;background:rgba(249,115,22,0.15);color:var(--orange);border-radius:10px;">${snCount}</span></a>`
+      : `<button class="btn btn-xs" disabled title="อะไหล่ชิ้นนี้ไม่มี Serial Number (นับสต็อกตามจำนวนชิ้น)" style="opacity:0.4;cursor:not-allowed;border:1px dashed var(--border);color:var(--text-muted);background:transparent;display:inline-flex;align-items:center;gap:3px;"><iconify-icon icon="mdi:barcode-off" width="13"></iconify-icon> ไม่มี S/N</button>`;
+
     const actions = p.isActive
-      ? `<button class="btn btn-secondary btn-xs" onclick="openModal(${p.id})">${t('btn.edit')}</button>
+      ? `${snBtn}
+         <button class="btn btn-secondary btn-xs" onclick="openModal(${p.id})">${t('btn.edit')}</button>
          <button class="btn btn-danger btn-xs" onclick="deletePart(${p.id})">${t('btn.deactivate')}</button>`
-      : `<button class="btn btn-secondary btn-xs" onclick="restorePart(${p.id})">${t('btn.restore')}</button>`;
+      : `${snBtn}
+         <button class="btn btn-secondary btn-xs" onclick="restorePart(${p.id})">${t('btn.restore')}</button>`;
+
     const imgIcon = p.imagePath
       ? `<iconify-icon icon="material-symbols:image-outline" width="15" style="vertical-align:-3px;color:var(--orange)"></iconify-icon> `
       : '';
-    const whQty   = p.warehouseStock ?? 0;
-    const techQty = p.techStock ?? 0;
+
+    const partNoCell = snCount > 0
+      ? `<a href="admin-serials.html?partNo=${encodeURIComponent(p.partNo)}" title="คลิกเพื่อดู Serial Numbers (${snCount} S/N ในระบบ)" style="text-decoration:none;"><code style="cursor:pointer;color:var(--orange);font-weight:700;">${p.partNo}</code></a>`
+      : `<code title="อะไหล่ไม่มี Serial Number (นับสต็อกตามจำนวนชิ้น)" style="color:var(--text-secondary);">${p.partNo}</code>`;
+
     return `<tr>
-      <td><code>${p.partNo}</code></td>
+      <td>${partNoCell}</td>
       <td><a href="#" class="part-name-link" onclick="openPartDetail(${p.id});return false;">${imgIcon}<strong>${p.partName}</strong></a></td>
+      <td><span class="badge badge-gray" style="font-size:11px;">${p.project || '—'}</span></td>
       <td>${catName}</td>
-      <td>${whQty} ${t('inv.units')}</td>
-      <td>${techQty
-          ? `<a href="#" style="color:var(--orange);text-decoration:underline;text-underline-offset:2px;" onclick="openHoldersModal(${p.id});return false;">${techQty} ${t('inv.units')}</a>`
-          : `<span style="color:var(--text-secondary);">—</span>`}</td>
-      <td><span class="stock-pill ${stockClass}">${p.stockQuantity} ${t('inv.units')}</span></td>
-      <td>${p.minStock}</td>
+      <td style="text-align:right;font-weight:700;color:${whQty < minQty ? 'var(--red)' : 'var(--text-primary)'};">${whQty.toLocaleString()} ชิ้น</td>
+      <td style="text-align:right;">${minQty.toLocaleString()}</td>
       <td>${statusBadge}</td>
       <td style="white-space:nowrap;display:flex;gap:6px;">${actions}</td>
     </tr>`;
@@ -138,12 +187,21 @@ function openPartDetail(id) {
   pdIndex = 0;
   renderPdImage(p.partName);
 
+  const snCount = p.serialUnitsCount ?? 0;
+  const snRowContent = snCount > 0
+    ? `<code>${p.partNo}</code> <a href="admin-serials.html?partNo=${encodeURIComponent(p.partNo)}" class="btn btn-secondary btn-xs" style="margin-left:8px;text-decoration:none;display:inline-flex;align-items:center;gap:3px;"><iconify-icon icon="mdi:barcode-scan" width="13"></iconify-icon> ดู S/N ทั้งหมด (${snCount} ตัว) ↗</a>`
+    : `<code>${p.partNo}</code> <span class="badge badge-gray" style="margin-left:8px;font-size:11px;font-weight:normal;color:var(--text-muted);display:inline-flex;align-items:center;gap:4px;"><iconify-icon icon="mdi:barcode-off" width="13"></iconify-icon> ไม่มี Serial Number (นับสต็อกตามจำนวนชิ้น)</span>`;
+
+  const stockRowContent = snCount > 0
+    ? `${p.stockQuantity} รวม &nbsp;(คลังกลาง ${p.warehouseStock ?? 0} / อยู่กับช่าง ${p.techStock ?? 0}) <a href="admin-serials.html?partNo=${encodeURIComponent(p.partNo)}" style="margin-left:8px;font-size:12px;text-decoration:none;color:var(--orange);">[เช็คสถานะ ${snCount} S/N ↗]</a>`
+    : `${p.stockQuantity} รวม &nbsp;(คลังกลาง ${p.warehouseStock ?? 0} / อยู่กับช่าง ${p.techStock ?? 0})`;
+
   const rows = [
-    ['parts.pd.partno', `<code>${p.partNo}</code>`],
+    ['parts.pd.partno', snRowContent],
     ['parts.pd.desc',   `<strong>${dash(p.partName)}</strong>`],
     ['parts.pd.main',   dash(p.mainUnit)],
     ['parts.pd.sub',    dash(catName)],
-    ['parts.pd.stock',  `${p.stockQuantity} รวม &nbsp;(คลังกลาง ${p.warehouseStock ?? 0} / อยู่กับช่าง ${p.techStock ?? 0})`],
+    ['parts.pd.stock',  stockRowContent],
     ['parts.pd.remark', dash(p.remark)],
   ].map(([k, v]) => `
     <div class="pd-row">

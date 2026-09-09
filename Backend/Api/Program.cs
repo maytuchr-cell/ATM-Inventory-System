@@ -259,6 +259,39 @@ using (var scope = app.Services.CreateScope())
                 context.Database.ExecuteSqlRaw("ALTER TABLE DailyReportImportRows ADD COLUMN StockCredited INTEGER NOT NULL DEFAULT 0;");
                 Console.WriteLine("✅ Migration: added DailyReportImportRows.StockCredited (Unmatched rows now still credit the warehouse)");
             }
+
+            var tplCols = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            using (var cmd = context.Database.GetDbConnection().CreateCommand())
+            {
+                if (cmd.Connection!.State != System.Data.ConnectionState.Open) cmd.Connection.Open();
+                cmd.CommandText = "PRAGMA table_info(TicketPartLines);";
+                using var reader = cmd.ExecuteReader();
+                while (reader.Read()) tplCols.Add(reader.GetString(1));
+            }
+            if (!tplCols.Contains("Problem"))
+            {
+                context.Database.ExecuteSqlRaw("ALTER TABLE TicketPartLines ADD COLUMN Problem TEXT NULL;");
+                Console.WriteLine("✅ Migration: added TicketPartLines.Problem");
+            }
+            if (!tplCols.Contains("SerialNo"))
+            {
+                context.Database.ExecuteSqlRaw("ALTER TABLE TicketPartLines ADD COLUMN SerialNo TEXT NULL;");
+                Console.WriteLine("✅ Migration: added TicketPartLines.SerialNo");
+            }
+
+            var wbCols = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            using (var cmd = context.Database.GetDbConnection().CreateCommand())
+            {
+                if (cmd.Connection!.State != System.Data.ConnectionState.Open) cmd.Connection.Open();
+                cmd.CommandText = "PRAGMA table_info(WithdrawBatches);";
+                using var reader = cmd.ExecuteReader();
+                while (reader.Read()) wbCols.Add(reader.GetString(1));
+            }
+            if (!wbCols.Contains("ReturnRequestedAt"))
+            {
+                context.Database.ExecuteSqlRaw("ALTER TABLE WithdrawBatches ADD COLUMN ReturnRequestedAt TEXT NULL;");
+                Console.WriteLine("✅ Migration: added WithdrawBatches.ReturnRequestedAt");
+            }
         }
         catch (Exception mex) { Console.WriteLine($"⚠ DailyReportImport migration skipped: {mex.Message}"); }
 
@@ -299,6 +332,29 @@ using (var scope = app.Services.CreateScope())
                 "CREATE INDEX IF NOT EXISTS IX_PartImages_PartId ON PartImages (PartId);");
         }
         catch (Exception mex) { Console.WriteLine($"⚠ PartImages migration skipped: {mex.Message}"); }
+
+        // ── Lightweight migration: FeContacts and SavedAddresses tables ──
+        if (isSqlite) try
+        {
+            context.Database.ExecuteSqlRaw(@"
+                CREATE TABLE IF NOT EXISTS FeContacts (
+                    Id INTEGER NOT NULL CONSTRAINT PK_FeContacts PRIMARY KEY AUTOINCREMENT,
+                    FeId TEXT NOT NULL,
+                    FeName TEXT NOT NULL,
+                    Tel TEXT NULL,
+                    Address TEXT NOT NULL,
+                    Postcode TEXT NULL,
+                    UpdatedAt TEXT NOT NULL
+                );");
+            context.Database.ExecuteSqlRaw(@"
+                CREATE TABLE IF NOT EXISTS SavedAddresses (
+                    Id INTEGER NOT NULL CONSTRAINT PK_SavedAddresses PRIMARY KEY AUTOINCREMENT,
+                    TechEmail TEXT NOT NULL,
+                    Address TEXT NOT NULL,
+                    UpdatedAt TEXT NOT NULL
+                );");
+        }
+        catch (Exception mex) { Console.WriteLine($"⚠ FeContacts/SavedAddresses migration skipped: {mex.Message}"); }
 
         // ── Lightweight migration: rebuild Tickets on the new เบิก/ยืม/คืน schema, add
         //    TicketPartLines. Old Tickets rows used the single-part-request model — there is no
@@ -1642,177 +1698,7 @@ using (var scope = app.Services.CreateScope())
             Console.WriteLine("✅ ATM Models (GRG) seeded.");
         }
 
-        // ── Demo parts referenced by Tickets/serial-tracking demo (create-if-missing, ungated) ──
-        // These must exist as real Parts so PartId/StockMovement FKs resolve on every DB.
-        var demoParts = new[] {
-            ("ATM-001", "Cash Dispenser Module (demo)"),
-            ("ATM-002", "Bunch Note Acceptor (demo)"),
-            ("ATM-003", "Encrypting PIN Pad (demo)"),
-            ("ATM-004", "Card Reader (demo)"),
-            ("ATM-006", "Receipt Printer (demo)"),
-            ("ATM-008", "Journal Printer (demo)"),
-        };
-        foreach (var (pn, name) in demoParts)
-        {
-            if (!context.Parts.Any(p => p.PartNo == pn))
-                context.Parts.Add(new Part { PartNo = pn, PartName = name, Unit = "pcs", MinStock = 1, MaxStock = 10, ReorderPoint = 2, IsActive = true });
-        }
-        context.SaveChanges();
-        int DemoPartId(string pn) => context.Parts.First(p => p.PartNo == pn).Id;
-
-        // ── Tickets (rich demo data — เบิก/ยืม/คืน synced from Aservice) ──
-        // Dev-only fixture data — must never fire against Production. Without this guard, ANY
-        // database that boots with an empty Tickets table (a fresh Production DB included) gets
-        // silently repopulated with these fake ASV-SEED-* tickets on first startup.
-        if (app.Environment.IsDevelopment() && !context.Tickets.Any())
-        {
-            void SeedTicket(string extNo, string techName, string techDept, string status,
-                string partNo, int daysAgo, string? withdrawAddr = "Demo Address", string? returnAddr = null)
-            {
-                // `status` here is the WITHDRAW batch's status, except "คืน" which really means
-                // the withdraw batch is เบิก (received) AND the Ticket's return leg has closed.
-                var batchStatus = status == "คืน" ? "เบิก" : status;
-                var ticketReturnStatus = status == "คืน" ? "คืน" : null;
-
-                var ticket = new Ticket
-                {
-                    ExternalTicketNo = extNo, TechEmail = "tech@atm.com", TechName = techName, TechDept = techDept,
-                    Status = ticketReturnStatus, ReturnAddress = returnAddr,
-                    CreatedAt = DateTime.Now.AddDays(-daysAgo), UpdatedAt = DateTime.Now.AddDays(-daysAgo + 1),
-                };
-                context.Tickets.Add(ticket);
-                context.SaveChanges();
-
-                var batch = new WithdrawBatch
-                {
-                    TicketId = ticket.TicketId, Status = batchStatus, WithdrawAddress = withdrawAddr,
-                    ApproverName = batchStatus is "เดินทาง" or "เบิก" ? "admin@atm.com" : null,
-                    ApprovedAt = batchStatus is "เดินทาง" or "เบิก" ? DateTime.Now.AddDays(-daysAgo + 1) : null,
-                    CreatedAt = DateTime.Now.AddDays(-daysAgo), UpdatedAt = DateTime.Now.AddDays(-daysAgo + 1),
-                };
-                context.WithdrawBatches.Add(batch);
-                context.SaveChanges();
-
-                context.TicketPartLines.Add(new TicketPartLine
-                { TicketId = ticket.TicketId, WithdrawBatchId = batch.WithdrawBatchId, PartId = context.Parts.First(p => p.PartNo == partNo).Id,
-                  PartNo = partNo, Quantity = 1, LineType = "Withdraw" });
-                if (returnAddr != null)
-                    context.TicketPartLines.Add(new TicketPartLine
-                    { TicketId = ticket.TicketId, PartId = context.Parts.First(p => p.PartNo == partNo).Id,
-                      PartNo = partNo, Quantity = 1, LineType = "Return", Condition = "Good" });
-                context.SaveChanges();
-            }
-
-            // เบิก — received, closed withdraw leg (admin history)
-            SeedTicket("ASV-SEED-001", "Somchai Saichill", "North Zone", "เบิก", "ATM-001", 12);
-            // คืน — full round trip completed (admin history)
-            SeedTicket("ASV-SEED-002", "Somying Wingwai", "Central Zone", "คืน", "ATM-004", 5, returnAddr: "DHL Hub Central");
-            // เดินทาง — approved, awaiting tech pickup (tech confirms receipt)
-            SeedTicket("ASV-SEED-003", "Somkiat Suchivit", "South Zone", "เดินทาง", "ATM-006", 2);
-            // รอ — waiting for admin approval (admin sees approve/reject/cancel)
-            SeedTicket("ASV-SEED-004", "Wanchai Deeprom", "East Zone", "รอ", "ATM-002", 1);
-            // รอ — second waiting request
-            SeedTicket("ASV-SEED-005", "Nattapong Ruanrit", "West Zone", "รอ", "ATM-008", 0);
-            // Reject (admin history) — the withdraw batch is rejected, Ticket itself has no return in flight
-            var rejected = new Ticket
-            {
-                ExternalTicketNo = "ASV-SEED-006", TechEmail = "tech@atm.com", TechName = "Somkiat Suchivit",
-                TechDept = "South Zone", CreatedAt = DateTime.Now.AddDays(-3), UpdatedAt = DateTime.Now.AddDays(-3),
-            };
-            context.Tickets.Add(rejected);
-            context.SaveChanges();
-            var rejectedBatch = new WithdrawBatch
-            {
-                TicketId = rejected.TicketId, Status = "Reject", RejectReason = "อะไหล่ไม่ตรงกับรุ่นเครื่อง",
-                WithdrawAddress = "Demo Address", CreatedAt = DateTime.Now.AddDays(-3), UpdatedAt = DateTime.Now.AddDays(-3),
-            };
-            context.WithdrawBatches.Add(rejectedBatch);
-            context.SaveChanges();
-            context.TicketPartLines.Add(new TicketPartLine
-            { TicketId = rejected.TicketId, WithdrawBatchId = rejectedBatch.WithdrawBatchId, PartId = context.Parts.First(p => p.PartNo == "ATM-003").Id,
-              PartNo = "ATM-003", Quantity = 1, LineType = "Withdraw" });
-            context.SaveChanges();
-
-            Console.WriteLine("✅ Tickets seeded.");
-        }
-
-        // ── Serial Tracking demo data ──────────────────────────────────────────
-        // Seeds GoodsReceipts + StockMovements with SerialNo so the tracking
-        // timeline page has real data to display out of the box.
-        // Dev-only — same reasoning as the Tickets seed above: a Production DB with an empty
-        // GoodsReceipts table (fresh, or right after real data is cleared out) must not get this
-        // fake GR-2025-001/SN-DISP-001 fixture data seeded into it.
-        if (app.Environment.IsDevelopment() && !context.GoodsReceipts.Any())
-        {
-            var wh    = context.Locations.First(l => l.Code == "DHL-BKK");
-            var grg   = context.Locations.First(l => l.Code == "GRG-BKK");
-            var scrap = context.Locations.First(l => l.Code == "SCRAP-01");
-            var vendor = context.Vendors.First();
-
-            // ── GR-001: 3 parts received with serial numbers ──
-            var gr1 = new GoodsReceipt
-            {
-                ReceiptNo    = "GR-2025-001",
-                Source       = "GRG",
-                VendorId     = vendor.Id,
-                RefDocument  = "PO-2025-001",
-                LocationId   = wh.Id,
-                ReceivedBy   = "Admin",
-                ReceivedAt   = DateTime.Now.AddDays(-30),
-                HandlingCost = 500m
-            };
-            context.GoodsReceipts.Add(gr1);
-            context.SaveChanges();
-
-            context.GoodsReceiptLines.AddRange(
-                new GoodsReceiptLine { GoodsReceiptId = gr1.Id, PartId = DemoPartId("ATM-001"), PartNo = "ATM-001", Qty = 1, Condition = "Good",      SerialNo = "SN-DISP-001" },
-                new GoodsReceiptLine { GoodsReceiptId = gr1.Id, PartId = DemoPartId("ATM-002"), PartNo = "ATM-002", Qty = 1, Condition = "Good",      SerialNo = "SN-BNA-001"  },
-                new GoodsReceiptLine { GoodsReceiptId = gr1.Id, PartId = DemoPartId("ATM-004"), PartNo = "ATM-004", Qty = 1, Condition = "Good",      SerialNo = "SN-CR-001"   },
-                new GoodsReceiptLine { GoodsReceiptId = gr1.Id, PartId = DemoPartId("ATM-006"), PartNo = "ATM-006", Qty = 1, Condition = "Bad",       SerialNo = "SN-PRT-001"  }
-            );
-
-            // GR movements in StockMovement ledger (with SerialNo)
-            context.StockMovements.AddRange(
-                new StockMovement { MovementType="GR", PartId=DemoPartId("ATM-001"), PartNo="ATM-001", ToLocationId=wh.Id, Qty=1, Condition="Good",      SerialNo="SN-DISP-001", RefType="GoodsReceipt", RefId=gr1.Id.ToString(), UserName="Admin", Remarks="Received from GRG", Timestamp=DateTime.Now.AddDays(-30) },
-                new StockMovement { MovementType="GR", PartId=DemoPartId("ATM-002"), PartNo="ATM-002", ToLocationId=wh.Id, Qty=1, Condition="Good",      SerialNo="SN-BNA-001",  RefType="GoodsReceipt", RefId=gr1.Id.ToString(), UserName="Admin", Remarks="Received from GRG", Timestamp=DateTime.Now.AddDays(-30) },
-                new StockMovement { MovementType="GR", PartId=DemoPartId("ATM-004"), PartNo="ATM-004", ToLocationId=wh.Id, Qty=1, Condition="Good",      SerialNo="SN-CR-001",   RefType="GoodsReceipt", RefId=gr1.Id.ToString(), UserName="Admin", Remarks="Received from GRG", Timestamp=DateTime.Now.AddDays(-30) },
-                new StockMovement { MovementType="GR", PartId=DemoPartId("ATM-006"), PartNo="ATM-006", ToLocationId=wh.Id, Qty=1, Condition="Bad",       SerialNo="SN-PRT-001",  RefType="GoodsReceipt", RefId=gr1.Id.ToString(), UserName="Admin", Remarks="Received bad unit from GRG", Timestamp=DateTime.Now.AddDays(-30) }
-            );
-            context.SaveChanges();
-
-            // ── SN-DISP-001: Issued → Received by tech → Returned ──
-            context.StockMovements.AddRange(
-                new StockMovement { MovementType="Issue",  PartId=DemoPartId("ATM-001"), PartNo="ATM-001", FromLocationId=wh.Id,    Qty=1, Condition="Good", SerialNo="SN-DISP-001", RefType="Ticket", RefId="1", UserName="Somchai Saichill",  Remarks="Issued for TK-0001", Timestamp=DateTime.Now.AddDays(-28) },
-                new StockMovement { MovementType="Return", PartId=DemoPartId("ATM-001"), PartNo="ATM-001", ToLocationId=wh.Id,      Qty=1, Condition="Good", SerialNo="SN-DISP-001", RefType="Ticket", RefId="1", UserName="Somchai Saichill",  Remarks="Returned after repair",  Timestamp=DateTime.Now.AddDays(-20) }
-            );
-
-            // ── SN-BNA-001: Issued → Still with technician (not returned) ──
-            context.StockMovements.Add(
-                new StockMovement { MovementType="Issue", PartId=DemoPartId("ATM-002"), PartNo="ATM-002", FromLocationId=wh.Id, Qty=1, Condition="Good", SerialNo="SN-BNA-001", RefType="Ticket", RefId="2", UserName="Somying Wingwai", Remarks="Issued for TK-0002", Timestamp=DateTime.Now.AddDays(-10) }
-            );
-
-            // ── SN-CR-001: Transferred to another location ──
-            context.StockMovements.Add(
-                new StockMovement { MovementType="Transfer", PartId=DemoPartId("ATM-004"), PartNo="ATM-004", FromLocationId=wh.Id, ToLocationId=grg.Id, Qty=1, Condition="Good", SerialNo="SN-CR-001", RefType="StockTransfer", RefId="T-001", UserName="Admin", Remarks="Transferred to GRG Bangkok Hub", Timestamp=DateTime.Now.AddDays(-15) }
-            );
-
-            // ── SN-PRT-001: Bad → Disposal ──
-            context.StockMovements.Add(
-                new StockMovement { MovementType="Disposal", PartId=DemoPartId("ATM-006"), PartNo="ATM-006", FromLocationId=wh.Id, ToLocationId=scrap.Id, Qty=1, Condition="Bad", SerialNo="SN-PRT-001", RefType="Disposal", RefId="D-001", UserName="Admin", Remarks="Unrepairable — sent to scrap", Timestamp=DateTime.Now.AddDays(-25) }
-            );
-
-            context.SaveChanges();
-
-            // PartStock for demo parts so on-hand reconciles with the demo ledger above:
-            //  ATM-001 received→issued→returned = 1 in warehouse · ATM-004 transferred = 1 at GRG · ATM-006 disposed = 1 bad unit at Scrap
-            context.PartStocks.AddRange(
-                new PartStock { PartId = DemoPartId("ATM-001"), LocationId = wh.Id,    GoodQty = 1, BadQty = 0 },
-                new PartStock { PartId = DemoPartId("ATM-004"), LocationId = grg.Id,   GoodQty = 1, BadQty = 0 },
-                new PartStock { PartId = DemoPartId("ATM-006"), LocationId = scrap.Id, GoodQty = 0, BadQty = 1 }
-            );
-            context.SaveChanges();
-            Console.WriteLine("✅ Serial tracking demo data seeded. Try: SN-DISP-001, SN-BNA-001, SN-CR-001, SN-PRT-001");
-        }
+        // ── Demo parts and mock tickets/tracking permanently removed ──
 
         // ── Backfill StockMovement.PartId from PartNo (existing rows where PartId=0) ──
         // Idempotent: only touches unlinked rows whose PartNo matches an existing Part.
@@ -1880,6 +1766,31 @@ app.UseStaticFiles(new StaticFileOptions {
 
 app.UseAuthorization();
 app.MapControllers();
+
+// ── Version & Git Commit Info Endpoint ──
+static object GetVersionInfo(WebApplication app)
+{
+    var asm = typeof(Program).Assembly;
+    var attr = (System.Reflection.AssemblyInformationalVersionAttribute?)Attribute.GetCustomAttribute(asm, typeof(System.Reflection.AssemblyInformationalVersionAttribute));
+    string infoVer = attr?.InformationalVersion ?? "1.0.0";
+    string[] segments = infoVer.Split('+');
+    string ver = segments.Length > 0 ? segments[0] : "1.0.0";
+    string fullCommit = segments.Length > 1 ? segments[1] : "";
+    string shortCommit = fullCommit.Length > 7 ? fullCommit.Substring(0, 7) : fullCommit;
+    string buildTime = System.IO.File.GetLastWriteTime(asm.Location).ToString("yyyy-MM-dd HH:mm:ss");
+
+    return new
+    {
+        version = $"v{ver}",
+        commit = shortCommit,
+        fullCommit,
+        buildTime,
+        environment = app.Environment.EnvironmentName
+    };
+}
+
+app.MapGet("/version", () => Results.Ok(GetVersionInfo(app))).AllowAnonymous();
+app.MapGet("/api/version", () => Results.Ok(GetVersionInfo(app))).AllowAnonymous();
 
 app.Run();
 

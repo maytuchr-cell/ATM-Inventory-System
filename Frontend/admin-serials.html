@@ -1,0 +1,835 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Serial Units Registry — ATM Inventory</title>
+  <link rel="stylesheet" href="shared/styles.css?v=82">
+  <style>
+    .su-stats {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 14px;
+      margin-bottom: 24px;
+    }
+    @media (max-width: 1024px) {
+      .su-stats { grid-template-columns: repeat(2, 1fr); }
+    }
+    @media (max-width: 640px) {
+      .su-stats { grid-template-columns: 1fr; }
+    }
+    .su-stat {
+      background: var(--bg-card);
+      border: 1.5px solid var(--border);
+      border-radius: 14px;
+      padding: 16px 18px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      box-shadow: var(--shadow-card);
+      transition: transform .14s, border-color .14s, box-shadow .14s;
+    }
+    .su-stat:hover {
+      transform: translateY(-2px);
+      border-color: var(--orange);
+      box-shadow: 0 6px 16px rgba(0,0,0,0.08);
+    }
+    .su-stat.active {
+      border-color: var(--orange);
+      background: var(--orange-light);
+      box-shadow: 0 0 0 1px var(--orange);
+    }
+    .su-stat-icon {
+      width: 44px;
+      height: 44px;
+      border-radius: 12px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 22px;
+      flex-shrink: 0;
+    }
+    .su-stat-info {
+      flex: 1;
+      overflow: hidden;
+    }
+    .su-stat-num {
+      font-size: 24px;
+      font-weight: 800;
+      line-height: 1.1;
+      font-variant-numeric: tabular-nums;
+    }
+    .su-stat-label {
+      font-size: 12.5px;
+      font-weight: 700;
+      color: var(--text-primary);
+      margin-top: 3px;
+    }
+    .su-stat-sub {
+      font-size: 11px;
+      color: var(--text-secondary);
+      margin-top: 2px;
+    }
+
+    /* Filter Toolbar inside Card */
+    .filter-toolbar {
+      display: flex;
+      gap: 10px;
+      align-items: center;
+      flex-wrap: nowrap;
+      padding-bottom: 14px;
+      border-bottom: 1px solid var(--border);
+      margin-bottom: 16px;
+    }
+    @media (max-width: 900px) {
+      .filter-toolbar {
+        flex-wrap: wrap;
+      }
+    }
+    .filter-toolbar .search-box {
+      flex: 1 1 240px;
+      min-width: 200px;
+    }
+    .filter-toolbar .search-box .form-input {
+      width: 100%;
+      height: 38px;
+      padding: 8px 12px;
+      font-size: 13px;
+    }
+    .filter-toolbar .form-select {
+      width: auto !important;
+      min-width: 160px;
+      max-width: 210px;
+      flex: 0 0 auto;
+      height: 38px;
+      padding: 8px 12px;
+      font-size: 13px;
+    }
+    .filter-toolbar .btn {
+      height: 38px;
+      padding: 0 14px;
+      font-size: 13px;
+      white-space: nowrap;
+      flex: 0 0 auto;
+    }
+    .filter-toolbar #result-summary {
+      margin-left: auto;
+      font-size: 12.5px;
+      font-weight: 600;
+      color: var(--text-secondary);
+      white-space: nowrap;
+      flex: 0 0 auto;
+    }
+
+    /* Table Container with Sticky Header */
+    .tbl-container {
+      max-height: calc(100vh - 360px);
+      min-height: 380px;
+      overflow-y: auto;
+      border: 1px solid var(--border);
+      border-radius: 10px;
+    }
+    .tbl-container thead th {
+      position: sticky;
+      top: 0;
+      z-index: 2;
+      background: var(--bg-card);
+      box-shadow: inset 0 -1px 0 var(--border);
+    }
+
+    /* Serial Number clickable badge */
+    .sn-code {
+      display: inline-flex;
+      align-items: center;
+      text-decoration: none;
+    }
+    .sn-code code {
+      color: var(--orange);
+      background: var(--orange-light);
+      border: 1px solid rgba(249,115,22,0.28);
+      font-weight: 700;
+      font-size: 12.5px;
+      padding: 3px 8px;
+      border-radius: 6px;
+      transition: all .15s ease;
+      cursor: pointer;
+    }
+    .sn-code:hover code {
+      background: var(--orange);
+      color: #ffffff;
+      box-shadow: 0 2px 8px rgba(249,115,22,0.32);
+    }
+
+    /* Holder / Technician style */
+    .holder-badge {
+      display: inline-flex;
+      flex-direction: column;
+      gap: 2px;
+    }
+    .holder-name {
+      font-weight: 700;
+      color: #1d4ed8;
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      font-size: 13px;
+    }
+    .holder-case {
+      font-size: 11px;
+      color: var(--text-secondary);
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+    }
+
+    /* Badges */
+    .badge-status {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      padding: 3px 9px;
+      border-radius: 6px;
+      font-size: 11.5px;
+      font-weight: 700;
+      white-space: nowrap;
+    }
+    .badge-instock { background: #dcfce7; color: #15803d; }
+    .badge-issued  { background: #dbeafe; color: #1d4ed8; }
+    .badge-repair  { background: #ffedd5; color: #c2410c; }
+    .badge-other   { background: var(--bg-subtle); color: var(--text-secondary); }
+
+    /* Bottom Pagination Bar */
+    .pagination-bar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      flex-wrap: wrap;
+      padding-top: 16px;
+      margin-top: 14px;
+      font-size: 12.5px;
+      color: var(--text-secondary);
+    }
+    .page-nav {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    /* Modal Timeline */
+    .modal-tl { position:relative; padding-left:24px; margin-top:14px; }
+    .modal-tl::before { content:''; position:absolute; left:8px; top:6px; bottom:6px; width:2px; background:var(--border); }
+    .modal-tl-item { position:relative; margin-bottom:16px; }
+    .modal-tl-dot { position:absolute; left:-20px; top:4px; width:10px; height:10px; border-radius:50%; background:var(--orange); border:2px solid var(--bg-card); box-shadow:0 0 0 2px var(--orange); }
+    .modal-tl-dot.good { background:var(--green); box-shadow:0 0 0 2px var(--green); }
+    .modal-tl-dot.bad { background:var(--red); box-shadow:0 0 0 2px var(--red); }
+    .modal-tl-card { background:var(--bg-subtle); border:1.2px solid var(--border); border-radius:10px; padding:10px 14px; }
+    .modal-tl-header { display:flex; justify-content:space-between; align-items:center; gap:8px; margin-bottom:4px; }
+    .modal-tl-time { font-size:11px; color:var(--text-secondary); font-variant-numeric:tabular-nums; }
+    .modal-tl-desc { font-size:12.5px; font-weight:600; color:var(--text-primary); }
+    .modal-tl-meta { font-size:11.5px; color:var(--text-secondary); margin-top:4px; display:flex; gap:12px; flex-wrap:wrap; }
+  </style>
+</head>
+<body>
+  <div class="app-layout">
+    <div id="sidebar-root"></div>
+    <div class="main-content">
+      <div class="topbar">
+        <div>
+          <div class="topbar-title">ทะเบียน Serial Number (Serial Units Registry)</div>
+          <div class="topbar-sub">รายการอะไหล่รายชิ้นที่มีหมายเลข Serial Number ในระบบ (ติดตามตำแหน่ง ผู้ถือครอง สภาพ และไทม์ไลน์)</div>
+        </div>
+      </div>
+
+      <div class="page-body">
+        <!-- Filtered by Part Banner -->
+        <div id="part-filter-banner" style="display:none; margin-bottom:20px; align-items:center; justify-content:space-between; background:var(--orange-light); border:1.5px solid var(--orange); border-radius:12px; padding:12px 18px; flex-wrap:wrap; gap:12px; box-shadow:0 2px 8px rgba(249,115,22,0.08);">
+          <div style="display:flex; align-items:center; gap:12px;">
+            <div style="width:38px; height:38px; border-radius:10px; background:var(--orange); display:flex; align-items:center; justify-content:center; color:#fff; flex-shrink:0;">
+              <iconify-icon icon="mdi:barcode-scan" width="22" height="22" style="display:block;"></iconify-icon>
+            </div>
+            <div>
+              <div style="font-size:14px; font-weight:700; color:var(--text-primary); display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
+                <span>กำลังแสดง Serial Numbers ของอะไหล่:</span>
+                <span id="banner-part-no" style="font-family:monospace; background:rgba(0,0,0,0.07); padding:2px 8px; border-radius:6px; color:var(--orange); font-size:14px;"></span>
+                <span id="banner-part-name" style="color:var(--text-secondary); font-weight:600;"></span>
+              </div>
+              <div style="font-size:11.5px; color:var(--text-muted); margin-top:2px;">
+                กรองเฉพาะ S/N ของอะไหล่รายการนี้ — สามารถสลับดูสถานะ (InStock / อยู่กับช่าง / ส่งซ่อม) หรือกดดู Timeline การเดินทางของแต่ละตัวได้
+              </div>
+            </div>
+          </div>
+          <div style="display:flex; gap:8px; align-items:center;">
+            <button class="btn btn-secondary btn-sm" onclick="clearPartFilter()" style="font-size:12px; padding:6px 12px;">✕ ดู S/N อะไหล่ทั้งหมด</button>
+            <a href="admin-parts.html" class="btn btn-primary btn-sm" style="text-decoration:none; display:inline-flex; align-items:center; gap:4px; font-size:12px; padding:6px 12px;">
+              <iconify-icon icon="mdi:arrow-left" width="14"></iconify-icon> กลับหน้ารายการอะไหล่
+            </a>
+          </div>
+        </div>
+
+        <!-- Metric Summary Cards -->
+        <div class="su-stats">
+          <div class="su-stat active" id="card-all" onclick="applyStatusFilter('')">
+            <div class="su-stat-icon" style="background:rgba(107,114,128,0.12); color:var(--text-secondary);">📦</div>
+            <div class="su-stat-info">
+              <div class="su-stat-num" id="stat-total" style="color:var(--text-primary);">0</div>
+              <div class="su-stat-label">Serial Number ทั้งหมด</div>
+              <div class="su-stat-sub">ลงทะเบียนในระบบ</div>
+            </div>
+          </div>
+          <div class="su-stat" id="card-instock" onclick="applyStatusFilter('InStock')">
+            <div class="su-stat-icon" style="background:#dcfce7; color:#15803d;">🏬</div>
+            <div class="su-stat-info">
+              <div class="su-stat-num" id="stat-instock" style="color:#16a34a;">0</div>
+              <div class="su-stat-label">พร้อมใช้ในคลัง (InStock)</div>
+              <div class="su-stat-sub">คลังกลาง DHL-BKK</div>
+            </div>
+          </div>
+          <div class="su-stat" id="card-issued" onclick="applyStatusFilter('Issued')">
+            <div class="su-stat-icon" style="background:#dbeafe; color:#1d4ed8;">👤</div>
+            <div class="su-stat-info">
+              <div class="su-stat-num" id="stat-issued" style="color:#2563eb;">0</div>
+              <div class="su-stat-label">อยู่กับช่าง (Issued)</div>
+              <div class="su-stat-sub">จ่ายออกหน้างาน / มีชื่อผู้ถือ</div>
+            </div>
+          </div>
+          <div class="su-stat" id="card-inrepair" onclick="applyStatusFilter('InRepair')">
+            <div class="su-stat-icon" style="background:#ffedd5; color:#c2410c;">🔧</div>
+            <div class="su-stat-info">
+              <div class="su-stat-num" id="stat-inrepair" style="color:#ea580c;">0</div>
+              <div class="su-stat-label">ส่งซ่อม/ชำรุด (InRepair)</div>
+              <div class="su-stat-sub">ศูนย์ซ่อม / Lab</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Main Unified Card -->
+        <div class="card" style="margin-bottom:0;">
+          <!-- Filter Toolbar -->
+          <div class="filter-toolbar">
+            <div class="search-box">
+              <input type="text" id="search-input" class="form-input" 
+                     placeholder="🔍 ค้นหา S/N, รหัสอะไหล่, ชื่ออะไหล่, ชื่อช่าง (ผู้ถือครอง), หรือเลขเคส..." 
+                     oninput="onSearchChange()">
+            </div>
+            <select id="status-select" class="form-select" onchange="onFilterChange()">
+              <option value="">สถานะทั้งหมด</option>
+              <option value="InStock">✅ InStock (ในคลัง)</option>
+              <option value="Issued">📤 Issued (อยู่กับช่าง)</option>
+              <option value="InRepair">🔧 InRepair (ส่งซ่อม)</option>
+            </select>
+            <select id="condition-select" class="form-select" onchange="onFilterChange()">
+              <option value="">สภาพทั้งหมด</option>
+              <option value="Good">Good (ปกติ/พร้อมใช้)</option>
+              <option value="Bad">Bad (ชำรุด/เสีย)</option>
+            </select>
+            <button class="btn btn-secondary" onclick="resetFilters()">ล้างตัวกรอง</button>
+            <div id="result-summary" style="margin-left:auto; font-size:12.5px; font-weight:600; color:var(--text-secondary); white-space:nowrap;">
+              กำลังโหลดข้อมูล...
+            </div>
+          </div>
+
+          <!-- Data Table -->
+          <div class="tbl-wrap tbl-container">
+            <table>
+              <thead>
+                <tr>
+                  <th style="min-width:170px;">Serial Number</th>
+                  <th style="min-width:130px;">รหัสอะไหล่ (Part No.)</th>
+                  <th style="min-width:220px;">ชื่ออะไหล่ (Part Name)</th>
+                  <th style="min-width:130px;">สถานะ</th>
+                  <th style="min-width:90px;">สภาพ</th>
+                  <th style="min-width:200px;">ตำแหน่งปัจจุบัน / ผู้ถือครอง</th>
+                  <th style="min-width:110px;">วันที่บันทึก</th>
+                  <th style="text-align:center; min-width:90px;">การกระทำ</th>
+                </tr>
+              </thead>
+              <tbody id="su-tbody">
+                <tr><td colspan="8" class="empty-state">กำลังโหลดข้อมูล S/N...</td></tr>
+              </tbody>
+            </table>
+          </div>
+
+          <!-- Bottom Pagination -->
+          <div class="pagination-bar">
+            <div style="display:flex; align-items:center; gap:10px;">
+              <span id="page-info-bottom">แสดง 0 รายการ</span>
+              <span style="color:var(--border);">|</span>
+              <span>แสดงต่อหน้า:</span>
+              <select id="page-size-select" class="form-select" style="width:auto; padding:4px 8px; font-size:12px;" onchange="onPageSizeChange(this.value)">
+                <option value="25">25</option>
+                <option value="50" selected>50</option>
+                <option value="100">100</option>
+              </select>
+            </div>
+            <div class="page-nav" id="page-controls-bottom"></div>
+          </div>
+        </div>
+
+        <!-- Quick Timeline Modal (ดูข้อมูลแล้วกดย้อนกลับ/ปิดได้ทันที) -->
+        <div class="modal-overlay hidden" id="timeline-modal" onclick="if(event.target===this)closeTimelineModal()">
+          <div class="modal" style="max-width:680px; width:100%;">
+            <div class="modal-header" style="border-bottom:1px solid var(--border); padding-bottom:12px; margin-bottom:16px;">
+              <div>
+                <div class="modal-title" style="display:flex; align-items:center; gap:8px;">
+                  <span>🔍 ประวัติการเดินทาง & ไทม์ไลน์</span>
+                  <code id="modal-sn" style="color:var(--orange); font-size:14px;"></code>
+                </div>
+                <div style="font-size:12px; color:var(--text-secondary); margin-top:3px;" id="modal-sub"></div>
+              </div>
+              <button class="btn btn-secondary btn-sm" onclick="closeTimelineModal()" title="ปิดหน้าต่าง (ย้อนกลับ)" style="font-weight:700;">✕ ย้อนกลับ</button>
+            </div>
+
+            <div id="modal-body" style="max-height:55vh; overflow-y:auto; padding-right:6px;">
+              <div class="empty-state">กำลังโหลดข้อมูลไทม์ไลน์...</div>
+            </div>
+
+            <div class="modal-footer" style="border-top:1px solid var(--border); padding-top:14px; margin-top:16px; display:flex; justify-content:space-between; align-items:center;">
+              <button class="btn btn-secondary" onclick="closeTimelineModal()" style="font-weight:700;">
+                <span>←</span> <span>ย้อนกลับไปตาราง</span>
+              </button>
+              <a id="modal-full-link" href="#" class="btn btn-primary" target="_blank">เปิดดูหน้าเต็ม ➔</a>
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+  </div>
+
+  <script src="https://code.iconify.design/iconify-icon/2.1.0/iconify-icon.min.js"></script>
+  <script src="shared/translations.js?v=82"></script>
+  <script src="shared/toast.js?v=82"></script>
+  <script src="shared/api.js?v=82"></script>
+  <script src="shared/layout.js?v=82"></script>
+  <script>
+    let allUnits = [];
+    let filteredUnits = [];
+    let activePartNo = null;
+    let currentPage = 1;
+    let pageSize = 50;
+    let searchDebounce = null;
+
+    window.addEventListener('DOMContentLoaded', () => {
+      initLayout();
+      loadUnits();
+    });
+
+    async function loadUnits() {
+      try {
+        const res = await apiFetch('/PartUnit');
+        allUnits = Array.isArray(res) ? res : (res.items || []);
+        checkPartNoParam();
+        updateStatCards();
+        filterUnits();
+      } catch (e) {
+        document.getElementById('su-tbody').innerHTML = `<tr><td colspan="8" class="empty-state" style="color:var(--red)">${e.message || 'ไม่สามารถโหลดข้อมูลได้'}</td></tr>`;
+      }
+    }
+
+    function checkPartNoParam() {
+      const urlParams = new URLSearchParams(window.location.search);
+      const pNo = urlParams.get('partNo');
+      if (pNo) {
+        activePartNo = pNo.trim();
+        const banner = document.getElementById('part-filter-banner');
+        const partSample = allUnits.find(u => (u.partNo || '').toLowerCase() === activePartNo.toLowerCase());
+        document.getElementById('banner-part-no').textContent = activePartNo;
+        document.getElementById('banner-part-name').textContent = partSample?.partName ? `— ${partSample.partName}` : '';
+        banner.style.display = 'flex';
+      } else {
+        activePartNo = null;
+        document.getElementById('part-filter-banner').style.display = 'none';
+      }
+    }
+
+    function clearPartFilter() {
+      activePartNo = null;
+      document.getElementById('part-filter-banner').style.display = 'none';
+      const url = new URL(window.location);
+      url.searchParams.delete('partNo');
+      window.history.replaceState({}, '', url);
+      updateStatCards();
+      currentPage = 1;
+      filterUnits();
+    }
+
+    function updateStatCards() {
+      const targetUnits = activePartNo
+        ? allUnits.filter(u => (u.partNo || '').toLowerCase() === activePartNo.toLowerCase())
+        : allUnits;
+
+      const total = targetUnits.length;
+      const inStock = targetUnits.filter(u => u.status === 'InStock').length;
+      const issued = targetUnits.filter(u => u.status === 'Issued').length;
+      const inRepair = targetUnits.filter(u => u.status === 'InRepair').length;
+
+      document.getElementById('stat-total').textContent = total.toLocaleString();
+      document.getElementById('stat-instock').textContent = inStock.toLocaleString();
+      document.getElementById('stat-issued').textContent = issued.toLocaleString();
+      document.getElementById('stat-inrepair').textContent = inRepair.toLocaleString();
+
+      const subLabel = document.querySelector('#card-all .su-stat-sub');
+      if (subLabel) subLabel.textContent = activePartNo ? `ของอะไหล่ ${activePartNo}` : 'ลงทะเบียนในระบบ';
+    }
+
+    function onSearchChange() {
+      clearTimeout(searchDebounce);
+      searchDebounce = setTimeout(() => {
+        currentPage = 1;
+        filterUnits();
+      }, 250);
+    }
+
+    function onFilterChange() {
+      const status = document.getElementById('status-select').value;
+      updateActiveCard(status);
+      currentPage = 1;
+      filterUnits();
+    }
+
+    function updateActiveCard(status) {
+      document.querySelectorAll('.su-stat').forEach(el => el.classList.remove('active'));
+      if (status === '') document.getElementById('card-all')?.classList.add('active');
+      else if (status === 'InStock') document.getElementById('card-instock')?.classList.add('active');
+      else if (status === 'Issued') document.getElementById('card-issued')?.classList.add('active');
+      else if (status === 'InRepair') document.getElementById('card-inrepair')?.classList.add('active');
+    }
+
+    function applyStatusFilter(status) {
+      const current = document.getElementById('status-select').value;
+      if (current === status && status !== '') {
+        status = ''; // toggle back to all
+      }
+      document.getElementById('status-select').value = status;
+      updateActiveCard(status);
+      currentPage = 1;
+      filterUnits();
+    }
+
+    function resetFilters() {
+      document.getElementById('search-input').value = '';
+      document.getElementById('status-select').value = '';
+      document.getElementById('condition-select').value = '';
+      updateActiveCard('');
+      currentPage = 1;
+      filterUnits();
+    }
+
+    function onPageSizeChange(val) {
+      pageSize = parseInt(val) || 50;
+      currentPage = 1;
+      renderTable();
+    }
+
+    function filterUnits() {
+      const q = document.getElementById('search-input').value.trim().toLowerCase();
+      const status = document.getElementById('status-select').value;
+      const condition = document.getElementById('condition-select').value;
+
+      filteredUnits = allUnits.filter(u => {
+        if (activePartNo && (u.partNo || '').toLowerCase() !== activePartNo.toLowerCase()) return false;
+        if (status && u.status !== status) return false;
+        if (condition && u.condition !== condition) return false;
+        if (q) {
+          const sNo = (u.serialNo || '').toLowerCase();
+          const pNo = (u.partNo || '').toLowerCase();
+          const pNm = (u.partName || '').toLowerCase();
+          const loc = (u.location || '').toLowerCase();
+          const holder = (u.currentHolder || '').toLowerCase();
+          const cNo = (u.caseNo || '').toLowerCase();
+          if (!sNo.includes(q) && !pNo.includes(q) && !pNm.includes(q) && !loc.includes(q) && !holder.includes(q) && !cNo.includes(q)) {
+            return false;
+          }
+        }
+        return true;
+      });
+
+      renderTable();
+    }
+
+    function formatDate(dtStr) {
+      if (!dtStr) return '—';
+      try {
+        const d = new Date(dtStr);
+        if (isNaN(d.getTime())) return '—';
+        const day = String(d.getDate()).padStart(2, '0');
+        const month = String(d.getMonth() + 1).padStart(2, '0');
+        const year = d.getFullYear();
+        return `${day}/${month}/${year}`;
+      } catch (e) {
+        return '—';
+      }
+    }
+
+    function renderTable() {
+      const total = filteredUnits.length;
+      const totalPages = Math.max(1, Math.ceil(total / pageSize));
+      if (currentPage > totalPages) currentPage = totalPages;
+      const startIdx = (currentPage - 1) * pageSize;
+      const pageItems = filteredUnits.slice(startIdx, startIdx + pageSize);
+
+      const rangeText = total ? `${startIdx + 1}–${Math.min(startIdx + pageSize, total)} จาก ${total.toLocaleString()} รายการ` : '0 รายการ';
+      document.getElementById('result-summary').textContent = rangeText;
+      document.getElementById('page-info-bottom').textContent = `แสดง ${rangeText} (ทั้งหมด ${allUnits.length.toLocaleString()} S/N)`;
+
+      const tbody = document.getElementById('su-tbody');
+      if (!pageItems.length) {
+        tbody.innerHTML = `<tr><td colspan="8" class="empty-state">ไม่พบ Serial Number ตามเงื่อนไขที่ค้นหา</td></tr>`;
+        renderPagination(totalPages);
+        return;
+      }
+
+      tbody.innerHTML = pageItems.map(u => {
+        // Status Badge
+        let badgeClass = 'badge-other';
+        let statusLabel = u.status;
+        if (u.status === 'InStock') { 
+          badgeClass = 'badge-instock'; 
+          statusLabel = '✅ ในคลัง (InStock)'; 
+        } else if (u.status === 'Issued') { 
+          badgeClass = 'badge-issued'; 
+          statusLabel = '📤 อยู่กับช่าง (Issued)'; 
+        } else if (u.status === 'InRepair') { 
+          badgeClass = 'badge-repair'; 
+          statusLabel = '🔧 ส่งซ่อม (InRepair)'; 
+        }
+
+        // Condition Badge
+        const condClass = u.condition === 'Bad' ? 'badge badge-red' : 'badge badge-green';
+        const condLabel = u.condition === 'Bad' ? 'Bad (ชำรุด)' : 'Good (ปกติ)';
+
+        // Location / Holder Cell
+        let locationHtml = '—';
+        if (u.status === 'Issued') {
+          const techName = u.currentHolder ? u.currentHolder : 'ช่างประจำศูนย์/หน้างาน';
+          locationHtml = `
+            <div class="holder-badge">
+              <span class="holder-name" title="ช่างผู้ถือครองอะไหล่ชิ้นนี้">
+                <iconify-icon icon="mdi:account-wrench" width="16"></iconify-icon>
+                <span>${techName}</span>
+              </span>
+              ${u.caseNo ? `<span class="holder-case" title="เลขที่เคส"><iconify-icon icon="mdi:ticket-outline" width="13"></iconify-icon> เคส: <b>${u.caseNo}</b></span>` : ''}
+            </div>
+          `;
+        } else if (u.status === 'InStock') {
+          let locText = u.location || 'คลังกลาง DHL-BKK';
+          let locIcon = 'mdi:warehouse';
+          let locColor = 'var(--green)';
+          const locLower = (u.location || '').toLowerCase();
+          if (locLower.includes('ratchaburana') || locLower.includes('wh-rat')) {
+            locText = 'Ratchaburana Warehouse';
+            locIcon = 'mdi:home-repair-service';
+            locColor = '#ea580c';
+          } else if (locLower.includes('grg')) {
+            locText = 'GRG Bangkok Hub';
+            locIcon = 'mdi:cog-box';
+            locColor = '#0284c7';
+          } else if (locLower.includes('airport') || locLower.includes('apt') || locLower.includes('suvarnabhumi')) {
+            locText = 'Suvarnabhumi Airport';
+            locIcon = 'mdi:airplane-takeoff';
+            locColor = '#06b6d4';
+          } else if (locLower.includes('scrap')) {
+            locText = 'Scrap / Disposal Yard';
+            locIcon = 'mdi:delete-sweep';
+            locColor = '#64748b';
+          } else if (locLower.includes('transit')) {
+            locText = 'In-Transit';
+            locIcon = 'mdi:truck-fast-outline';
+            locColor = '#d97706';
+          }
+          locationHtml = `
+            <span style="color:var(--text-secondary); display:inline-flex; align-items:center; gap:5px;">
+              <iconify-icon icon="${locIcon}" width="16" style="color:${locColor};"></iconify-icon>
+              <span>${locText}</span>
+            </span>
+          `;
+        } else if (u.status === 'InRepair') {
+          let repairLocText = u.location || 'ศูนย์ซ่อม / Lab';
+          let locIcon = 'mdi:tools';
+          let locColor = 'var(--orange)';
+          const locLower = (u.location || '').toLowerCase();
+          if (locLower.includes('ratchaburana') || locLower.includes('wh-rat')) {
+            repairLocText = 'Ratchaburana (D1 Room Repair)';
+            locIcon = 'mdi:home-repair-service';
+            locColor = '#c2410c';
+          } else if (locLower.includes('dhl')) {
+            repairLocText = 'พักรอส่งซ่อม (คลัง DHL)';
+            locIcon = 'mdi:timer-sand';
+            locColor = '#d97706';
+          } else if (locLower.includes('grg')) {
+            repairLocText = 'GRG Bangkok Hub';
+            locIcon = 'mdi:cog-box';
+            locColor = '#0284c7';
+          }
+          locationHtml = `
+            <span style="color:${locColor}; display:inline-flex; align-items:center; gap:5px; font-weight:500;">
+              <iconify-icon icon="${locIcon}" width="16"></iconify-icon>
+              <span>${repairLocText}</span>
+            </span>
+          `;
+        } else {
+          let locText = u.location || '—';
+          let locIcon = 'mdi:map-marker-outline';
+          let locColor = 'var(--text-secondary)';
+          const locLower = (u.location || '').toLowerCase();
+          if (locLower.includes('scrap') || u.status === 'Scrapped' || u.status === 'Disposed') {
+            locText = u.location || 'Scrap / Disposal Yard';
+            locIcon = 'mdi:delete-sweep';
+            locColor = '#64748b';
+          } else if (locLower.includes('transit') || u.status === 'InTransit') {
+            locText = u.location || 'In-Transit';
+            locIcon = 'mdi:truck-fast-outline';
+            locColor = '#d97706';
+          } else if (locLower.includes('airport') || locLower.includes('apt')) {
+            locText = u.location || 'Suvarnabhumi Airport';
+            locIcon = 'mdi:airplane-takeoff';
+            locColor = '#06b6d4';
+          } else if (locLower.includes('grg')) {
+            locText = u.location || 'GRG Bangkok Hub';
+            locIcon = 'mdi:cog-box';
+            locColor = '#0284c7';
+          } else if (locLower.includes('ratchaburana') || locLower.includes('wh-rat')) {
+            locText = u.location || 'Ratchaburana Warehouse';
+            locIcon = 'mdi:home-repair-service';
+            locColor = '#ea580c';
+          } else if (locLower.includes('dhl')) {
+            locText = u.location || 'DHL Center Bangkok';
+            locIcon = 'mdi:warehouse';
+            locColor = 'var(--green)';
+          }
+          locationHtml = `
+            <span style="color:var(--text-secondary); display:inline-flex; align-items:center; gap:5px;">
+              <iconify-icon icon="${locIcon}" width="16" style="color:${locColor};"></iconify-icon>
+              <span>${locText}</span>
+            </span>
+          `;
+        }
+
+        return `
+          <tr>
+            <td>
+              <a class="sn-code" href="javascript:void(0)" onclick="openTimelineModal('${encodeURIComponent(u.serialNo)}')" title="คลิกเพื่อเปิดดูไทม์ไลน์ทันที">
+                <code>${u.serialNo}</code>
+              </a>
+            </td>
+            <td><code>${u.partNo || '—'}</code></td>
+            <td style="font-weight:600; color:var(--text-primary);">${u.partName || '—'}</td>
+            <td><span class="badge-status ${badgeClass}">${statusLabel}</span></td>
+            <td><span class="${condClass}">${condLabel}</span></td>
+            <td>${locationHtml}</td>
+            <td style="color:var(--text-secondary); font-size:12.5px; font-variant-numeric:tabular-nums;">${formatDate(u.receivedAt)}</td>
+            <td style="text-align:center;">
+              <button onclick="openTimelineModal('${encodeURIComponent(u.serialNo)}')" class="btn btn-secondary btn-xs" title="ดูประวัติไทม์ไลน์">
+                ไทม์ไลน์ ➔
+              </button>
+            </td>
+          </tr>
+        `;
+      }).join('');
+
+      renderPagination(totalPages);
+    }
+
+    function renderPagination(totalPages) {
+      const container = document.getElementById('page-controls-bottom');
+      if (totalPages <= 1) {
+        container.innerHTML = '';
+        return;
+      }
+      container.innerHTML = `
+        <button class="btn btn-secondary btn-xs" ${currentPage === 1 ? 'disabled' : ''} onclick="gotoPage(1)">⏮ หน้าแรก</button>
+        <button class="btn btn-secondary btn-xs" ${currentPage === 1 ? 'disabled' : ''} onclick="gotoPage(${currentPage - 1})">◀ ก่อนหน้า</button>
+        <span style="font-weight:700; padding:0 6px; color:var(--text-primary);">หน้า ${currentPage} / ${totalPages}</span>
+        <button class="btn btn-secondary btn-xs" ${currentPage === totalPages ? 'disabled' : ''} onclick="gotoPage(${currentPage + 1})">ถัดไป ▶</button>
+        <button class="btn btn-secondary btn-xs" ${currentPage === totalPages ? 'disabled' : ''} onclick="gotoPage(${totalPages})">หน้าสุดท้าย ⏭</button>
+      `;
+    }
+
+    function gotoPage(p) {
+      currentPage = p;
+      renderTable();
+      const tblWrap = document.querySelector('.tbl-container');
+      if (tblWrap) tblWrap.scrollTop = 0;
+    }
+
+    async function openTimelineModal(snEncoded) {
+      const sn = decodeURIComponent(snEncoded);
+      const modal = document.getElementById('timeline-modal');
+      const modalSn = document.getElementById('modal-sn');
+      const modalSub = document.getElementById('modal-sub');
+      const modalBody = document.getElementById('modal-body');
+      const fullLink = document.getElementById('modal-full-link');
+
+      modalSn.textContent = sn;
+      fullLink.href = `admin-tracking.html?sn=${encodeURIComponent(sn)}`;
+      modalBody.innerHTML = `
+        <div class="empty-state">
+          <iconify-icon icon="line-md:loading-loop" width="28"></iconify-icon>
+          <div style="margin-top:8px;">กำลังโหลดประวัติไทม์ไลน์...</div>
+        </div>`;
+      modal.classList.remove('hidden');
+
+      const unit = allUnits.find(u => u.serialNo === sn);
+      if (unit) {
+        modalSub.textContent = `อะไหล่: ${unit.partNo || '—'} (${unit.partName || ''}) | สถานะ: ${unit.status} | สภาพ: ${unit.condition || 'Good'}`;
+      } else {
+        modalSub.textContent = '';
+      }
+
+      try {
+        const res = await apiFetch(`/Tracking/serial/${encodeURIComponent(sn)}`);
+        const timeline = res.timeline || [];
+        const cs = res.currentStatus || {};
+
+        if (!timeline.length) {
+          modalBody.innerHTML = `<div class="empty-state">ไม่พบประวัติการเดินทางสำหรับ S/N นี้</div>`;
+          return;
+        }
+
+        let html = `
+          <div style="background:var(--bg-card); border:1px solid var(--border); border-radius:10px; padding:12px 14px; margin-bottom:14px; display:grid; grid-template-columns:repeat(auto-fit,minmax(130px,1fr)); gap:10px;">
+            <div><div style="font-size:11px; color:var(--text-secondary);">ตำแหน่งล่าสุด</div><div style="font-weight:700; font-size:13px; color:var(--text-primary); margin-top:2px;">${cs.location || '—'}</div></div>
+            <div><div style="font-size:11px; color:var(--text-secondary);">สภาพล่าสุด</div><div style="font-weight:700; font-size:13px; color:${cs.condition === 'Good' ? 'var(--green)' : 'var(--red)'}; margin-top:2px;">${cs.condition || 'Good'}</div></div>
+            <div><div style="font-size:11px; color:var(--text-secondary);">สถานะล่าสุด</div><div style="font-weight:700; font-size:13px; color:var(--text-primary); margin-top:2px;">${cs.eventType || '—'}</div></div>
+            <div><div style="font-size:11px; color:var(--text-secondary);">ข้อมูล ณ วันที่</div><div style="font-size:12px; color:var(--text-secondary); margin-top:2px;">${cs.asOf ? new Date(cs.asOf).toLocaleString('th-TH') : '—'}</div></div>
+          </div>
+          <div class="modal-tl">
+        `;
+
+        timeline.forEach((ev) => {
+          const isGood = ev.condition === 'Good';
+          const dotClass = isGood ? 'good' : 'bad';
+          html += `
+            <div class="modal-tl-item">
+              <div class="modal-tl-dot ${dotClass}"></div>
+              <div class="modal-tl-card">
+                <div class="modal-tl-header">
+                  <span class="badge" style="background:var(--orange-light); color:var(--orange); font-weight:700; font-size:11px;">${ev.eventType}</span>
+                  <span class="modal-tl-time">${ev.timestamp ? new Date(ev.timestamp).toLocaleString('th-TH') : '—'}</span>
+                </div>
+                <div class="modal-tl-desc">${ev.description || '—'}</div>
+                <div class="modal-tl-meta">
+                  <span>📍 <b>${ev.location || '—'}</b></span>
+                  ${ev.userName ? `<span>👤 โดย: <b>${ev.userName}</b></span>` : ''}
+                  ${ev.refType ? `<span>📄 ${ev.refType} #${ev.refId || '—'}</span>` : ''}
+                </div>
+              </div>
+            </div>
+          `;
+        });
+
+        html += `</div>`;
+        modalBody.innerHTML = html;
+      } catch (err) {
+        modalBody.innerHTML = `<div class="empty-state" style="color:var(--red);">ไม่สามารถโหลดข้อมูลได้: ${err.message || 'Error'}</div>`;
+      }
+    }
+
+    function closeTimelineModal() {
+      document.getElementById('timeline-modal')?.classList.add('hidden');
+    }
+  </script>
+</body>
+</html>

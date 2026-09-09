@@ -1,7 +1,16 @@
-/* ── Serial No. Tracking page logic ── */
 initLayout();
 applyLang();
 function onLangChange() { /* static page, no re-render needed */ }
+
+// Check URL query parameter ?sn=...
+window.addEventListener('DOMContentLoaded', () => {
+    const params = new URLSearchParams(window.location.search);
+    const sn = params.get('sn');
+    if (sn) {
+        document.getElementById('sn-input').value = sn;
+        doSearch();
+    }
+});
 
 async function doSearch() {
     const sn = document.getElementById('sn-input').value.trim();
@@ -22,12 +31,25 @@ async function doSearch() {
     }
 }
 
+function goBack() {
+    if (document.referrer && document.referrer.includes(window.location.host)) {
+        history.back();
+    } else {
+        window.location.href = 'admin-serials.html';
+    }
+}
+
 function renderResult(data) {
     const locale = getLang() === 'th' ? 'th-TH' : 'en-GB';
     const cs = data.currentStatus;
     const conditionColor = cs.condition === 'Good' ? 'var(--green)' : 'var(--red)';
 
     const statusHtml = `
+        <div style="margin-bottom:14px;">
+            <button class="btn btn-secondary btn-sm" onclick="goBack()" style="font-weight:600; display:inline-flex; align-items:center; gap:6px;">
+                <span>←</span> <span>ย้อนกลับไปทะเบียน S/N</span>
+            </button>
+        </div>
         <div class="status-cards">
             <div class="stat-card">
                 <div class="label" data-i18n="trk.current.location">${t('trk.current.location')}</div>
