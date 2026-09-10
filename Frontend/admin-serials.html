@@ -255,7 +255,8 @@
                 <span id="banner-part-no" style="font-family:monospace; background:rgba(0,0,0,0.07); padding:2px 8px; border-radius:6px; color:var(--orange); font-size:14px;"></span>
                 <span id="banner-part-name" style="color:var(--text-secondary); font-weight:600;"></span>
               </div>
-              <div style="font-size:11.5px; color:var(--text-muted); margin-top:2px;">
+              <div id="banner-reconciliation" style="margin-top:6px; font-size:12px; display:none; flex-wrap:wrap; gap:10px; align-items:center;"></div>
+              <div style="font-size:11.5px; color:var(--text-muted); margin-top:3px;">
                 กรองเฉพาะ S/N ของอะไหล่รายการนี้ — สามารถสลับดูสถานะ (InStock / อยู่กับช่าง / ส่งซ่อม) หรือกดดู Timeline การเดินทางของแต่ละตัวได้
               </div>
             </div>
@@ -268,9 +269,17 @@
           </div>
         </div>
 
+        <!-- Metric Guidance Banner -->
+        <div style="background:var(--bg-card);border:1px solid var(--border);border-left:4px solid #8b5cf6;border-radius:8px;padding:9px 14px;margin-bottom:16px;font-size:12px;color:var(--text-secondary);display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;">
+          <div style="display:flex;align-items:center;gap:8px;">
+            <iconify-icon icon="mdi:barcode-scan" width="18" style="color:#8b5cf6;flex-shrink:0;"></iconify-icon>
+            <span><strong>หมายเหตุการนับ (Serialized Units vs Stock Pieces):</strong> ตัวเลขในหน้านี้คำนวณจากทะเบียน Serial Number รายเครื่องเท่านั้น สำหรับยอดสต็อกชิ้นส่วนทั้งหมด (รวมอะไหล่ที่ไม่มี S/N) กรุณาดูที่ <a href="admin-parts.html" style="color:var(--orange);font-weight:600;text-decoration:none;">หน้ารายการอะไหล่ (Parts Master) →</a></span>
+          </div>
+        </div>
+
         <!-- Metric Summary Cards -->
         <div class="su-stats">
-          <div class="su-stat active" id="card-all" onclick="applyStatusFilter('')">
+          <div class="su-stat active" id="card-all" onclick="applyStatusFilter('')" title="เฉพาะอะไหล่ที่มีการลงทะเบียน Serial Number ในระบบ">
             <div class="su-stat-icon" style="background:rgba(107,114,128,0.12); color:var(--text-secondary);">📦</div>
             <div class="su-stat-info">
               <div class="su-stat-num" id="stat-total" style="color:var(--text-primary);">0</div>
@@ -278,7 +287,7 @@
               <div class="su-stat-sub">ลงทะเบียนในระบบ</div>
             </div>
           </div>
-          <div class="su-stat" id="card-instock" onclick="applyStatusFilter('InStock')">
+          <div class="su-stat" id="card-instock" onclick="applyStatusFilter('InStock')" title="เครื่องที่มี S/N พร้อมใช้งาน อยู่ในคลังกลาง DHL-BKK">
             <div class="su-stat-icon" style="background:#dcfce7; color:#15803d;">🏬</div>
             <div class="su-stat-info">
               <div class="su-stat-num" id="stat-instock" style="color:#16a34a;">0</div>
@@ -286,7 +295,7 @@
               <div class="su-stat-sub">คลังกลาง DHL-BKK</div>
             </div>
           </div>
-          <div class="su-stat" id="card-issued" onclick="applyStatusFilter('Issued')">
+          <div class="su-stat" id="card-issued" onclick="applyStatusFilter('Issued')" title="เครื่องที่มี S/N ที่เบิกจ่ายให้ช่างไปแล้ว">
             <div class="su-stat-icon" style="background:#dbeafe; color:#1d4ed8;">👤</div>
             <div class="su-stat-info">
               <div class="su-stat-num" id="stat-issued" style="color:#2563eb;">0</div>
@@ -294,12 +303,12 @@
               <div class="su-stat-sub">จ่ายออกหน้างาน / มีชื่อผู้ถือ</div>
             </div>
           </div>
-          <div class="su-stat" id="card-inrepair" onclick="applyStatusFilter('InRepair')">
+          <div class="su-stat" id="card-inrepair" onclick="applyStatusFilter('InRepair')" title="เครื่องที่มี S/N ที่แจ้งชำรุดหรือส่งซ่อม (อยู่ที่ DHL หรือศูนย์ซ่อม SVOA ราษฎร์บูรณะ)">
             <div class="su-stat-icon" style="background:#ffedd5; color:#c2410c;">🔧</div>
             <div class="su-stat-info">
               <div class="su-stat-num" id="stat-inrepair" style="color:#ea580c;">0</div>
               <div class="su-stat-label">ส่งซ่อม/ชำรุด (InRepair)</div>
-              <div class="su-stat-sub">ศูนย์ซ่อม / Lab</div>
+              <div class="su-stat-sub">DHL & ศูนย์ซ่อม SVOA</div>
             </div>
           </div>
         </div>
@@ -438,15 +447,56 @@
         document.getElementById('banner-part-no').textContent = activePartNo;
         document.getElementById('banner-part-name').textContent = partSample?.partName ? `— ${partSample.partName}` : '';
         banner.style.display = 'flex';
+        loadPartReconciliation(activePartNo);
       } else {
         activePartNo = null;
         document.getElementById('part-filter-banner').style.display = 'none';
+        const reconEl = document.getElementById('banner-reconciliation');
+        if (reconEl) reconEl.style.display = 'none';
+      }
+    }
+
+    async function loadPartReconciliation(partNo) {
+      const reconEl = document.getElementById('banner-reconciliation');
+      if (!reconEl) return;
+      try {
+        const res = await apiFetch(`/Parts?search=${encodeURIComponent(partNo)}`);
+        const parts = Array.isArray(res) ? res : (res.items || []);
+        const part = parts.find(p => (p.partNo || '').toLowerCase() === partNo.toLowerCase());
+        if (!part) {
+          reconEl.style.display = 'none';
+          return;
+        }
+
+        const whGood = part.warehouseStock ?? 0;
+        const inStockSn = part.inStockUnitsCount ?? 0;
+        const diff = Math.max(0, whGood - inStockSn);
+
+        reconEl.innerHTML = `
+          <div style="background:var(--bg-card);border:1px solid var(--border);border-radius:8px;padding:6px 12px;display:inline-flex;align-items:center;gap:12px;flex-wrap:wrap;box-shadow:0 1px 3px rgba(0,0,0,0.04);">
+            <span>🏬 <strong>สต็อกของดีในคลัง DHL:</strong> <span style="font-weight:700;color:var(--text-primary);">${whGood.toLocaleString()}</span> ชิ้น</span>
+            <span style="color:var(--border);">|</span>
+            <span>🏷️ <strong>มี S/N ในคลัง:</strong> <span style="font-weight:700;color:#16a34a;">${inStockSn.toLocaleString()}</span> ตัว</span>
+            ${diff > 0 ? `
+              <span style="color:var(--border);">|</span>
+              <span style="color:#d97706;font-weight:600;" title="เป็นอะไหล่ของดีในคลังที่ยังไม่เคยมีเอกสารเบิก/คืนที่ระบุ Serial Number">
+                ⚠️ ยังไม่ระบุ S/N: <strong>${diff.toLocaleString()}</strong> ชิ้น (นับสต็อกตามจำนวน)
+              </span>
+            ` : ''}
+          </div>
+        `;
+        reconEl.style.display = 'flex';
+      } catch (err) {
+        console.warn('Could not load reconciliation data', err);
+        reconEl.style.display = 'none';
       }
     }
 
     function clearPartFilter() {
       activePartNo = null;
       document.getElementById('part-filter-banner').style.display = 'none';
+      const reconEl = document.getElementById('banner-reconciliation');
+      if (reconEl) reconEl.style.display = 'none';
       const url = new URL(window.location);
       url.searchParams.delete('partNo');
       window.history.replaceState({}, '', url);

@@ -324,6 +324,7 @@ using (var scope = app.Services.CreateScope())
         }
         catch (Exception mex) { Console.WriteLine($"⚠ DailyReportImport migration skipped: {mex.Message}"); }
 
+        //
         // ── Lightweight migration: create TicketAttachments table on existing DBs (technician
         //    photos attached to a withdraw/return submission) ──
         if (isSqlite) try

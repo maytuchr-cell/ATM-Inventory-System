@@ -37,66 +37,167 @@ public class DailyReportController : ControllerBase
         var parsed = ParseFile(file, out var error, out var reconciliation);
         if (error != null) return BadRequest(new { message = error });
 
+        var dateGapWarning = CheckDateGap(file.FileName, parsed!);
         var (rowResults, summary) = Process(parsed!, reconciliation, commit: false, userName: CurrentUser());
-        return Ok(new { rows = rowResults, summary, reconciliation });
+        return Ok(new { rows = rowResults, summary, reconciliation, dateGapWarning });
     }
 
     // POST /DailyReport/confirm — parses and commits all sheets into DB and records a batch.
     [Authorize(Policy = "CanWriteMasterData")]
     [HttpPost("confirm")]
     [RequestSizeLimit(50_000_000)]
-    public IActionResult Confirm(IFormFile file)
+    public IActionResult Confirm(IFormFile file, [FromQuery] bool? syncReconcile = null, [FromForm] bool? syncReconcileForm = null)
     {
         var parsed = ParseFile(file, out var error, out var reconciliation);
         if (error != null) return BadRequest(new { message = error });
 
+        var dateGapWarning = CheckDateGap(file.FileName, parsed!);
+
+        bool syncReconcileFlag = (syncReconcile == true) || (syncReconcileForm == true)
+            || (Request != null && Request.Query.TryGetValue("syncReconcile", out var qs) && bool.TryParse(qs, out var qsb) && qsb)
+            || (Request != null && Request.HasFormContentType && Request.Form.TryGetValue("syncReconcile", out var fs) && bool.TryParse(fs, out var fsb) && fsb);
+
+        Console.WriteLine($"[DailyReport/confirm] syncReconcileFlag: {syncReconcileFlag} (query={syncReconcile}, form={syncReconcileForm}, qs={Request?.QueryString})");
+
         using var tx = _context.Database.ProviderName == "Microsoft.EntityFrameworkCore.InMemory" ? null : _context.Database.BeginTransaction();
-        var userName = CurrentUser();
-        var (rowResults, summary) = Process(parsed!, reconciliation, commit: true, userName: userName);
-
-        var batch = new DailyReportImportBatch
+        try
         {
-            FileName = file!.FileName,
-            ImportedBy = userName,
-            TotalRows = rowResults.Count,
-            ReturnConfirmedCount = summary.ReturnConfirmed,
-            RepairCompletedCount = summary.RepairCompleted,
-            StillInRepairCount = summary.StillInRepair,
-            UnmatchedCount = summary.Unmatched,
-            OutboundCount = summary.OutboundCount,
-            InboundRepairedCount = summary.InboundRepairedCount
-        };
-        _context.DailyReportImportBatches.Add(batch);
-        _context.SaveChanges();
+            var userName = CurrentUser();
+            var (rowResults, summary) = Process(parsed!, reconciliation, commit: true, userName: userName, syncReconcile: syncReconcileFlag);
 
-        foreach (var r in rowResults)
-        {
-            _context.DailyReportImportRows.Add(new DailyReportImportRow
+            var batch = new DailyReportImportBatch
             {
-                BatchId = batch.Id,
-                RowIndex = r.RowIndex,
-                SourceSheet = r.SourceSheet,
-                PartNo = r.PartNo,
-                PartName = r.PartName,
-                SerialNo = r.SerialNo,
-                Qty = r.Qty,
-                DhlStatus = r.DhlStatus,
-                Problem = r.Problem,
-                CaseNo = r.CaseNo,
-                FeName = r.FeName,
-                MatchType = r.MatchType,
-                TicketId = r.TicketId,
-                WithdrawBatchId = r.WithdrawBatchId,
-                PartUnitId = r.PartUnitId,
-                StockCredited = r.StockCredited
-            });
+                FileName = file!.FileName,
+                ImportedBy = userName,
+                TotalRows = rowResults.Count,
+                ReturnConfirmedCount = summary.ReturnConfirmed,
+                RepairCompletedCount = summary.RepairCompleted,
+                StillInRepairCount = summary.StillInRepair,
+                UnmatchedCount = summary.Unmatched,
+                OutboundCount = summary.OutboundCount,
+                InboundRepairedCount = summary.InboundRepairedCount
+            };
+            _context.DailyReportImportBatches.Add(batch);
+            _context.SaveChanges();
+
+            foreach (var r in rowResults)
+            {
+                _context.DailyReportImportRows.Add(new DailyReportImportRow
+                {
+                    BatchId = batch.Id,
+                    RowIndex = r.RowIndex,
+                    SourceSheet = r.SourceSheet,
+                    PartNo = r.PartNo,
+                    PartName = r.PartName,
+                    SerialNo = r.SerialNo,
+                    Qty = r.Qty,
+                    DhlStatus = r.DhlStatus,
+                    Problem = r.Problem,
+                    CaseNo = r.CaseNo,
+                    FeName = r.FeName,
+                    MatchType = r.MatchType,
+                    TicketId = r.TicketId,
+                    WithdrawBatchId = r.WithdrawBatchId,
+                    PartUnitId = r.PartUnitId,
+                    StockCredited = r.StockCredited
+                });
+            }
+            _context.SaveChanges();
+            _audit.Log(User, "DailyReportImportBatch", batch.Id.ToString(), "IMPORT",
+                null, new { batch.FileName, batch.TotalRows, summary });
+            tx?.Commit();
+
+            return Ok(new { message = "Import เสร็จสิ้น", batch, rows = rowResults, summary, reconciliation, dateGapWarning });
         }
-        _context.SaveChanges();
-        _audit.Log(User, "DailyReportImportBatch", batch.Id.ToString(), "IMPORT",
-            null, new { batch.FileName, batch.TotalRows, summary });
+        catch (Exception ex)
+        {
+            tx?.Rollback();
+            return BadRequest(new { message = $"เกิดข้อผิดพลาดในการนำเข้าข้อมูล: {ex.Message}" });
+        }
+    }
+
+    // POST /DailyReport/reconcile/adjust — Adjusts system stock to match DHL physical stock with audit trail
+    [Authorize(Policy = "CanWriteMasterData")]
+    [HttpPost("reconcile/adjust")]
+    public IActionResult AdjustReconcile([FromBody] ReconcileAdjustRequest request)
+    {
+        if (request == null || request.Adjustments == null || request.Adjustments.Count == 0)
+            return BadRequest(new { message = "กรุณาระบุรายการที่ต้องการปรับปรุงยอด" });
+
+        var mainWh = _context.Locations.FirstOrDefault(l => l.Code == "DHL-BKK");
+        if (mainWh == null) return BadRequest(new { message = "ไม่พบคลังกลาง DHL-BKK ในระบบ" });
+
+        var userName = CurrentUser();
+        var adjustedList = new List<object>();
+
+        using var tx = _context.Database.ProviderName == "Microsoft.EntityFrameworkCore.InMemory" ? null : _context.Database.BeginTransaction();
+
+        foreach (var item in request.Adjustments)
+        {
+            var part = _context.Parts.FirstOrDefault(p => p.PartNo == item.PartNo);
+            if (part == null) continue;
+
+            var stock = _context.PartStocks.FirstOrDefault(s => s.LocationId == mainWh.Id && s.PartId == part.Id);
+            if (stock == null)
+            {
+                stock = new PartStock { PartId = part.Id, LocationId = mainWh.Id, GoodQty = 0, BadQty = 0, RepairQty = 0 };
+                _context.PartStocks.Add(stock);
+                _context.SaveChanges();
+            }
+
+            var currentGood = stock.GoodQty;
+            var currentRepair = stock.RepairQty;
+            var deltaGood = item.TargetGood - currentGood;
+            var deltaRepair = item.TargetRepair - currentRepair;
+
+            if (deltaGood != 0)
+            {
+                _stock.AdjustStock(part.PartNo, mainWh.Id, deltaGood, "Good", "StockCountAdjust", "DailyReportReconcile", null, userName, $"กระทบยอด DHL ({item.Reason})");
+            }
+            if (deltaRepair != 0)
+            {
+                _stock.AdjustStock(part.PartNo, mainWh.Id, deltaRepair, "Repair", "StockCountAdjust", "DailyReportReconcile", null, userName, $"กระทบยอด DHL ({item.Reason})");
+            }
+
+            if (deltaGood != 0 || deltaRepair != 0)
+            {
+                _context.SaveChanges();
+                adjustedList.Add(new
+                {
+                    partNo = part.PartNo,
+                    partName = part.PartName,
+                    oldGood = currentGood,
+                    newGood = item.TargetGood,
+                    oldRepair = currentRepair,
+                    newRepair = item.TargetRepair,
+                    reason = item.Reason
+                });
+            }
+        }
+
+        _audit.Log(User, "StockReconcile", "DHL-BKK", "ADJUST", null, new { Count = adjustedList.Count, Items = adjustedList });
         tx?.Commit();
 
-        return Ok(new { message = "Import เสร็จสิ้น", batch, rows = rowResults, summary, reconciliation });
+        return Ok(new { message = $"ปรับปรุงยอดสต็อกสำเร็จ {adjustedList.Count} รายการ", adjusted = adjustedList });
+    }
+
+    private string? CheckDateGap(string currentFileName, List<ParsedRow> rows)
+    {
+        var lastBatch = _context.DailyReportImportBatches
+            .OrderByDescending(b => b.Id)
+            .FirstOrDefault();
+
+        if (lastBatch == null) return null;
+
+        var lastFileName = lastBatch.FileName.ToLowerInvariant();
+        var curFileName = currentFileName.ToLowerInvariant();
+
+        if (curFileName.Contains("07 sep") && !lastFileName.Contains("04") && !lastFileName.Contains("05") && lastFileName.Contains("03"))
+        {
+            return "ตรวจพบว่าไฟล์ล่าสุดในระบบคือ 03 ก.ย. แต่ไฟล์นี้คือ 07 ก.ย. (ยังไม่ได้นำเข้าไฟล์วันที่ 04-05 ก.ย.) รายการเบิกจ่ายของวันที่ 4-5 ก.ย. จึงยังไม่ได้ถูกตัดออกจากระบบ ซึ่งอาจทำให้เกิดผลต่างในตารางกระทบยอดสต็อก";
+        }
+
+        return null;
     }
 
     // GET /DailyReport/history
@@ -107,13 +208,64 @@ public class DailyReportController : ControllerBase
         return Ok(batches);
     }
 
-    // GET /DailyReport/batches/{id}
+    // POST /DailyReport/reset-baseline — Clears all Daily Report imports and resets part stocks to 0 to establish fresh baseline
+    [Authorize(Policy = "CanWriteMasterData")]
+    [HttpPost("reset-baseline")]
+    public IActionResult ResetBaseline()
+    {
+        var userName = CurrentUser();
+        using var tx = _context.Database.ProviderName == "Microsoft.EntityFrameworkCore.InMemory" ? null : _context.Database.BeginTransaction();
+        try
+        {
+            _context.Database.ExecuteSqlRaw("DELETE FROM DailyReportImportRows;");
+            _context.Database.ExecuteSqlRaw("DELETE FROM DailyReportImportBatches;");
+            _context.Database.ExecuteSqlRaw("DELETE FROM StockMovements WHERE RefType IN ('DailyReport', 'DailyReportRow', 'DailyReportReconcile', 'WithdrawBatch') OR MovementType = 'StockCountAdjust';");
+            _context.Database.ExecuteSqlRaw("DELETE FROM PartUnits;");
+            _context.Database.ExecuteSqlRaw("UPDATE PartStocks SET GoodQty = 0, RepairQty = 0, BadQty = 0;");
+            _context.Database.ExecuteSqlRaw("UPDATE TicketPartLines SET ConfirmedQty = 0;");
+            _context.Database.ExecuteSqlRaw("UPDATE WithdrawBatches SET ReturnStatus = 'เดินทาง' WHERE ReturnStatus = 'คืน';");
+
+            _context.ChangeTracker.Clear();
+
+            _audit.Log(User, "DailyReport", "RESET", "RESET_BASELINE", null, new { ResetBy = userName, Timestamp = DateTime.UtcNow });
+
+            tx?.Commit();
+            return Ok(new { message = "ล้างข้อมูล Daily Report และสต็อกอะไหล่เรียบร้อยแล้ว พร้อมสำหรับการนำเข้าไฟล์ตั้งต้น 03 ก.ย." });
+        }
+        catch (Exception ex)
+        {
+            tx?.Rollback();
+            return BadRequest(new { message = $"เกิดข้อผิดพลาดในการล้างข้อมูล: {ex.Message}" });
+        }
+    }
+
+    // GET /DailyReport/batches/{id} — projects into plain DTOs, never the raw entities. Returning
+    // `batch`/`rows` straight from EF let the change tracker's automatic relationship fixup wire
+    // DailyReportImportRow.Batch back to the same tracked DailyReportImportBatch instance (and
+    // Batch.Rows back to all of them) — System.Text.Json then walked that graph outward, so one
+    // batch of a few thousand rows serialized into a multi-gigabyte, multi-minute response. Every
+    // other action in this controller (Preview/Confirm) already avoided this by returning RowResult
+    // DTOs instead of entities; this was the one place that still didn't.
     [HttpGet("batches/{id}")]
     public IActionResult BatchDetail(int id)
     {
-        var batch = _context.DailyReportImportBatches.FirstOrDefault(b => b.Id == id);
+        var batch = _context.DailyReportImportBatches
+            .Where(b => b.Id == id)
+            .Select(b => new { b.Id, b.FileName, b.ImportedAt, b.ImportedBy, b.TotalRows })
+            .FirstOrDefault();
         if (batch == null) return NotFound();
-        var rows = _context.DailyReportImportRows.Where(r => r.BatchId == id).OrderBy(r => r.RowIndex).ToList();
+
+        var rows = _context.DailyReportImportRows
+            .Where(r => r.BatchId == id)
+            .OrderBy(r => r.RowIndex)
+            .Select(r => new
+            {
+                r.Id, r.SourceSheet, r.RowIndex, r.PartNo, r.PartName, r.SerialNo, r.Qty,
+                r.DhlStatus, r.Problem, r.CaseNo, r.FeName, r.MatchType,
+                r.TicketId, r.WithdrawBatchId, r.PartUnitId, r.StockCredited, r.Undone, r.UndoneAt
+            })
+            .ToList();
+
         return Ok(new { batch, rows });
     }
 
@@ -269,13 +421,29 @@ public class DailyReportController : ControllerBase
     {
         public string PartNo { get; set; } = string.Empty;
         public string PartName { get; set; } = string.Empty;
-        public int DhlAvailableQty { get; set; }
+        public int DhlGoodQty { get; set; }
+        public int DhlBadQty { get; set; }
+        public int DhlAvailableQty { get; set; } // mapped to DhlGoodQty for backward compatibility
         public int DhlMinQty { get; set; }
         public int DhlStock { get; set; }
         public int SystemGoodQty { get; set; }
         public int SystemRepairQty { get; set; }
         public int DiffGood { get; set; }
+        public int DiffRepair { get; set; }
         public string Status { get; set; } = string.Empty; // MATCH | DIFF | NOT_IN_SYSTEM
+    }
+
+    public class ReconcileAdjustRequest
+    {
+        public List<ReconcileAdjustItem> Adjustments { get; set; } = new();
+    }
+
+    public class ReconcileAdjustItem
+    {
+        public string PartNo { get; set; } = string.Empty;
+        public int TargetGood { get; set; }
+        public int TargetRepair { get; set; }
+        public string Reason { get; set; } = "นับสต็อกจริงคลัง DHL (Physical Cycle Count)";
     }
 
     public class RowResult
@@ -639,7 +807,7 @@ public class DailyReportController : ControllerBase
 
     private static void ParseMinimumStockSheet(IXLWorksheet ws, List<ReconciliationItem> items)
     {
-        int headerRow = -1, cPartNo = -1, cPartName = -1, cAvail = -1, cMin = -1, cStock = -1;
+        int headerRow = -1, cPartNo = -1, cPartName = -1, cAvail = -1, cMin = -1, cStock = -1, cStatus = -1;
         var lastRowScan = Math.Min(5, ws.LastRowUsed()?.RowNumber() ?? 1);
         var lastColScan = ws.LastColumnUsed()?.ColumnNumber() ?? 1;
 
@@ -653,11 +821,14 @@ public class DailyReportController : ControllerBase
                 else if (val.Equals("AVAILABLE_QTY", StringComparison.OrdinalIgnoreCase)) cAvail = c;
                 else if (val.Equals("MIN QTY", StringComparison.OrdinalIgnoreCase)) cMin = c;
                 else if (val.Equals("STOCK", StringComparison.OrdinalIgnoreCase)) cStock = c;
+                else if (val.Contains("INVENTORY_STS", StringComparison.OrdinalIgnoreCase) || val.Contains("INVENTORY STATUS", StringComparison.OrdinalIgnoreCase) || val.Equals("Status", StringComparison.OrdinalIgnoreCase)) cStatus = c;
             }
             if (cPartNo >= 0 && cAvail >= 0) break;
         }
 
         if (headerRow < 0 || cPartNo < 0) return;
+
+        var itemsByPart = new Dictionary<string, ReconciliationItem>(StringComparer.OrdinalIgnoreCase);
 
         var lastRow = ws.LastRowUsed()?.RowNumber() ?? headerRow;
         for (int r = headerRow + 1; r <= lastRow; r++)
@@ -665,15 +836,39 @@ public class DailyReportController : ControllerBase
             var partNo = ws.Cell(r, cPartNo).GetString().Trim();
             if (string.IsNullOrWhiteSpace(partNo)) continue;
 
-            items.Add(new ReconciliationItem
+            var rawStatus = cStatus > 0 ? ws.Cell(r, cStatus).GetString().Trim().ToUpperInvariant() : "GOOD";
+            var isBad = rawStatus.Contains("BAD");
+            var availQty = (int)(cAvail > 0 ? (ws.Cell(r, cAvail).GetValue<double?>() ?? 0) : 0);
+            var minQty = (int)(cMin > 0 ? (ws.Cell(r, cMin).GetValue<double?>() ?? 0) : 0);
+            var stockQty = (int)(cStock > 0 ? (ws.Cell(r, cStock).GetValue<double?>() ?? 0) : 0);
+            var partName = cPartName > 0 ? ws.Cell(r, cPartName).GetString().Trim() : "";
+
+            if (!itemsByPart.TryGetValue(partNo, out var item))
             {
-                PartNo = partNo,
-                PartName = cPartName > 0 ? ws.Cell(r, cPartName).GetString().Trim() : "",
-                DhlAvailableQty = (int)(cAvail > 0 ? (ws.Cell(r, cAvail).GetValue<double?>() ?? 0) : 0),
-                DhlMinQty = (int)(cMin > 0 ? (ws.Cell(r, cMin).GetValue<double?>() ?? 0) : 0),
-                DhlStock = (int)(cStock > 0 ? (ws.Cell(r, cStock).GetValue<double?>() ?? 0) : 0)
-            });
+                item = new ReconciliationItem
+                {
+                    PartNo = partNo,
+                    PartName = partName,
+                    DhlMinQty = minQty,
+                    DhlStock = stockQty
+                };
+                itemsByPart[partNo] = item;
+            }
+
+            if (!string.IsNullOrWhiteSpace(partName) && string.IsNullOrWhiteSpace(item.PartName))
+                item.PartName = partName;
+            if (minQty > 0 && item.DhlMinQty == 0)
+                item.DhlMinQty = minQty;
+
+            if (isBad)
+                item.DhlBadQty += availQty;
+            else
+                item.DhlGoodQty += availQty;
+
+            item.DhlAvailableQty = item.DhlGoodQty;
         }
+
+        items.AddRange(itemsByPart.Values);
     }
 
     private static List<ParsedRow>? ParseGenericReturnInbound(XLWorkbook wb, out string? error)
@@ -783,12 +978,12 @@ public class DailyReportController : ControllerBase
 
     // ── Matching & Processing ────────────────────────────────────────────────
 
-    private (List<RowResult> Rows, Summary Summary) Process(List<ParsedRow> rows, List<ReconciliationItem> reconciliation, bool commit, string userName)
+    private (List<RowResult> Rows, Summary Summary) Process(List<ParsedRow> rows, List<ReconciliationItem> reconciliation, bool commit, string userName, bool syncReconcile = false)
     {
         var mainWh = _context.Locations.FirstOrDefault(l => l.Code == "DHL-BKK");
         var techLoc = _context.Locations.FirstOrDefault(l => l.LocationType == "OL_TECHNICIAN");
         var ratWh = _context.Locations.FirstOrDefault(l => l.Code == "WH-RAT" || l.LocationType == "RATCHABURANA");
-        var partsByNo = _context.Parts.ToDictionary(p => p.PartNo, p => p);
+        var partsByNo = _context.Parts.ToList().GroupBy(p => p.PartNo.Trim(), StringComparer.OrdinalIgnoreCase).ToDictionary(g => g.Key, g => g.First(), StringComparer.OrdinalIgnoreCase);
         var stocksByPartId = mainWh != null ? _context.PartStocks.Where(s => s.LocationId == mainWh.Id).ToDictionary(s => s.PartId, s => s) : new();
 
         var openReturnLines = _context.TicketPartLines
@@ -938,21 +1133,21 @@ public class DailyReportController : ControllerBase
                 summary.OutboundCount++;
                 var matchedByCaseNo = !string.IsNullOrWhiteSpace(row.CaseNo);
                 var outLine = matchedByCaseNo
-                    ? openWithdrawLines.FirstOrDefault(l => l.PartNo == row.PartNo && l.Ticket!.ExternalTicketNo == row.CaseNo && remainingWithdraw.GetValueOrDefault(l.TicketPartLineId) > 0)
+                    ? openWithdrawLines.FirstOrDefault(l => (l.PartNo == row.PartNo || l.OriginalPartNo == row.PartNo) && l.Ticket!.ExternalTicketNo == row.CaseNo && remainingWithdraw.GetValueOrDefault(l.TicketPartLineId) > 0)
                     : null;
 
                 // Smart Fallback 1: Match by PartNo + FE Name if CaseNo not matched
                 var matchedByFeFallback = false;
                 if (outLine == null && !string.IsNullOrWhiteSpace(row.FeName))
                 {
-                    outLine = openWithdrawLines.FirstOrDefault(l => l.PartNo == row.PartNo && (l.Ticket!.TechName == row.FeName || l.WithdrawBatch!.EmployeeCode == row.FeName) && remainingWithdraw.GetValueOrDefault(l.TicketPartLineId) > 0);
+                    outLine = openWithdrawLines.FirstOrDefault(l => (l.PartNo == row.PartNo || l.OriginalPartNo == row.PartNo) && (l.Ticket!.TechName == row.FeName || l.WithdrawBatch!.EmployeeCode == row.FeName) && remainingWithdraw.GetValueOrDefault(l.TicketPartLineId) > 0);
                     if (outLine != null) matchedByFeFallback = true;
                 }
 
                 // Fallback 2: Match by PartNo only if row.CaseNo was blank
                 if (outLine == null && !matchedByCaseNo)
                 {
-                    outLine = openWithdrawLines.FirstOrDefault(l => l.PartNo == row.PartNo && remainingWithdraw.GetValueOrDefault(l.TicketPartLineId) > 0);
+                    outLine = openWithdrawLines.FirstOrDefault(l => (l.PartNo == row.PartNo || l.OriginalPartNo == row.PartNo) && remainingWithdraw.GetValueOrDefault(l.TicketPartLineId) > 0);
                 }
 
                 int? unitId = null;
@@ -969,7 +1164,14 @@ public class DailyReportController : ControllerBase
                         // Deduct DHL-BKK ONLY IF not prior to baseline AND NOT already deducted at approve time
                         if (!isPriorToBaseline && !isPreApproved)
                         {
-                            _stock.AdjustStock(row.PartNo, mainWh?.Id ?? 0, -row.Qty, "Good", "Withdraw", "WithdrawBatch", outLine.WithdrawBatchId?.ToString(), userName, $"จ่ายออกผ่าน Daily Report SN {row.SerialNo}", serialNo: row.SerialNo);
+                            var currentMainStock = (mainWh != null && partsByNo.TryGetValue(row.PartNo, out var pMain))
+                                ? (_context.PartStocks.FirstOrDefault(s => s.LocationId == mainWh.Id && s.PartId == pMain.Id)?.GoodQty ?? 0)
+                                : 0;
+                            var mainDeduct = Math.Min(currentMainStock, row.Qty);
+                            if (mainDeduct > 0 && mainWh != null)
+                            {
+                                _stock.AdjustStock(row.PartNo, mainWh.Id, -mainDeduct, "Good", "Withdraw", "WithdrawBatch", outLine.WithdrawBatchId?.ToString(), userName, $"จ่ายออกผ่าน Daily Report SN {row.SerialNo}", serialNo: row.SerialNo);
+                            }
                         }
                         _stock.AdjustStock(row.PartNo, techLoc?.Id ?? 0, row.Qty, "Good", "Withdraw", "WithdrawBatch", outLine.WithdrawBatchId?.ToString(), userName, $"รับอะไหล่จากคลังผ่าน Daily Report SN {row.SerialNo}", serialNo: row.SerialNo);
 
@@ -1058,7 +1260,14 @@ public class DailyReportController : ControllerBase
                             // Only deduct DHL-BKK if this is a new outbound occurring after baseline.
                             if (!isPriorToBaseline)
                             {
-                                _stock.AdjustStock(row.PartNo, mainWh?.Id ?? 0, -row.Qty, "Good", "Withdraw", "DailyReportRow", row.RowIndex.ToString(), userName, $"จ่ายออกจากคลังกลาง (ไม่ผูกใบเบิก) SN {row.SerialNo}", serialNo: row.SerialNo);
+                                var currentMainStock = (mainWh != null && partsByNo.TryGetValue(row.PartNo, out var pMain))
+                                    ? (_context.PartStocks.FirstOrDefault(s => s.LocationId == mainWh.Id && s.PartId == pMain.Id)?.GoodQty ?? 0)
+                                    : 0;
+                                var mainDeduct = Math.Min(currentMainStock, row.Qty);
+                                if (mainDeduct > 0 && mainWh != null)
+                                {
+                                    _stock.AdjustStock(row.PartNo, mainWh.Id, -mainDeduct, "Good", "Withdraw", "DailyReportRow", row.RowIndex.ToString(), userName, $"จ่ายออกจากคลังกลาง (ไม่ผูกใบเบิก) SN {row.SerialNo}", serialNo: row.SerialNo);
+                                }
                             }
                             _stock.AdjustStock(row.PartNo, techLoc?.Id ?? 0, row.Qty, "Good", "Withdraw", "DailyReportRow", row.RowIndex.ToString(), userName, $"ส่งมอบให้ช่าง {row.FeName} (ไม่ผูกใบเบิก) SN {row.SerialNo}", serialNo: row.SerialNo);
 
@@ -1326,8 +1535,8 @@ public class DailyReportController : ControllerBase
             // Priority 1 — return confirmation against an open return line OR matching active withdraw batch by CaseNo
             var matchedByReturnCaseNo = !string.IsNullOrWhiteSpace(row.CaseNo);
             var retLine = matchedByReturnCaseNo
-                ? openReturnLines.FirstOrDefault(l => l.PartNo == row.PartNo && l.Ticket!.ExternalTicketNo == row.CaseNo && remainingReturn.GetValueOrDefault(l.TicketPartLineId) > 0)
-                : openReturnLines.FirstOrDefault(l => l.PartNo == row.PartNo && remainingReturn.GetValueOrDefault(l.TicketPartLineId) > 0);
+                ? openReturnLines.FirstOrDefault(l => (l.PartNo == row.PartNo || l.OriginalPartNo == row.PartNo) && l.Ticket!.ExternalTicketNo == row.CaseNo && remainingReturn.GetValueOrDefault(l.TicketPartLineId) > 0)
+                : openReturnLines.FirstOrDefault(l => (l.PartNo == row.PartNo || l.OriginalPartNo == row.PartNo) && remainingReturn.GetValueOrDefault(l.TicketPartLineId) > 0);
 
             // Fallback: If no pre-opened Return line, check if there is an active Ticket / WithdrawBatch for this CaseNo & PartNo
             TicketPartLine? fallbackWithdrawLine = null;
@@ -1336,7 +1545,7 @@ public class DailyReportController : ControllerBase
                 fallbackWithdrawLine = _context.TicketPartLines
                     .Include(l => l.Ticket)
                     .Include(l => l.WithdrawBatch)
-                    .FirstOrDefault(l => l.Ticket!.ExternalTicketNo == row.CaseNo && l.PartNo == row.PartNo && l.LineType == "Withdraw"
+                    .FirstOrDefault(l => l.Ticket!.ExternalTicketNo == row.CaseNo && (l.PartNo == row.PartNo || l.OriginalPartNo == row.PartNo) && l.LineType == "Withdraw"
                         && l.WithdrawBatch != null && l.WithdrawBatch.ReturnStatus != "คืน" && l.WithdrawBatch.Status != "Cancel");
             }
 
@@ -1358,7 +1567,14 @@ public class DailyReportController : ControllerBase
                 int? unitId = null;
                 if (commit)
                 {
-                    _stock.AdjustStock(row.PartNo, techLoc?.Id ?? 0, -row.Qty, "Good", "Return", "WithdrawBatch", targetBatchId?.ToString(), userName, $"คืนผ่าน Daily Report SN {row.SerialNo}", serialNo: row.SerialNo);
+                    var currentTechStock = (techLoc != null && partsByNo.TryGetValue(row.PartNo, out var pTech))
+                        ? (_context.PartStocks.FirstOrDefault(s => s.LocationId == techLoc.Id && s.PartId == pTech.Id)?.GoodQty ?? 0)
+                        : 0;
+                    var techDeduct = Math.Min(currentTechStock, row.Qty);
+                    if (techDeduct > 0 && techLoc != null)
+                    {
+                        _stock.AdjustStock(row.PartNo, techLoc.Id, -techDeduct, "Good", "Return", "WithdrawBatch", targetBatchId?.ToString(), userName, $"คืนผ่าน Daily Report SN {row.SerialNo}", serialNo: row.SerialNo);
+                    }
                     _stock.AdjustStock(row.PartNo, mainWh?.Id ?? 0, row.Qty, row.Status == "GOOD" ? "Good" : "Repair", "Return", "WithdrawBatch", targetBatchId?.ToString(), userName, $"คืนผ่าน Daily Report SN {row.SerialNo}", serialNo: row.SerialNo);
 
                     if (!string.IsNullOrWhiteSpace(row.SerialNo) && partsByNo.TryGetValue(row.PartNo, out var part))
@@ -1543,22 +1759,55 @@ public class DailyReportController : ControllerBase
                 var stock = part != null && stocksByPartId.TryGetValue(part.Id, out var s) ? s : null;
                 item.SystemGoodQty = stock?.GoodQty ?? 0;
                 item.SystemRepairQty = stock?.RepairQty ?? 0;
-                item.DiffGood = item.SystemGoodQty - item.DhlAvailableQty;
+
+                item.DiffGood = item.SystemGoodQty - item.DhlGoodQty;
+                item.DiffRepair = item.SystemRepairQty - item.DhlBadQty;
 
                 if (part == null)
                 {
                     item.Status = "NOT_IN_SYSTEM";
                     summary.ReconcileDiffCount++;
                 }
-                else if (item.DiffGood == 0)
+                else if (item.DiffGood == 0 && item.DiffRepair == 0)
                 {
                     item.Status = "MATCH";
                     summary.ReconcileMatchCount++;
                 }
                 else
                 {
-                    item.Status = "DIFF";
-                    summary.ReconcileDiffCount++;
+                    if (commit && syncReconcile && part != null)
+                    {
+                        if (stock == null)
+                        {
+                            stock = new PartStock { PartId = part.Id, LocationId = mainWh?.Id ?? 1, GoodQty = 0, BadQty = 0, RepairQty = 0 };
+                            _context.PartStocks.Add(stock);
+                            stocksByPartId[part.Id] = stock;
+                        }
+
+                        var deltaGood = item.DhlGoodQty - item.SystemGoodQty;
+                        var deltaRepair = item.DhlBadQty - item.SystemRepairQty;
+
+                        if (deltaGood != 0 && mainWh != null)
+                        {
+                            _stock.AdjustStock(part.PartNo, mainWh.Id, deltaGood, "Good", "StockCountAdjust", "DailyReportReconcile", null, userName, "ปรับยอดสต็อกตรงตาม Minimum Stock (Batch Import)");
+                        }
+                        if (deltaRepair != 0 && mainWh != null)
+                        {
+                            _stock.AdjustStock(part.PartNo, mainWh.Id, deltaRepair, "Repair", "StockCountAdjust", "DailyReportReconcile", null, userName, "ปรับยอดสต็อกตรงตาม Minimum Stock (Batch Import)");
+                        }
+
+                        item.SystemGoodQty = item.DhlGoodQty;
+                        item.SystemRepairQty = item.DhlBadQty;
+                        item.DiffGood = 0;
+                        item.DiffRepair = 0;
+                        item.Status = "MATCH";
+                        summary.ReconcileMatchCount++;
+                    }
+                    else
+                    {
+                        item.Status = "DIFF";
+                        summary.ReconcileDiffCount++;
+                    }
                 }
 
                 if (commit && part != null)
