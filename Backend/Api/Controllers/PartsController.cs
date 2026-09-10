@@ -133,6 +133,57 @@ public class PartsController : ControllerBase
         return (whGood, whRepair, tech);
     }
 
+    // GET /Parts/export-stock — current DHL-BKK (central warehouse) stock, one row per part per
+    // condition, columns matching DHL's own "Minimum Stock" sheet (Part Number / Part Description
+    // / AVAILABLE_QTY / INVENTORY_STS) so an external reconciliation tool can diff this file
+    // straight against a real DHL Daily Report without any column-mapping step. Deliberately a
+    // file download, not a live API call — a standalone verification tool has no business holding
+    // a token into this system; it should only ever see what was explicitly exported to it.
+    [HttpGet("export-stock")]
+    public IActionResult ExportStock()
+    {
+        var parts = _context.Parts.Where(p => p.IsActive).OrderBy(p => p.PartNo).ToList();
+        var (whGood, whRepair, _) = StockByBucket(parts.Select(p => p.Id));
+
+        using var wb = new ClosedXML.Excel.XLWorkbook();
+        var ws = wb.Worksheets.Add("Minimum Stock");
+        var headers = new[] { "No.", "Part Number", "Part Description", "AVAILABLE_QTY", "INVENTORY_STS" };
+        for (int c = 0; c < headers.Length; c++) ws.Cell(1, c + 1).Value = headers[c];
+        ws.Row(1).Style.Font.Bold = true;
+
+        int row = 2, no = 1;
+        foreach (var p in parts)
+        {
+            var good = whGood.GetValueOrDefault(p.Id, 0);
+            var repair = whRepair.GetValueOrDefault(p.Id, 0);
+
+            ws.Cell(row, 1).Value = no++;
+            ws.Cell(row, 2).Value = p.PartNo;
+            ws.Cell(row, 3).Value = p.PartName;
+            ws.Cell(row, 4).Value = good;
+            ws.Cell(row, 5).Value = good > 0 ? "GOOD" : "NO INVENTORY";
+            row++;
+
+            if (repair > 0)
+            {
+                ws.Cell(row, 1).Value = no++;
+                ws.Cell(row, 2).Value = p.PartNo;
+                ws.Cell(row, 3).Value = p.PartName;
+                ws.Cell(row, 4).Value = repair;
+                ws.Cell(row, 5).Value = "BAD";
+                row++;
+            }
+        }
+        ws.Columns().AdjustToContents();
+
+        using var stream = new MemoryStream();
+        wb.SaveAs(stream);
+        // Explicit invariant culture — on a Thai-locale server, "yyyy" in DateTime.Now's default
+        // ToString silently uses the Buddhist calendar (e.g. 2569 instead of 2026).
+        var fileName = $"StockExport-{DateTime.Now.ToString("yyyyMMdd-HHmmss", System.Globalization.CultureInfo.InvariantCulture)}.xlsx";
+        return File(stream.ToArray(), "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", fileName);
+    }
+
     // GET /api/Parts?categoryId=&isActive=&search=
     [HttpGet]
     public IActionResult GetAll([FromQuery] int? categoryId, [FromQuery] bool? isActive, [FromQuery] string? search)

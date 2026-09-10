@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Parts Master — ATM Inventory</title>
-  <link rel="stylesheet" href="shared/styles.css?v=80">
+  <link rel="stylesheet" href="shared/styles.css?v=81">
   <style>
     .parts-stats {
       display: grid;
@@ -66,6 +66,7 @@
         <div class="topbar-controls">
           <input type="file" id="parts-import-file-input" accept=".xlsx" style="display:none" onchange="handlePartsImportFile(this)">
           <button class="btn" onclick="document.getElementById('parts-import-file-input').click()">📥 Import จาก Excel</button>
+          <button class="btn" onclick="exportCurrentStock()" title="Export ยอดสต็อกคลังกลางปัจจุบัน — รูปแบบตรงกับชีต Minimum Stock ของ DHL">📤 Export ยอดสต็อกปัจจุบัน</button>
           <button class="btn btn-primary" onclick="openModal()">
             <span>+</span> <span data-i18n="parts.add">Add Part</span>
           </button>
@@ -425,10 +426,10 @@
   </style>
 
   <script src="https://code.iconify.design/iconify-icon/2.1.0/iconify-icon.min.js"></script>
-  <script src="shared/translations.js?v=80"></script>
-  <script src="shared/toast.js?v=80"></script>
-  <script src="shared/api.js?v=80"></script>
-  <script src="shared/layout.js?v=80"></script>
-  <script src="admin-parts.js?v=80"></script>
+  <script src="shared/translations.js?v=81"></script>
+  <script src="shared/toast.js?v=81"></script>
+  <script src="shared/api.js?v=81"></script>
+  <script src="shared/layout.js?v=81"></script>
+  <script src="admin-parts.js?v=81"></script>
 </body>
 </html>

@@ -103,6 +103,24 @@ const api = {
       fd.append('overwriteExisting', overwriteExisting ? 'true' : 'false');
       return apiUpload('/Parts/import/confirm', fd);
     },
+    exportStock: async () => {
+      const token = localStorage.getItem('authToken');
+      const res = await fetch(API_BASE + '/Parts/export-stock', {
+        headers: { ...(token ? { 'Authorization': 'Bearer ' + token } : {}) },
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body.message || `HTTP ${res.status}`);
+      }
+      const disposition = res.headers.get('Content-Disposition') || '';
+      // ASP.NET Core's File() result always writes BOTH filename= and filename*=UTF-8''... in
+      // the same header (RFC 5987, for non-ASCII-safe names) — stop at the first quote OR
+      // semicolon, or an unquoted match here swallows everything through the second filename*=
+      // param as well.
+      const match = disposition.match(/filename="?([^";]+)"?/);
+      const fileName = match ? match[1] : 'StockExport.xlsx';
+      return { blob: await res.blob(), fileName };
+    },
   },
   dashboard: {
     inventorySummary: ()            => apiFetch('/Dashboard/inventory-summary'),
@@ -171,7 +189,11 @@ const api = {
         throw new Error(body.message || `HTTP ${res.status}`);
       }
       const disposition = res.headers.get('Content-Disposition') || '';
-      const match = disposition.match(/filename="?([^"]+)"?/);
+      // ASP.NET Core's File() result always writes BOTH filename= and filename*=UTF-8''... in
+      // the same header (RFC 5987, for non-ASCII-safe names) — stop at the first quote OR
+      // semicolon, or an unquoted match here swallows everything through the second filename*=
+      // param as well.
+      const match = disposition.match(/filename="?([^";]+)"?/);
       const fileName = match ? match[1] : 'DHL-Export.xlsx';
       return { blob: await res.blob(), fileName };
     },
@@ -198,7 +220,11 @@ const api = {
         throw new Error(body.message || `HTTP ${res.status}`);
       }
       const disposition = res.headers.get('Content-Disposition') || '';
-      const match = disposition.match(/filename="?([^"]+)"?/);
+      // ASP.NET Core's File() result always writes BOTH filename= and filename*=UTF-8''... in
+      // the same header (RFC 5987, for non-ASCII-safe names) — stop at the first quote OR
+      // semicolon, or an unquoted match here swallows everything through the second filename*=
+      // param as well.
+      const match = disposition.match(/filename="?([^";]+)"?/);
       const fileName = match ? match[1] : 'Shortage-Report.xlsx';
       return { blob: await res.blob(), fileName };
     },

@@ -111,9 +111,11 @@
   window.toggleSidebar = function() {
     const sidebar = document.querySelector('.sidebar');
     const btn = document.getElementById('hamburger-btn');
+    const mobileBtn = document.getElementById('mobile-hamburger-btn');
     if (isMobile()) {
       const open = sidebar.classList.toggle('mobile-open');
       if (btn) btn.innerHTML = open ? '✕' : '☰';
+      if (mobileBtn) mobileBtn.innerHTML = open ? '✕' : '☰';
       return;
     }
     const collapsed = sidebar.classList.toggle('collapsed');
@@ -124,6 +126,9 @@
   // Tapping a nav link, or the page behind the off-canvas sidebar, closes it on mobile.
   document.addEventListener('click', e => {
     if (!isMobile()) return;
+    // #mobile-hamburger-btn already toggles via its own onclick — skip here so a click on it
+    // doesn't get double-toggled (open then immediately closed) by this listener too.
+    if (e.target.closest('#mobile-hamburger-btn')) return;
     const sidebar = document.querySelector('.sidebar');
     if (!sidebar || !sidebar.classList.contains('mobile-open')) return;
     if (sidebar.contains(e.target)) {
@@ -200,6 +205,18 @@
 
     const root = document.getElementById('sidebar-root');
     if (!root) return;
+
+    // Reachable open-trigger for the off-canvas sidebar on phones — see the CSS comment on
+    // .mobile-hamburger-btn for why this can't just be .hamburger-btn inside the sidebar itself.
+    if (!document.getElementById('mobile-hamburger-btn')) {
+      const mobileBtn = document.createElement('button');
+      mobileBtn.id = 'mobile-hamburger-btn';
+      mobileBtn.className = 'mobile-hamburger-btn';
+      mobileBtn.title = 'เปิดเมนู';
+      mobileBtn.innerHTML = '☰';
+      mobileBtn.onclick = () => toggleSidebar();
+      document.body.appendChild(mobileBtn);
+    }
 
     const role  = localStorage.getItem('userRole') || 'tech';
     const email = localStorage.getItem('userEmail') || '';

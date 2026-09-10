@@ -6,6 +6,22 @@ const PAGE_SIZE = 50;
 
 function resetPage() { currentPage = 1; }
 
+// Downloads current DHL-BKK stock as an .xlsx shaped like DHL's own "Minimum Stock" sheet — for
+// a standalone reconciliation tool to diff against a real Daily Report without any column
+// mapping. A file download rather than a live endpoint on purpose: that tool should never hold
+// a token into this system, only ever see what was explicitly exported to it.
+async function exportCurrentStock() {
+  try {
+    const { blob, fileName } = await api.parts.exportStock();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = fileName;
+    document.body.appendChild(a); a.click(); a.remove();
+    URL.revokeObjectURL(url);
+    showToast?.('Export ยอดสต็อกปัจจุบันสำเร็จ', 'success');
+  } catch (e) { showToast?.(e.message || 'เกิดข้อผิดพลาด กรุณาลองใหม่', 'error'); }
+}
+
 async function init() {
   initLayout();
   applyLang();

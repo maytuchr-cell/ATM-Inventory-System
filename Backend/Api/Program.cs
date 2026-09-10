@@ -9,8 +9,14 @@ var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.AddCors(options =>
 {
+    // WithExposedHeaders is required separately from AllowAnyHeader — that one only covers
+    // REQUEST headers the browser may send; a cross-origin JS fetch can't read a RESPONSE header
+    // back at all unless the server explicitly exposes it. Every file-download endpoint in this
+    // API (DHL export, Shortage Report, Stock export) relies on the frontend parsing
+    // Content-Disposition out of the response to get the real filename — without this, dev (where
+    // frontend:3000 and API:5128 are different origins) silently falls back to a generic name.
     options.AddPolicy("AllowAll", policy =>
-        policy.AllowAnyOrigin().AllowAnyMethod().AllowAnyHeader());
+        policy.AllowAnyOrigin().AllowAnyMethod().AllowAnyHeader().WithExposedHeaders("Content-Disposition"));
 });
 
 builder.Services.AddControllers().AddJsonOptions(options =>
