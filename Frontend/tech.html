@@ -179,18 +179,6 @@
             #sidebar-root, .topbar { display:none !important; }
             .main-content { padding-top:58px; }
 
-            /* Primary action becomes a thumb-reachable floating button instead of an inline one
-               that scrolls out of reach as the ticket list grows. */
-            .page-body { padding-bottom:88px; }
-            #tk-new-request-btn {
-                position:fixed; right:18px; bottom:18px; z-index:40; margin-left:0 !important;
-                width:58px; height:58px; border-radius:50%; padding:0;
-                display:flex; align-items:center; justify-content:center;
-                box-shadow:0 6px 18px rgba(0,0,0,.22);
-            }
-            #tk-new-request-btn .tk-fab-icon { font-size:26px; line-height:1; }
-            #tk-new-request-btn .tk-fab-label { display:none; }
-
             /* Segmented tab control + stacked search/filter — bigger touch targets, no squeezed
                side-by-side inputs. */
             .tk-tabs { background:var(--bg-subtle); border:1px solid var(--border); border-radius:11px; padding:3px; gap:0; }
@@ -288,7 +276,6 @@
                         <div class="section-accent"></div>
                         <span class="section-title" id="tickets-section-title">Ticket ของฉัน</span>
                         <span class="section-count" id="tickets-count">—</span>
-                        <button class="btn-withdraw" id="tk-new-request-btn" style="margin-left:auto;" onclick="openNewRequestModal()"><span class="tk-fab-icon">＋</span> <span class="tk-fab-label">ขอเบิกอะไหล่ใหม่</span></button>
                     </div>
                     <div class="tk-tabs">
                         <button class="tk-tab active" id="tabActive" onclick="switchTab('active')">Ticket ของฉัน</button>
@@ -350,7 +337,7 @@
             </div>
             <div style="margin-bottom:18px;">
                 <label style="font-size:11px;color:var(--text-muted);display:block;margin-bottom:4px;">Status การใช้งาน</label>
-                <select id="wdUsageStatus" class="select-part" style="margin-bottom:0;" onchange="onUsageStatusChange('wd')">
+                <select id="wdUsageStatus" class="select-part" style="margin-bottom:0;">
                     <option value="Repair">เบิกไปซ่อม</option>
                     <option value="Keep">เก็บ (สต็อกสำรองติดตัวช่าง)</option>
                 </select>
@@ -503,94 +490,6 @@
     </div>
 </div>
 
-<!-- New Withdrawal Request (tech-initiated — no existing Ticket yet) -->
-<div class="tk-overlay" id="newRequestOverlay">
-    <div class="tk-modal">
-        <div class="tk-modal-header">
-            <span class="tk-modal-title">ขอเบิกอะไหล่ใหม่</span>
-            <button class="tk-modal-close" onclick="closeNewRequestModal()">
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
-            </button>
-        </div>
-        <div class="tk-modal-body">
-            <span class="tk-section-label">ข้อมูลช่าง</span>
-            <div class="tk-2col">
-                <input id="nrTechName" type="text" placeholder="ชื่อช่าง" class="select-part" style="margin-bottom:0;">
-                <input id="nrTechDept" type="text" placeholder="Zone / แผนก" class="select-part" style="margin-bottom:0;">
-            </div>
-            <div class="tk-2col">
-                <div>
-                    <label style="font-size:11px;color:var(--text-muted);display:block;margin-bottom:4px;">วันที่เบิกอะไหล่</label>
-                    <input id="nrWithdrawDate" type="date" class="select-part" style="margin-bottom:0;">
-                </div>
-                <div>
-                    <label style="font-size:11px;color:var(--text-muted);display:block;margin-bottom:4px;">รหัสพนักงาน</label>
-                    <input id="nrEmployeeCode" type="text" placeholder="รหัสพนักงาน" class="select-part" style="margin-bottom:0;" readonly>
-                </div>
-            </div>
-            <div style="margin-bottom:10px;">
-                <label style="font-size:11px;color:var(--text-muted);display:block;margin-bottom:4px;">
-                    Case No. (Aservice) <span id="nrCaseNoRequired" style="color:var(--red);">*</span>
-                </label>
-                <input id="nrCaseNo" type="text" placeholder="เช่น TS-20260730-01171" class="select-part" style="margin-bottom:0;">
-            </div>
-            <div style="margin-bottom:18px;">
-                <label style="font-size:11px;color:var(--text-muted);display:block;margin-bottom:4px;">Status การใช้งาน</label>
-                <select id="nrUsageStatus" class="select-part" style="margin-bottom:0;" onchange="onUsageStatusChange('nr')">
-                    <option value="Repair">เบิกไปซ่อม</option>
-                    <option value="Keep">เก็บ (สต็อกสำรองติดตัวช่าง)</option>
-                </select>
-            </div>
-            <div style="margin-bottom:18px;">
-                <label style="font-size:11px;color:var(--text-muted);display:block;margin-bottom:4px;">Tech Support ที่ปรึกษา</label>
-                <select id="nrTechSupport" class="select-part" style="margin-bottom:0;">
-                    <option value="" disabled selected>— เลือก Tech Support —</option>
-                </select>
-            </div>
-
-            <span class="tk-section-label">ข้อมูลสำหรับ DHL</span>
-            <div class="tk-2col">
-                <div>
-                    <label style="font-size:11px;color:var(--text-muted);display:block;margin-bottom:4px;">วันที่ต้องการอะไหล่</label>
-                    <input id="nrNeededByDate" type="datetime-local" class="select-part" style="margin-bottom:0;">
-                </div>
-                <div>
-                    <label style="font-size:11px;color:var(--text-muted);display:block;margin-bottom:4px;">รหัส ATM</label>
-                    <input id="nrAtmCode" type="text" placeholder="เช่น T091B030B950G262" class="select-part" style="margin-bottom:0;">
-                </div>
-            </div>
-            <div style="margin-bottom:18px;">
-                <label style="font-size:11px;color:var(--text-muted);display:block;margin-bottom:4px;">FE ID (โซน/เส้นทาง)</label>
-                <input id="nrFeId" type="text" placeholder="เช่น Center 04" class="select-part" style="margin-bottom:0;">
-            </div>
-
-            <span class="tk-section-label">เลือกอะไหล่ที่ต้องการเบิก</span>
-            <div id="nrLines"></div>
-            <button type="button" class="btn-add-line" onclick="addLine('new')">+ เพิ่มอะไหล่</button>
-
-            <span class="tk-section-label" style="margin-top:18px;display:block;">ที่อยู่จัดส่ง</span>
-            <button type="button" class="btn-add-line" style="margin-bottom:8px;" onclick="openAddressPicker('nrAddress')">📍 เลือกที่บันทึกไว้</button>
-            <textarea id="nrAddress" class="form-textarea" placeholder="กรอกที่อยู่สำหรับจัดส่งอะไหล่..." style="min-height:70px;"></textarea>
-
-            <!-- Photo attachment hidden per request — see the withdraw form's identical comment above. -->
-            <div style="display:none;">
-                <span class="tk-section-label" style="margin-top:18px;display:block;">แนบรูปภาพ</span>
-                <input type="file" id="nrPhotoInput" accept="image/*" multiple style="display:none;" onchange="handlePhotoSelect('nr', this.files)">
-                <button type="button" class="btn-add-line" onclick="document.getElementById('nrPhotoInput').click()">📷 แนบรูปภาพ (เลือกได้หลายรูป)</button>
-                <div id="nrPhotoPreview" class="tk-photo-preview"></div>
-            </div>
-
-            <span class="tk-section-label" style="margin-top:18px;display:block;">หมายเหตุ / อาการเสีย</span>
-            <textarea id="nrDescription" class="form-textarea" placeholder="เช่น Card reader เสีย, ปลั๊ก Sensor ขาด..." style="min-height:60px;"></textarea>
-
-            <div class="tk-modal-actions">
-                <button type="button" class="btn btn-ghost" onclick="closeNewRequestModal()">ยกเลิก</button>
-                <button type="button" class="btn btn-primary" style="width:auto;margin-top:0;" onclick="submitNewRequest()">ส่ง</button>
-            </div>
-        </div>
-    </div>
-</div>
-
 <script src="shared/translations.js?v=80"></script>
 <script src="shared/toast.js?v=80"></script>
 <script src="shared/api.js?v=80"></script>
@@ -616,7 +515,7 @@
     let activeBatchId = null;
     let activeReturnTicketId = null;
     let activeReturnBatchId = null;
-    let wdLineCount = 0, rtLineCount = 0, nrLineCount = 0;
+    let wdLineCount = 0, rtLineCount = 0;
 
     /* ── Mobile top-bar menu (theme/language/logout) — see the HTML comment on #tmb-bar for why
        this exists instead of reusing the sidebar's hamburger on phones. ── */
@@ -659,8 +558,9 @@
     // Every open job ticket this tech has in KMM (/JobTicket/Technician) that doesn't already
     // exist locally (matched by ExternalTicketNo === job_no) gets auto-synced in via the same
     // POST /Ticket/sync Aservice would call — so it shows up in "Ticket ของฉัน" with a "เบิก" button
-    // on its own, without the tech ever touching "ขอเบิกอะไหล่ใหม่". kmmJobByCaseNo is kept around
-    // so openWithdrawModal can pull ATM code/problem description onto the withdraw form.
+    // on its own. This is the only way a withdraw request gets opened — manual/ad-hoc creation is
+    // deliberately not offered, every withdraw must trace back to a real Ticket. kmmJobByCaseNo is
+    // kept around so openWithdrawModal can pull ATM code/problem description onto the withdraw form.
     let kmmJobByCaseNo = {};
     async function syncKmmJobTickets() {
         let jobs = [];
@@ -690,12 +590,10 @@
     async function fetchTechSupportList() {
         let names = [];
         try { names = await api.techSupport.getAll(); } catch { names = []; }
-        // No "ไม่มี" (none) choice — Tech Support is mandatory now (see submitWithdraw/
-        // submitNewRequest validation), so the blank placeholder option must never be a real,
-        // selectable answer.
+        // No "ไม่มี" (none) choice — Tech Support is mandatory now (see submitWithdraw
+        // validation), so the blank placeholder option must never be a real, selectable answer.
         const optionsHtml = '<option value="" disabled selected>— เลือก Tech Support —</option>' + names.map(n => `<option value="${n}">${n}</option>`).join('');
         document.getElementById('wdTechSupport').innerHTML = optionsHtml;
-        document.getElementById('nrTechSupport').innerHTML = optionsHtml;
     }
 
     async function fetchTickets(silent) {
@@ -1208,9 +1106,6 @@
         if (kind === 'withdraw') {
             wdLineCount++;
             document.getElementById('wdLines').insertAdjacentHTML('beforeend', lineRowHtml('wd', wdLineCount));
-        } else if (kind === 'new') {
-            nrLineCount++;
-            document.getElementById('nrLines').insertAdjacentHTML('beforeend', lineRowHtml('nr', nrLineCount));
         }
     }
     function removeLine(prefix, idx) {
@@ -1270,7 +1165,7 @@
     /* ── Photo attachments (withdraw + return share this) ──
        Files are held client-side until Submit, then uploaded one by one via
        /Ticket/upload and the returned paths are sent along with the withdraw/return body. */
-    const photoFiles = { wd: [], rt: [], nr: [] };
+    const photoFiles = { wd: [], rt: [] };
 
     function handlePhotoSelect(prefix, fileList) {
         for (const f of fileList) {
@@ -1309,16 +1204,6 @@
         if (isNaN(d)) return '';
         const pad = n => String(n).padStart(2, '0');
         return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
-    }
-
-    // "Repair" ties this withdraw to a specific Case No.; "Keep" is buffer stock the tech just
-    // holds onto, not tied to any job — so Case No. is only required for Repair. Only the New
-    // Request form's Case No. is actually editable (the other forms' Case No. already comes from
-    // an existing Ticket), so this only needs to toggle the "required" marker there.
-    function onUsageStatusChange(prefix) {
-        if (prefix !== 'nr') return;
-        const required = document.getElementById('nrUsageStatus').value === 'Repair';
-        document.getElementById('nrCaseNoRequired').style.display = required ? 'inline' : 'none';
     }
 
     // Best-effort auto-fill for a brand-new request only — looks up DHL's own FE contact list by
@@ -1605,86 +1490,8 @@
         } catch (e) { showToast?.(e.message || t('toast.error'), 'error'); }
     }
 
-    /* ── New Withdrawal Request (tech-initiated, self-service) ──
-       For a case that has NO Aservice/KMM ticket at all — a genuinely ad-hoc withdraw. Any real
-       KMM job ticket instead appears automatically in "Ticket ของฉัน" via syncKmmJobTickets()
-       below and is withdrawn from there (openWithdrawModal), not through this form. This one
-       still creates its own Ticket (POST /Ticket/sync with a self-generated ExternalTicketNo)
-       and submits the withdraw together — presented to the tech as one single form. */
-    function openNewRequestModal() {
-        // Prefill from the tech's own KMM profile — currentName/currentEmail (=emp_id) come from
-        // login, so this no longer depends on having a previous ticket cached.
-        const last = cachedTickets.find(t => t.techName);
-        document.getElementById('nrTechName').value = currentName || last?.techName || '';
-        document.getElementById('nrTechDept').value = last?.techDept || '';
-        document.getElementById('nrWithdrawDate').value = todayIso();
-        document.getElementById('nrEmployeeCode').value = currentEmail || '';
-        document.getElementById('nrCaseNo').value = '';
-        document.getElementById('nrUsageStatus').value = 'Repair';
-        document.getElementById('nrTechSupport').value = '';
-        document.getElementById('nrNeededByDate').value = '';
-        document.getElementById('nrAtmCode').value = '';
-        // FE ID is DHL's own site/route code (e.g. "Bangna 01"), not the tech's zone — try DHL's
-        // own FE contact list first (see applyFeSuggestion), tech can still overwrite by hand.
-        document.getElementById('nrFeId').value = '';
-        onUsageStatusChange('nr');
-        document.getElementById('nrAddress').value = '';
-        document.getElementById('nrDescription').value = '';
-        applyFeSuggestion(document.getElementById('nrTechName').value.trim(), 'nrFeId', 'nrAddress');
-        document.getElementById('nrLines').innerHTML = '';
-        nrLineCount = 0;
-        addLine('new');
-        photoFiles.nr = [];
-        renderPhotoPreview('nr');
-        document.getElementById('newRequestOverlay').classList.add('open');
-    }
-    function closeNewRequestModal() {
-        document.getElementById('newRequestOverlay').classList.remove('open');
-    }
-    async function submitNewRequest() {
-        const techName = document.getElementById('nrTechName').value.trim();
-        const techDept = document.getElementById('nrTechDept').value.trim();
-        const lines = collectLines('nr', nrLineCount);
-        const address = document.getElementById('nrAddress').value.trim();
-        const description = document.getElementById('nrDescription').value.trim();
-        const withdrawDate = document.getElementById('nrWithdrawDate').value || null;
-        const employeeCode = document.getElementById('nrEmployeeCode').value.trim();
-        const caseNo = document.getElementById('nrCaseNo').value.trim();
-        const usageStatus = document.getElementById('nrUsageStatus').value;
-        const techSupportName = document.getElementById('nrTechSupport').value || null;
-        const neededByDate = document.getElementById('nrNeededByDate').value || null;
-        const feId = document.getElementById('nrFeId').value.trim() || null;
-        const atmCode = document.getElementById('nrAtmCode').value.trim() || null;
-        if (!techName) { showToast?.('กรอกชื่อช่าง', 'error'); return; }
-        if (!lines.length) { showToast?.('เลือกอะไหล่อย่างน้อย 1 รายการ', 'error'); return; }
-        if (!address) { showToast?.('กรุณากรอกที่อยู่จัดส่ง', 'error'); return; }
-        // Case No. only matters when this withdraw is tied to a specific repair job — "เก็บ"
-        // (buffer stock) isn't tied to any job, so it's fine left blank (falls back to a
-        // self-generated placeholder number, same as before this feature existed).
-        if (usageStatus === 'Repair' && !caseNo) { showToast?.('กรอก Case No. (จำเป็นสำหรับ "เบิกไปซ่อม")', 'error'); return; }
-        if (!techSupportName) { showToast?.('กรุณาเลือก Tech Support ที่ปรึกษา', 'error'); return; }
-        let syncedTicketId = null;
-        try {
-            const externalTicketNo = caseNo || `SELF-${Date.now()}`;
-            const synced = await api.tickets.sync({ externalTicketNo, techName, techEmail: currentEmail, techDept });
-            syncedTicketId = synced.ticket.ticketId;
-            const attachments = await uploadPendingPhotos('nr');
-            const res = await api.tickets.submitWithdraw(syncedTicketId, { lines, address, description, attachments, withdrawDate, employeeCode, usageStatus, techSupportName, neededByDate, feId, atmCode });
-            photoFiles.nr = [];
-            closeNewRequestModal();
-            await fetchTickets();
-            const slipNo = res?.batch?.withdrawSlipNo;
-            showToast?.(slipNo ? `ส่งคำขอเบิกแล้ว เลขที่ใบเบิก ${slipNo} — รอ Admin อนุมัติ` : 'ส่งคำขอเบิกแล้ว รอ Admin อนุมัติ', 'success');
-        } catch (e) {
-            // If sync succeeded but a later step (photo upload, withdraw) failed, don't leave a
-            // dangling empty ticket behind — clean it up so retrying doesn't pile up duplicates.
-            if (syncedTicketId) { try { await api.tickets.remove(syncedTicketId); } catch {} }
-            showToast?.(e.message || t('toast.error'), 'error');
-        }
-    }
-
     document.addEventListener('keydown', e => {
-        if (e.key === 'Escape') { closeWithdrawModal(); closeReturnModal(); closeNewRequestModal(); }
+        if (e.key === 'Escape') { closeWithdrawModal(); closeReturnModal(); }
     });
 </script>
 </body>

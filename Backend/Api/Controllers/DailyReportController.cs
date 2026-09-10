@@ -239,13 +239,33 @@ public class DailyReportController : ControllerBase
         }
     }
 
-    // GET /DailyReport/batches/{id}
+    // GET /DailyReport/batches/{id} — projects into plain DTOs, never the raw entities. Returning
+    // `batch`/`rows` straight from EF let the change tracker's automatic relationship fixup wire
+    // DailyReportImportRow.Batch back to the same tracked DailyReportImportBatch instance (and
+    // Batch.Rows back to all of them) — System.Text.Json then walked that graph outward, so one
+    // batch of a few thousand rows serialized into a multi-gigabyte, multi-minute response. Every
+    // other action in this controller (Preview/Confirm) already avoided this by returning RowResult
+    // DTOs instead of entities; this was the one place that still didn't.
     [HttpGet("batches/{id}")]
     public IActionResult BatchDetail(int id)
     {
-        var batch = _context.DailyReportImportBatches.FirstOrDefault(b => b.Id == id);
+        var batch = _context.DailyReportImportBatches
+            .Where(b => b.Id == id)
+            .Select(b => new { b.Id, b.FileName, b.ImportedAt, b.ImportedBy, b.TotalRows })
+            .FirstOrDefault();
         if (batch == null) return NotFound();
-        var rows = _context.DailyReportImportRows.Where(r => r.BatchId == id).OrderBy(r => r.RowIndex).ToList();
+
+        var rows = _context.DailyReportImportRows
+            .Where(r => r.BatchId == id)
+            .OrderBy(r => r.RowIndex)
+            .Select(r => new
+            {
+                r.Id, r.SourceSheet, r.RowIndex, r.PartNo, r.PartName, r.SerialNo, r.Qty,
+                r.DhlStatus, r.Problem, r.CaseNo, r.FeName, r.MatchType,
+                r.TicketId, r.WithdrawBatchId, r.PartUnitId, r.StockCredited, r.Undone, r.UndoneAt
+            })
+            .ToList();
+
         return Ok(new { batch, rows });
     }
 
