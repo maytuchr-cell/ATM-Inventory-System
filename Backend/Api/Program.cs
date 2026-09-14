@@ -5,6 +5,25 @@ using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.IdentityModel.Tokens;
 using System.Text;
 
+// One-off data migration entry point — `dotnet run -- migrate-sqlite-to-mysql [path-to-db]`
+// copies every row from the old SQLite file into the MySQL database this app is now configured
+// for (via ConnectionStrings:DefaultConnection / the ConnectionStrings__DefaultConnection env
+// var), then exits without starting the web server. Run once against an already-schema'd MySQL
+// database (start the app normally first so EnsureCreated() below builds the schema).
+if (args.Length > 0 && args[0] == "migrate-sqlite-to-mysql")
+{
+    var migrateConfig = new ConfigurationBuilder()
+        .AddJsonFile("appsettings.json", optional: false)
+        .AddJsonFile($"appsettings.{Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT") ?? "Development"}.json", optional: true)
+        .AddEnvironmentVariables()
+        .Build();
+    var sqlitePath = args.Length > 1 ? args[1] : "AtmInventory.db";
+    var mysqlConnStr = migrateConfig.GetConnectionString("DefaultConnection")
+        ?? throw new InvalidOperationException("ConnectionStrings:DefaultConnection (MySQL) must be configured to migrate into.");
+    Api.Tools.SqliteToMySqlMigrator.Run(sqlitePath, mysqlConnStr);
+    return;
+}
+
 var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.AddCors(options =>
@@ -25,9 +44,10 @@ builder.Services.AddControllers().AddJsonOptions(options =>
 });
 builder.Services.AddEndpointsApiExplorer();
 
-// Provider chosen by config: "DatabaseProvider": "MySql" | "Sqlite" (default Sqlite for local dev).
-// Production sets DatabaseProvider=MySql + ConnectionStrings:DefaultConnection in appsettings.Production.json.
-var dbProvider = builder.Configuration["DatabaseProvider"] ?? "Sqlite";
+// Provider chosen by config: "DatabaseProvider": "MySql" | "Sqlite" (default MySql — dev and
+// production both run on MySQL now; set ConnectionStrings__DefaultConnection as an environment
+// variable rather than committing real credentials into any appsettings*.json).
+var dbProvider = builder.Configuration["DatabaseProvider"] ?? "MySql";
 var connStr = builder.Configuration.GetConnectionString("DefaultConnection");
 builder.Services.AddDbContext<AppDbContext>(options =>
 {

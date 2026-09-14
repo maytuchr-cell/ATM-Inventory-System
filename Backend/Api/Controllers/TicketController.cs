@@ -1239,7 +1239,9 @@ public class TicketController : ControllerBase
 
         using var stream = new MemoryStream();
         wb.SaveAs(stream);
-        var fileName = $"DHL-Export-{DateTime.Now:yyyyMMdd-HHmmss}.xlsx";
+        // Explicit invariant culture — on a Thai-locale server, "yyyy" in DateTime.Now's default
+        // ToString silently uses the Buddhist calendar (e.g. 2569 instead of 2026).
+        var fileName = $"DHL-Export_{DateTime.Now.ToString("yyyyMMdd_HHmmss", System.Globalization.CultureInfo.InvariantCulture)}.xlsx";
         return File(stream.ToArray(), "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", fileName);
     }
 
