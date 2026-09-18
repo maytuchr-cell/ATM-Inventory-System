@@ -32,7 +32,11 @@ async function doSearch() {
 }
 
 function goBack() {
-    if (document.referrer && document.referrer.includes(window.location.host)) {
+    // The "เปิดดูหน้าเต็ม" link on admin-serials.html opens this page with target="_blank" —
+    // document.referrer is set either way, but a fresh tab has nothing in ITS OWN history to
+    // go back to, so history.back() silently does nothing there. history.length (this tab's own
+    // stack) is what actually tells us whether there's somewhere to go back to.
+    if (history.length > 1) {
         history.back();
     } else {
         window.location.href = 'admin-serials.html';

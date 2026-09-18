@@ -119,10 +119,14 @@
               </div>
               <div class="form-group">
                 <label class="form-label">แหล่งที่มา</label>
-                <select class="form-select" id="csv-source">
+                <select class="form-select" id="csv-source" onchange="onCsvSourceChange()">
                   <option value="GRG">GRG Procurement</option>
                   <option value="LocalVendor">ผู้จำหน่ายในประเทศ</option>
                 </select>
+              </div>
+              <div class="form-group" id="csv-vendor-group" style="display:none;">
+                <label class="form-label">ผู้จำหน่าย</label>
+                <select class="form-select" id="csv-vendor"></select>
               </div>
               <div class="form-group">
                 <label class="form-label">ผู้รับเข้า</label>

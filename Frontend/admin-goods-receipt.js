@@ -19,6 +19,20 @@ async function loadParts() {
 async function loadVendors() {
     allVendors = await api.vendors.getAll({ isActive: true });
 }
+
+function onCsvSourceChange() {
+    const source = document.getElementById('csv-source').value;
+    const group  = document.getElementById('csv-vendor-group');
+    const sel    = document.getElementById('csv-vendor');
+    if (source === 'GRG') {
+        group.style.display = 'none';
+    } else {
+        group.style.display = '';
+        sel.innerHTML = allVendors
+            .filter(v => v.vendorType === 'LOCAL')
+            .map(v => `<option value="${v.id}">${v.name}</option>`).join('');
+    }
+}
 async function loadLocations() {
     allLocations = await api.locations.getAll({ isActive: true });
     const opts = allLocations.map(l => `<option value="${l.id}">${l.name} (${l.code})</option>`).join('');
@@ -281,6 +295,8 @@ async function importFile() {
     const resultDiv  = document.getElementById('csv-result');
 
     if (!locationId) { showToast('กรุณาเลือก Target Location', 'error'); return; }
+    const vendorId = source === 'LocalVendor' ? parseInt(document.getElementById('csv-vendor').value, 10) : null;
+    if (source === 'LocalVendor' && !vendorId) { showToast('กรุณาเลือกผู้จำหน่าย', 'error'); return; }
 
     resultDiv.innerHTML = '<span style="color:var(--text-secondary)">กำลัง import…</span>';
     document.getElementById('btn-import').disabled = true;
@@ -289,7 +305,7 @@ async function importFile() {
         source,
         locationId,
         receivedBy: receivedBy || null,
-        vendorId: null,
+        vendorId,
         refDocument: null,
         handlingCost: 0,
         lines: _parsedLines.map(l => ({

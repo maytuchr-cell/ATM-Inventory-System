@@ -283,6 +283,7 @@
                         <thead>
                             <tr>
                                 <th>ใบคืน</th>
+                                <th>Ticket</th>
                                 <th>ช่าง</th>
                                 <th>อะไหล่ (คืน)</th>
                                 <th>ที่อยู่จัดส่งคืน</th>
@@ -292,7 +293,7 @@
                             </tr>
                         </thead>
                         <tbody id="returns-onhand-tbody">
-                            <tr><td colspan="7" class="empty-state">กำลังเชื่อมต่อ…</td></tr>
+                            <tr><td colspan="8" class="empty-state">กำลังเชื่อมต่อ…</td></tr>
                         </tbody>
                     </table>
                 </div>
@@ -307,6 +308,7 @@
                         <thead>
                             <tr>
                                 <th>ใบคืน</th>
+                                <th>Ticket</th>
                                 <th>ช่าง</th>
                                 <th>อะไหล่ (คืน)</th>
                                 <th>ที่อยู่จัดส่งคืน</th>
@@ -694,7 +696,7 @@
         document.getElementById('returns-badge-count').textContent = rows.length;
         const tbody = document.getElementById('returns-onhand-tbody');
         if (!rows.length) {
-            tbody.innerHTML = `<tr><td colspan="7" class="empty-state">🎉 ไม่มีรายการคืนที่ค้างอยู่</td></tr>`;
+            tbody.innerHTML = `<tr><td colspan="8" class="empty-state">🎉 ไม่มีรายการคืนที่ค้างอยู่</td></tr>`;
             return;
         }
         // 4 steps: รอ (tech submitted, awaiting Admin review) → อนุมัติคืน (Admin confirmed, needs
@@ -741,6 +743,7 @@
             return `
                 <tr>
                     <td><span class="id-chip ticket-id">${batch.returnSlipNo || 'ยังไม่ออกเลข'}</span></td>
+                    <td><span class="id-chip">${tk.externalTicketNo || '—'}</span></td>
                     <td class="fw-600">${tk.techName}</td>
                     <td>${returnLinesHtml(batch)}</td>
                     <td>${batch.returnAddress || '—'}</td>
@@ -777,13 +780,14 @@
         const rows = returnBatchRows(b => b.returnStatus === 'คืน');
         const tbody = document.getElementById('returns-history-tbody');
         if (!rows.length) {
-            tbody.innerHTML = `<tr><td colspan="6" class="empty-state">ยังไม่มีประวัติการคืน</td></tr>`;
+            tbody.innerHTML = `<tr><td colspan="7" class="empty-state">ยังไม่มีประวัติการคืน</td></tr>`;
             return;
         }
         const locale = getLang() === 'th' ? 'th-TH' : 'en-GB';
         tbody.innerHTML = rows.map(({ tk, batch }) => `
             <tr>
                 <td><span class="id-chip">${batch.returnSlipNo || 'ยังไม่ออกเลข'}</span></td>
+                <td><span class="id-chip">${tk.externalTicketNo || '—'}</span></td>
                 <td>${tk.techName || '—'}</td>
                 <td>${returnLinesHtml(batch)}</td>
                 <td>${batch.returnAddress || '—'}</td>
@@ -1128,7 +1132,10 @@
     }
     async function confirmSubstitute(newPartNo) {
         if (!subTarget) return;
-        if (!confirm(`เปลี่ยนอะไหล่เป็น ${newPartNo}?`)) return;
+        // No native confirm() here — clicking a row in the already-opened substitute modal IS
+        // the confirmation. A second confirm() popup is one that a browser can silently suppress
+        // after enough dialogs on the page (Chrome's "Prevent this page from creating additional
+        // dialogs"), which makes every future click here look like nothing happened at all.
         try {
             await api.tickets.substitutePart(subTarget.ticketId, subTarget.batchId, subTarget.lineId, newPartNo);
             closeSubstituteModal();
