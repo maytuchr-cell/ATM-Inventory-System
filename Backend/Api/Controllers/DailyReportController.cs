@@ -38,8 +38,22 @@ public class DailyReportController : ControllerBase
         if (error != null) return BadRequest(new { message = error });
 
         var dateGapWarning = CheckDateGap(file.FileName, parsed!);
+        var fileCheck = CheckReportDate(file.FileName);
         var (rowResults, summary) = Process(parsed!, reconciliation, commit: false, userName: CurrentUser());
-        return Ok(new { rows = rowResults, summary, reconciliation, dateGapWarning });
+
+        // Rows the engine had to skip because the part isn't registered — surfaced so Admin can add
+        // them to Parts Master before confirming instead of discovering it from a per-row note.
+        var knownPartNos = _context.Parts.Select(p => p.PartNo).ToList()
+            .Select(p => p.Trim()).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var unknownParts = rowResults
+            .Where(r => r.MatchType != "PriorToBaseline" && r.MatchType != "AlreadyImported"
+                        && !string.IsNullOrWhiteSpace(r.PartNo) && !knownPartNos.Contains(r.PartNo.Trim()))
+            .GroupBy(r => r.PartNo.Trim(), StringComparer.OrdinalIgnoreCase)
+            .Select(g => new { partNo = g.Key, partName = g.Select(r => r.PartName).FirstOrDefault(n => !string.IsNullOrWhiteSpace(n) && n != "N/A"), rows = g.Count(), qty = g.Sum(r => r.Qty) })
+            .OrderByDescending(x => x.rows)
+            .ToList();
+
+        return Ok(new { rows = rowResults, summary, reconciliation, dateGapWarning, fileCheck, unknownParts });
     }
 
     // POST /DailyReport/confirm — parses and commits all sheets into DB and records a batch.
@@ -52,6 +66,12 @@ public class DailyReportController : ControllerBase
         if (error != null) return BadRequest(new { message = error });
 
         var dateGapWarning = CheckDateGap(file.FileName, parsed!);
+
+        var fileCheck = CheckReportDate(file.FileName);
+        if (fileCheck.DuplicateOf != null)
+            return Conflict(new { message = $"รายงานวันที่ {fileCheck.ReportDate?.ToString("dd MMM yyyy", System.Globalization.CultureInfo.InvariantCulture)} นำเข้าไปแล้วใน Batch #{fileCheck.DuplicateOf.Id} — นำเข้าวันเดียวกันซ้ำไม่ได้", fileCheck });
+        if (fileCheck.NewerBatch != null)
+            return Conflict(new { message = $"ไฟล์นี้เก่ากว่ารายงานล่าสุดที่นำเข้า (Batch #{fileCheck.NewerBatch.Id}) — ต้องนำเข้าเรียงตามวันที่", fileCheck });
 
         bool syncReconcileFlag = (syncReconcile == true) || (syncReconcileForm == true)
             || (Request != null && Request.Query.TryGetValue("syncReconcile", out var qs) && bool.TryParse(qs, out var qsb) && qsb)
@@ -198,6 +218,44 @@ public class DailyReportController : ControllerBase
         }
 
         return null;
+    }
+
+    public record BatchRef(int Id, string FileName, DateTime ImportedAt, string ImportedBy, DateTime? ReportDate);
+    public record ReportDateCheck(DateTime? ReportDate, DateTime? LastReportDate, BatchRef? DuplicateOf, BatchRef? NewerBatch, List<DateTime> MissingDates);
+
+    // DHL names every file "Dataone Daily Report DD Mon YYYY_.xlsx" — the report date lives only in
+    // the file name, so that's what duplicate/backdated checks key on (not the whole name, which a
+    // rename would slip past).
+    private static readonly System.Text.RegularExpressions.Regex ReportDateRx =
+        new(@"(\d{1,2})\s+([A-Za-z]{3})[A-Za-z]*\s+(\d{4})", System.Text.RegularExpressions.RegexOptions.Compiled);
+
+    public static DateTime? ParseReportDate(string? fileName)
+    {
+        if (string.IsNullOrWhiteSpace(fileName)) return null;
+        var m = ReportDateRx.Match(fileName);
+        if (!m.Success) return null;
+        return DateTime.TryParseExact($"{m.Groups[1].Value.PadLeft(2, '0')} {m.Groups[2].Value} {m.Groups[3].Value}", "dd MMM yyyy",
+            System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.None, out var d) ? d.Date : null;
+    }
+
+    // Skipping days is fine (DHL doesn't send a report every day); importing the same report date
+    // twice, or an older date after a newer one, is refused — imports must replay in date order.
+    private ReportDateCheck CheckReportDate(string fileName)
+    {
+        var reportDate = ParseReportDate(fileName);
+        var batches = _context.DailyReportImportBatches.ToList()
+            .Select(b => new BatchRef(b.Id, b.FileName, b.ImportedAt, b.ImportedBy, ParseReportDate(b.FileName)))
+            .Where(b => b.ReportDate != null)
+            .ToList();
+        var last = batches.Count > 0 ? batches.Max(b => b.ReportDate) : null;
+        if (reportDate == null) return new ReportDateCheck(null, last, null, null, new());
+
+        var dup = batches.Where(b => b.ReportDate == reportDate).OrderByDescending(b => b.Id).FirstOrDefault();
+        var newer = batches.Where(b => b.ReportDate > reportDate).OrderByDescending(b => b.ReportDate).FirstOrDefault();
+        var missing = new List<DateTime>();
+        if (last != null && reportDate > last)
+            for (var d = last.Value.AddDays(1); d < reportDate; d = d.AddDays(1)) missing.Add(d);
+        return new ReportDateCheck(reportDate, last, dup, newer, missing);
     }
 
     // GET /DailyReport/history

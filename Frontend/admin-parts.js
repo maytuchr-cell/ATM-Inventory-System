@@ -6,6 +6,16 @@ const PAGE_SIZE = 50;
 
 function resetPage() { currentPage = 1; }
 
+// Stock-level color rule for the "คงเหลือ" (current stock) pill:
+//   current < min           → red    (below minimum, needs reorder)
+//   current <= min + 3      → orange (near minimum, watch)
+//   current > min + 3       → green  (healthy)
+function stockLevelBadgeClass(current, min) {
+  if (current < min) return 'badge-red';
+  if (current <= min + 3) return 'badge-orange';
+  return 'badge-green';
+}
+
 // Downloads current DHL-BKK stock as an .xlsx shaped like DHL's own "Minimum Stock" sheet — for
 // a standalone reconciliation tool to diff against a real Daily Report without any column
 // mapping. A file download rather than a live endpoint on purpose: that tool should never hold
@@ -186,7 +196,7 @@ function renderTable() {
       : `<code title="อะไหล่ไม่มี Serial Number (นับสต็อกตามจำนวนชิ้น)" style="color:var(--text-secondary);">${p.partNo}</code>`;
 
     const stockCellContent = `
-      <div style="font-weight:700;color:${whQty < minQty ? 'var(--red)' : 'var(--text-primary)'};">${whQty.toLocaleString()} <span style="font-size:11px;font-weight:normal;color:var(--text-secondary);">${p.unit || 'ชิ้น'}</span></div>
+      <div><span class="badge ${stockLevelBadgeClass(whQty, minQty)}" style="font-weight:700;font-size:13px;">${whQty.toLocaleString()} <span style="font-size:11px;font-weight:normal;">${p.unit || 'ชิ้น'}</span></span></div>
       ${snCount > 0 ? `
         <div style="font-size:10.5px;color:var(--text-muted);font-weight:normal;line-height:1.2;margin-top:2px;">
           S/N ในคลัง: <strong style="color:var(--text-primary);">${inStockSn}</strong>

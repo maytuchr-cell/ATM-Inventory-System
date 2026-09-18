@@ -12,6 +12,15 @@
         .section-title  { font-size:16px; font-weight:700; color:var(--text-primary); }
         .section-count  { font-size:12px; font-weight:600; background:var(--bg-subtle); color:var(--text-secondary); padding:2px 9px; border-radius:20px; border:1px solid var(--border); }
 
+        /* Collapsible section (DHL export lists) — lets a long page shrink instead of only
+           scrolling internally, since two of these stacked can push the page well past one screen. */
+        .section-collapse-btn { background:none; border:none; padding:4px; margin-right:-2px; cursor:pointer; color:var(--text-secondary); display:flex; align-items:center; border-radius:6px; }
+        .section-collapse-btn:hover { background:var(--bg-subtle); color:var(--text-primary); }
+        .section-collapse-btn svg { transition: transform .15s ease; }
+        .section-head.collapsed .section-collapse-btn svg { transform: rotate(-90deg); }
+        .section-collapsible-body { overflow:hidden; }
+        .section-collapsible-body.collapsed { display:none; }
+
         /* Badge variants */
         .badge-pending  { background:var(--yellow-light); color:var(--yellow); }
         .badge-pending  .badge-dot { background:var(--yellow); }
@@ -225,19 +234,20 @@
                     <table>
                         <thead>
                             <tr>
-                                <th style="width:9%">ใบเบิก</th>
-                                <th style="width:7%">Ticket</th>
-                                <th style="width:10%">ช่าง</th>
-                                <th style="width:14%">อะไหล่</th>
-                                <th style="width:10%">สถานะ</th>
-                                <th style="width:12%">กำหนดรับของ (SLA)</th>
-                                <th style="width:12%">วันที่คืนอะไหล่</th>
-                                <th style="width:16%">การดำเนินการ</th>
-                                <th style="width:10%">รายละเอียด</th>
+                                <th style="width:8%">ใบเบิก</th>
+                                <th style="width:6%">Ticket</th>
+                                <th style="width:9%">ช่าง</th>
+                                <th style="width:13%">อะไหล่</th>
+                                <th style="width:9%">สถานะ</th>
+                                <th style="width:10%" title="สถานะงานจริงจากระบบ Aservice">Status (Ticket)</th>
+                                <th style="width:11%">กำหนดรับของ (SLA)</th>
+                                <th style="width:11%">วันที่คืนอะไหล่</th>
+                                <th style="width:14%">การดำเนินการ</th>
+                                <th style="width:9%">รายละเอียด</th>
                             </tr>
                         </thead>
                         <tbody id="ticketsTableBody">
-                            <tr><td colspan="9" class="empty-state">กำลังเชื่อมต่อเซิร์ฟเวอร์…</td></tr>
+                            <tr><td colspan="10" class="empty-state">กำลังเชื่อมต่อเซิร์ฟเวอร์…</td></tr>
                         </tbody>
                     </table>
                 </div>
@@ -318,7 +328,10 @@
                  export. -->
             <div class="tab-panel" id="tabPanelDhlExport">
             <div class="card" style="margin-bottom:16px;">
-                <div class="section-head" style="flex-wrap:wrap;gap:8px;">
+                <div class="section-head" style="flex-wrap:wrap;gap:8px;" id="dhlexport-wd-head">
+                    <button class="section-collapse-btn" onclick="toggleDhlSection('withdraw')" title="ย่อ/ขยาย" aria-label="ย่อ/ขยายรายการขาเบิก">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
+                    </button>
                     <div class="section-accent"></div>
                     <span class="section-title">📤 รอส่ง DHL — ขาเบิก</span>
                     <span class="section-count" id="dhlexport-wd-count">—</span>
@@ -333,7 +346,7 @@
                         </button>
                     </div>
                 </div>
-                <div class="tbl-wrap tbl-scroll-container" style="max-height: 460px;">
+                <div class="tbl-wrap tbl-scroll-container section-collapsible-body" id="dhlexport-wd-body" style="max-height: 460px;">
                     <table>
                         <thead>
                             <tr>
@@ -351,7 +364,10 @@
                 </div>
             </div>
             <div class="card">
-                <div class="section-head" style="flex-wrap:wrap;gap:8px;">
+                <div class="section-head" style="flex-wrap:wrap;gap:8px;" id="dhlexport-rt-head">
+                    <button class="section-collapse-btn" onclick="toggleDhlSection('return')" title="ย่อ/ขยาย" aria-label="ย่อ/ขยายรายการขาคืน">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
+                    </button>
                     <div class="section-accent"></div>
                     <span class="section-title">📥 รอส่ง DHL — ขาคืน</span>
                     <span class="section-count" id="dhlexport-rt-count">—</span>
@@ -366,7 +382,7 @@
                         </button>
                     </div>
                 </div>
-                <div class="tbl-wrap tbl-scroll-container" style="max-height: 460px;">
+                <div class="tbl-wrap tbl-scroll-container section-collapsible-body" id="dhlexport-rt-body" style="max-height: 460px;">
                     <table>
                         <thead>
                             <tr>
@@ -472,6 +488,21 @@
 <script>
     let cachedTickets = [];
     let rejectTargetId = null;
+    // ExternalTicketNo -> raw aservice_status string from API_KMM (/JobTicket/Technician), for
+    // the "Status (Ticket)" column — the tech's own job-ticket status in Aservice, separate from
+    // batch.status (our internal withdraw workflow state) shown in the "สถานะ" column next to it.
+    // Fetched per unique TechEmail (KMM has no lookup-by-case-no endpoint, only by-technician —
+    // see JobTicketController), so it's a handful of calls, not one per row. Refreshed on load and
+    // on manual refresh only, not on the 15s silent poll — KMM's own login can be slow, and this
+    // status doesn't change second-to-second.
+    let aserviceStatusByCaseNo = {};
+    async function syncAserviceStatuses() {
+        const techEmails = [...new Set(cachedTickets.map(t => t.techEmail).filter(Boolean))];
+        const results = await Promise.all(techEmails.map(email =>
+            api.jobTicket.forTechnician(email).catch(() => [])));
+        results.forEach(jobs => jobs.forEach(j => { aserviceStatusByCaseNo[j.jobNo] = j.aserviceStatus; }));
+        renderTicketsTable();
+    }
     const CONDITION_LABEL = { Good: 'ของดี', Bad: 'ของเสีย', Lost: 'สูญหาย' };
     const CONDITION_COLOR = { Good: 'var(--green)', Bad: 'var(--orange)', Lost: 'var(--red)' };
 
@@ -512,6 +543,7 @@
             renderReturnsInProgress();
             renderReturnsHistory();
             updateDhlExportBadge();
+            if (!silent) syncAserviceStatuses();
             if (document.getElementById('tabPanelDhlExport')?.classList.contains('active')) {
                 renderDhlExportList('withdraw');
                 renderDhlExportList('return');
@@ -521,7 +553,7 @@
             // the admin is actively looking at — only the explicit/first load shows the error.
             if (silent) return;
             document.getElementById('ticketsTableBody').innerHTML =
-                `<tr><td colspan="9" class="empty-state" style="color:var(--red)">${'⚠ ไม่สามารถเชื่อมต่อเซิร์ฟเวอร์ได้'}</td></tr>`;
+                `<tr><td colspan="10" class="empty-state" style="color:var(--red)">${'⚠ ไม่สามารถเชื่อมต่อเซิร์ฟเวอร์ได้'}</td></tr>`;
             document.getElementById('returns-onhand-tbody').innerHTML =
                 `<tr><td colspan="7" class="empty-state" style="color:var(--red)">${'⚠ ไม่สามารถเชื่อมต่อเซิร์ฟเวอร์ได้'}</td></tr>`;
             document.getElementById('returns-history-tbody').innerHTML =
@@ -553,6 +585,11 @@
     function updateDhlExportBadge() {
         document.getElementById('dhlexport-badge-count').textContent =
             dhlExportCandidates('withdraw').length + dhlExportCandidates('return').length;
+    }
+    function toggleDhlSection(kind) {
+        const prefix = kind === 'withdraw' ? 'wd' : 'rt';
+        document.getElementById(`dhlexport-${prefix}-head`).classList.toggle('collapsed');
+        document.getElementById(`dhlexport-${prefix}-body`).classList.toggle('collapsed');
     }
     function dhlExportState(kind) {
         return kind === 'withdraw'
@@ -864,12 +901,12 @@
         const tbody = document.getElementById("ticketsTableBody");
         tbody.innerHTML = "";
         if (!allRows.length) {
-            tbody.innerHTML = `<tr><td colspan="9" class="empty-state">🎉 ${'ไม่มีคำขอเบิกในขณะนี้'}</td></tr>`;
+            tbody.innerHTML = `<tr><td colspan="10" class="empty-state">🎉 ${'ไม่มีคำขอเบิกในขณะนี้'}</td></tr>`;
             renderTktPagination(0, 1);
             return;
         }
         if (!rows.length) {
-            tbody.innerHTML = `<tr><td colspan="9" class="empty-state">ไม่พบใบเบิกที่ตรงกับตัวกรอง</td></tr>`;
+            tbody.innerHTML = `<tr><td colspan="10" class="empty-state">ไม่พบใบเบิกที่ตรงกับตัวกรอง</td></tr>`;
             renderTktPagination(0, 1);
             return;
         }
@@ -879,6 +916,11 @@
         tbody.innerHTML = pageItems.map(({ tk, batch }) => {
             const bBadge = STATUS_BADGE[batch.status] || STATUS_BADGE["รอ"];
             const badge = `<span class="badge ${bBadge.cls}"><span class="badge-dot"></span>${bBadge.label}</span>`;
+
+            const aserviceStatus = aserviceStatusByCaseNo[tk.externalTicketNo];
+            const aserviceBadge = aserviceStatus
+                ? `<span class="badge badge-gray" title="สถานะจากระบบ Aservice">${aserviceStatus}</span>`
+                : `<span style="color:var(--text-muted);font-size:12px;">—</span>`;
 
             // Only a batch still awaiting a stock decision (รอ/รออะไหล่) gets checked for
             // shortage — one already resolved (เบิก/รอส่งเมล DHL/เดินทาง/Reject/Cancel) had its
@@ -973,6 +1015,7 @@
                     <td class="fw-600">${tk.techName}<div class="fs-13" style="color:var(--text-secondary);font-weight:400;">${tk.techDept}</div></td>
                     <td>${partsSummary}</td>
                     <td>${badge}</td>
+                    <td>${aserviceBadge}</td>
                     <td>${etaHtml}</td>
                     <td>${returnedAtHtml}</td>
                     <td>${action}</td>
