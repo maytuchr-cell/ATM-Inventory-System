@@ -1,0 +1,596 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Tech Monitor — ATM Inventory</title>
+  <link rel="stylesheet" href="shared/styles.css?v=105">
+  <style>
+    /* Let the content column shrink below its widest table (flex min-width:auto would otherwise
+       push the whole page sideways); wide tables scroll inside their own panel instead. */
+    .main-content, .page-body { min-width:0; }
+    .tm-panel .tbl-wrap { overflow-x:auto; }
+
+    /* ── KPI cards ── */
+    .tm-cards { display:grid; grid-template-columns:repeat(auto-fit,minmax(200px,1fr)); gap:14px; margin-bottom:16px; }
+    .tm-card { position:relative; background:var(--bg-card); border:1px solid var(--border); border-radius:14px; padding:16px 18px 16px 20px; box-shadow:var(--shadow-card); cursor:pointer; overflow:hidden; transition:transform .15s, box-shadow .15s; }
+    .tm-card:hover { transform:translateY(-2px); box-shadow:0 6px 18px rgba(0,0,0,.08); }
+    .tm-card::before { content:''; position:absolute; left:0; top:0; bottom:0; width:4px; background:var(--border); }
+    .tm-card.alert::before { background:var(--red); }
+    .tm-card.warn::before { background:var(--orange); }
+    .tm-card.ok::before { background:var(--green); }
+    .tm-card .top { display:flex; align-items:center; justify-content:space-between; gap:8px; }
+    .tm-card .lbl { font-size:12px; font-weight:600; color:var(--text-secondary); }
+    .tm-card .ic { font-size:18px; opacity:.85; }
+    .tm-card .val { font-size:28px; font-weight:800; line-height:1.1; margin-top:8px; font-variant-numeric:tabular-nums; }
+    .tm-card.alert .val { color:var(--red); }
+    .tm-card.warn .val { color:var(--orange); }
+    .tm-card .sub { font-size:11.5px; color:var(--text-muted); margin-top:4px; }
+
+    /* ── Filter bar ── */
+    .tm-filters { background:var(--bg-card); border:1px solid var(--border); border-radius:14px; padding:14px 16px; margin-bottom:16px; box-shadow:var(--shadow-card); }
+    .tm-filter-row { display:flex; flex-wrap:wrap; gap:10px; align-items:flex-end; }
+    .tm-f { display:flex; flex-direction:column; gap:5px; }
+    .tm-f label { font-size:11px; font-weight:700; color:var(--text-muted); letter-spacing:.02em; }
+    .tm-f .form-input, .tm-f .form-select { padding:8px 11px; font-size:13px; min-width:150px; }
+    .tm-f.grow { flex:1 1 240px; }
+    .tm-f.grow .form-input { width:100%; }
+    .tm-check { display:inline-flex; align-items:center; gap:7px; font-size:13px; font-weight:600; color:var(--text-primary); padding:8px 12px; border:1.5px solid var(--border); border-radius:9px; cursor:pointer; user-select:none; background:var(--bg-input); }
+    .tm-check input { accent-color:var(--orange); width:15px; height:15px; }
+    .tm-active-filters { display:flex; flex-wrap:wrap; align-items:center; gap:6px; margin-top:10px; font-size:12px; color:var(--text-secondary); }
+    .tm-active-filters:empty { display:none; }
+    .tm-chip { display:inline-flex; align-items:center; gap:5px; background:var(--orange-light); color:var(--orange); border-radius:20px; padding:3px 10px; font-weight:600; }
+    .tm-clear { background:none; border:none; color:var(--text-muted); font-family:inherit; font-size:12px; font-weight:600; cursor:pointer; text-decoration:underline; }
+
+    /* ── Tabs ── */
+    .tm-tabs { display:flex; gap:4px; padding:4px; background:var(--bg-subtle); border:1px solid var(--border); border-radius:12px; margin-bottom:14px; overflow-x:auto; scrollbar-width:none; }
+    .tm-tabs::-webkit-scrollbar { display:none; }
+    .tm-tab { flex:0 0 auto; border:none; background:none; padding:9px 14px; border-radius:9px; font-family:inherit; font-size:13px; font-weight:600; color:var(--text-secondary); cursor:pointer; display:inline-flex; align-items:center; gap:7px; white-space:nowrap; }
+    .tm-tab:hover { color:var(--text-primary); }
+    .tm-tab.active { background:var(--bg-card); color:var(--orange); box-shadow:var(--shadow-card); }
+    .tm-tab .cnt { min-width:20px; padding:1px 7px; border-radius:10px; background:var(--bg-card); border:1px solid var(--border); font-size:11px; font-weight:700; text-align:center; }
+    .tm-tab.active .cnt { background:var(--orange); border-color:var(--orange); color:#fff; }
+
+    /* ── Panels / tables ── */
+    .tm-panel { background:var(--bg-card); border:1px solid var(--border); border-radius:14px; box-shadow:var(--shadow-card); overflow:hidden; }
+    .tm-panel-head { display:flex; align-items:center; justify-content:space-between; gap:10px; padding:12px 16px; border-bottom:1px solid var(--border); background:var(--bg-subtle); flex-wrap:wrap; }
+    .tm-hint { font-size:12px; color:var(--text-muted); }
+    .tm-panel table td { vertical-align:top; }
+
+    .tm-who { display:flex; flex-direction:column; gap:2px; min-width:150px; }
+    .tm-who .name { font-weight:700; font-size:13.5px; color:var(--text-primary); }
+    .tm-who .tel { font-size:12.5px; font-weight:700; color:var(--orange); text-decoration:none; }
+    .tm-who .tel:hover { text-decoration:underline; }
+    .tm-who .notel { font-size:11.5px; color:var(--text-muted); }
+    .tm-who .dept { font-size:11px; color:var(--text-muted); }
+
+    .tm-sev { display:inline-flex; align-items:center; gap:5px; padding:4px 10px; border-radius:20px; font-size:12px; font-weight:700; white-space:nowrap; }
+    .tm-sev.crit { background:#fee2e2; color:#b91c1c; }
+    .tm-sev.high { background:#ffedd5; color:#c2410c; }
+    .tm-sev.mid  { background:#fef3c7; color:#a16207; }
+    .tm-sev.low  { background:var(--bg-subtle); color:var(--text-secondary); }
+
+    .tm-parts { display:flex; flex-direction:column; gap:2px; font-size:12.5px; }
+    .tm-parts .pn { color:var(--text-muted); font-size:11px; }
+    .tm-small { font-size:12px; color:var(--text-secondary); }
+
+    .tm-rank { display:flex; align-items:center; gap:10px; }
+    .tm-rank-track { flex:1; height:8px; border-radius:5px; background:var(--bg-subtle); overflow:hidden; min-width:70px; }
+    .tm-rank-fill { height:100%; background:var(--orange); border-radius:5px; }
+    .tm-rank-n { font-weight:700; font-size:13px; min-width:30px; text-align:right; }
+
+    .tm-badge { display:inline-block; padding:3px 10px; border-radius:12px; font-size:11.5px; font-weight:700; white-space:nowrap; }
+    .tm-badge.ok { background:#dcfce7; color:#15803d; }
+    .tm-badge.miss { background:#fee2e2; color:#b91c1c; }
+    .tm-badge.info { background:var(--bg-subtle); color:var(--text-secondary); font-weight:600; }
+
+    .btn-follow { display:inline-flex; align-items:center; gap:5px; background:var(--orange); color:#fff; border:none; border-radius:8px; padding:7px 12px; font-family:inherit; font-size:12px; font-weight:700; cursor:pointer; white-space:nowrap; text-decoration:none; }
+    .btn-follow:hover { background:var(--orange-hover); }
+    .btn-follow.ghost { background:var(--bg-card); color:var(--text-primary); border:1.5px solid var(--border); }
+    .btn-follow.ghost:hover { border-color:var(--orange); color:var(--orange); }
+
+    /* ── Detail modal ── */
+    .tm-overlay { display:none; position:fixed; inset:0; background:rgba(15,23,42,.5); z-index:200; align-items:center; justify-content:center; padding:20px; }
+    .tm-overlay.open { display:flex; }
+    .tm-modal { background:var(--bg-card); border-radius:18px; width:100%; max-width:600px; max-height:90vh; overflow-y:auto; box-shadow:0 24px 60px rgba(0,0,0,.25); }
+    .tm-modal.wide { max-width:780px; }
+    .tm-modal-top { display:flex; justify-content:space-between; align-items:center; padding:16px 22px 0; }
+    .tm-modal-kind { font-size:12px; font-weight:700; color:var(--text-muted); letter-spacing:.03em; }
+    .tm-x { background:var(--bg-subtle); border:none; width:32px; height:32px; border-radius:50%; cursor:pointer; font-size:15px; color:var(--text-secondary); }
+    .tm-x:hover { background:var(--border); }
+
+    /* Priority 1: who + phone */
+    .tm-hero { margin:12px 22px 0; padding:18px; border-radius:14px; background:linear-gradient(135deg, var(--orange-light), var(--bg-subtle)); border:1px solid var(--border); display:flex; gap:16px; align-items:center; flex-wrap:wrap; }
+    .tm-avatar { width:56px; height:56px; border-radius:50%; background:var(--orange); color:#fff; display:grid; place-items:center; font-size:24px; font-weight:800; flex:0 0 auto; }
+    .tm-hero-main { flex:1 1 200px; min-width:0; }
+    .tm-hero-name { font-size:21px; font-weight:800; color:var(--text-primary); line-height:1.2; }
+    .tm-hero-dept { display:inline-block; margin-top:4px; font-size:11.5px; font-weight:700; color:var(--text-secondary); background:var(--bg-card); border:1px solid var(--border); border-radius:12px; padding:2px 9px; }
+    .tm-hero-phone { display:flex; align-items:center; gap:8px; margin-top:10px; flex-wrap:wrap; }
+    .tm-hero-phone .num { font-size:24px; font-weight:800; color:var(--orange); letter-spacing:.02em; text-decoration:none; font-variant-numeric:tabular-nums; }
+    .tm-hero-phone .none { font-size:14px; font-weight:600; color:var(--text-muted); }
+    .tm-hero-sub { font-size:12px; color:var(--text-secondary); margin-top:6px; word-break:break-all; }
+    .tm-hero-actions { display:flex; flex-direction:column; gap:8px; }
+
+    /* Priority 2: status */
+    .tm-status { margin:12px 22px 0; padding:12px 14px; border-radius:12px; display:flex; align-items:center; gap:12px; font-size:13px; }
+    .tm-status.crit { background:#fee2e2; color:#991b1b; }
+    .tm-status.high { background:#ffedd5; color:#9a3412; }
+    .tm-status.mid  { background:#fef3c7; color:#854d0e; }
+    .tm-status.ok   { background:#dcfce7; color:#166534; }
+    .tm-status .big { font-size:20px; font-weight:800; white-space:nowrap; }
+
+    /* Priority 3+: details */
+    .tm-section { margin:16px 22px 0; }
+    .tm-section-t { font-size:11.5px; font-weight:700; color:var(--text-muted); letter-spacing:.03em; margin-bottom:8px; }
+    .tm-grid { display:grid; grid-template-columns:repeat(2, minmax(0,1fr)); gap:10px 18px; background:var(--bg-subtle); border:1px solid var(--border); border-radius:12px; padding:14px; }
+    .tm-grid .k { font-size:11px; color:var(--text-muted); margin-bottom:2px; }
+    .tm-grid .v { font-size:13px; font-weight:600; color:var(--text-primary); word-break:break-word; }
+    .tm-partlist { border:1px solid var(--border); border-radius:12px; overflow:hidden; }
+    .tm-partlist .row { display:flex; justify-content:space-between; gap:10px; padding:9px 14px; font-size:13px; border-bottom:1px solid var(--border); }
+    .tm-partlist .row:last-child { border-bottom:none; }
+    .tm-partlist .q { font-weight:800; white-space:nowrap; }
+    .tm-note { margin:12px 22px 0; font-size:12.5px; padding:10px 12px; border-radius:10px; background:var(--orange-light); color:var(--orange); font-weight:600; }
+    .tm-modal-foot { display:flex; justify-content:flex-end; gap:8px; padding:16px 22px 20px; margin-top:16px; border-top:1px solid var(--border); flex-wrap:wrap; }
+
+    .tm-batch { border:1px solid var(--border); border-radius:12px; padding:10px 12px; margin-bottom:10px; font-size:12.5px; }
+    .tm-batch-head { display:flex; justify-content:space-between; gap:8px; flex-wrap:wrap; margin-bottom:6px; }
+    .tm-batch table { width:100%; font-size:12px; }
+    .tm-batch td, .tm-batch th { padding:3px 6px; }
+
+    @media (max-width: 640px) {
+      .tm-grid { grid-template-columns:1fr; }
+      .tm-hero-actions { flex-direction:row; width:100%; }
+      .tm-f .form-input, .tm-f .form-select { min-width:0; width:100%; }
+      .tm-f { flex:1 1 45%; }
+    }
+  </style>
+</head>
+<body>
+<div class="app-layout">
+  <div id="sidebar-root"></div>
+  <div class="main-content">
+
+    <div class="topbar">
+      <div>
+        <div class="topbar-title">ติดตามอะไหล่ค้างที่ช่าง</div>
+        <div class="topbar-sub">ใครยังไม่กดรับอะไหล่ ใครค้างคืนเกินกำหนด และงานที่ค้างอยู่ฝั่ง Admin เอง</div>
+      </div>
+      <button class="btn btn-secondary" onclick="loadMonitor()">⟳ รีเฟรช</button>
+    </div>
+
+    <div class="page-body">
+      <div class="tm-cards" id="tm-cards"></div>
+
+      <!-- Filters -->
+      <div class="tm-filters">
+        <div class="tm-filter-row">
+          <div class="tm-f grow">
+            <label>ค้นหา</label>
+            <input class="form-input" id="tm-search" placeholder="🔍 ชื่อช่าง, เบอร์โทร, เลข Ticket, เลขใบเบิก..." oninput="renderAll()">
+          </div>
+          <div class="tm-f">
+            <label>แผนก / โซน</label>
+            <select class="form-select" id="tm-dept" onchange="renderAll()"><option value="">ทั้งหมด</option></select>
+          </div>
+          <div class="tm-f">
+            <label>ความเร่งด่วน</label>
+            <select class="form-select" id="tm-sev" onchange="renderAll()">
+              <option value="0">ทั้งหมด</option>
+              <option value="1">เลยกำหนด 1 วันขึ้นไป</option>
+              <option value="3">เลยกำหนด 3 วันขึ้นไป</option>
+              <option value="7">เลยกำหนด 7 วันขึ้นไป</option>
+            </select>
+          </div>
+          <div class="tm-f">
+            <label>เรียงตาม</label>
+            <select class="form-select" id="tm-sort" onchange="renderAll()">
+              <option value="late">ค้างนานที่สุดก่อน</option>
+              <option value="name">ชื่อช่าง ก → ฮ</option>
+            </select>
+          </div>
+          <div class="tm-f">
+            <label>กำหนดคืนภายใน</label>
+            <select class="form-select" id="tm-due-days" onchange="loadMonitor()">
+              <option value="7">7 วัน</option>
+              <option value="14" selected>14 วัน</option>
+              <option value="30">30 วัน</option>
+              <option value="60">60 วัน</option>
+            </select>
+          </div>
+          <label class="tm-check"><input type="checkbox" id="tm-hasphone" onchange="renderAll()"> เฉพาะที่มีเบอร์โทร</label>
+        </div>
+        <div class="tm-active-filters" id="tm-active-filters"></div>
+      </div>
+
+      <div class="tm-tabs">
+        <button class="tm-tab active" id="tm-tab-receive" onclick="switchTab('receive')">📦 ยังไม่กดรับอะไหล่ <span class="cnt" id="cnt-receive">0</span></button>
+        <button class="tm-tab" id="tm-tab-return" onclick="switchTab('return')">⏰ ค้างคืนเกินกำหนด <span class="cnt" id="cnt-return">0</span></button>
+        <button class="tm-tab" id="tm-tab-holders" onclick="switchTab('holders')">🏅 อันดับช่างที่ถืออะไหล่ <span class="cnt" id="cnt-holders">0</span></button>
+        <button class="tm-tab" id="tm-tab-byTech" onclick="switchTab('byTech')">📊 สถานะการคืนรายช่าง <span class="cnt" id="cnt-byTech">0</span></button>
+        <button class="tm-tab" id="tm-tab-admin" onclick="switchTab('admin')">🗂 ค้างที่ Admin <span class="cnt" id="cnt-admin">0</span></button>
+      </div>
+
+      <div class="tm-panel" id="panel-receive">
+        <div class="tm-panel-head"><span class="tm-hint">อะไหล่ควรถึงมือช่างตาม SLA แล้ว แต่ช่างยังไม่กดยืนยันรับของ — อาจลืมกด หรือของยังไม่ถึงจริง</span></div>
+        <div class="tbl-wrap"><table>
+          <thead><tr><th>ช่าง / เบอร์โทร</th><th>เลยกำหนด</th><th>อะไหล่</th><th>ใบเบิก / Ticket</th><th>SLA · ควรถึงเมื่อ</th><th></th></tr></thead>
+          <tbody id="tbody-receive"></tbody>
+        </table></div>
+      </div>
+
+      <div class="tm-panel" id="panel-return" style="display:none;">
+        <div class="tm-panel-head"><span class="tm-hint">นับทุกใบเบิกที่รับของแล้วแต่ยังไม่คืน ยกเว้นใบที่ระบุว่า "เก็บไว้ใช้" (Keep)</span></div>
+        <div class="tbl-wrap"><table>
+          <thead><tr><th>ช่าง / เบอร์โทร</th><th>เกินกำหนด</th><th>อะไหล่</th><th>ใบเบิก / Ticket</th><th>รับของเมื่อ · ถือมาแล้ว</th><th></th></tr></thead>
+          <tbody id="tbody-return"></tbody>
+        </table></div>
+      </div>
+
+      <div class="tm-panel" id="panel-holders" style="display:none;">
+        <div class="tm-panel-head"><span class="tm-hint">ช่างที่ถืออะไหล่ค้างอยู่ทั้งหมด (ยังไม่คืน) — ใช้ตัดสินว่าควรตามใครก่อน</span></div>
+        <div class="tbl-wrap"><table>
+          <thead><tr><th>ช่าง / เบอร์โทร</th><th style="min-width:160px;">จำนวนใบเบิกค้าง</th><th>เกินกำหนด</th><th>จำนวนชิ้น</th><th>ค้างนานสุด</th></tr></thead>
+          <tbody id="tbody-holders"></tbody>
+        </table></div>
+      </div>
+
+      <div class="tm-panel" id="panel-byTech" style="display:none;">
+        <div class="tm-panel-head">
+          <span class="tm-hint">เทียบจำนวนที่ช่างเบิกไปกับที่คืนแล้ว (ไม่รวมใบประเภท "เก็บไว้ใช้")</span>
+          <select class="form-select" id="tm-return-filter" onchange="renderAll()" style="width:auto;padding:7px 11px;font-size:13px;">
+            <option value="outstanding" selected>ยังคืนไม่ครบ</option>
+            <option value="complete">คืนครบแล้ว</option>
+            <option value="all">ทั้งหมด</option>
+          </select>
+        </div>
+        <div class="tbl-wrap"><table>
+          <thead><tr><th>ช่าง / เบอร์โทร</th><th>สถานะ</th><th style="min-width:150px;">ความคืบหน้า</th><th>เบิก</th><th>คืนแล้ว</th><th>ถึงคลัง</th><th>ยังขาด</th><th></th></tr></thead>
+          <tbody id="tbody-byTech"></tbody>
+        </table></div>
+      </div>
+
+      <div class="tm-panel" id="panel-admin" style="display:none;">
+        <div class="tm-panel-head"><span class="tm-hint">งานที่รอ Admin ดำเนินการ ไม่ใช่รอช่าง — รออนุมัติ หรืออนุมัติแล้วแต่ยังไม่ได้ส่งเมลแจ้ง DHL</span></div>
+        <div class="tbl-wrap"><table>
+          <thead><tr><th>ขั้นตอนที่ค้าง</th><th>รอมาแล้ว</th><th>ช่าง</th><th>เอกสาร / Ticket</th><th>ค้างตั้งแต่</th><th></th></tr></thead>
+          <tbody id="tbody-admin"></tbody>
+        </table></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Detail modal -->
+<div class="tm-overlay" id="tm-overlay" onclick="if(event.target===this)closeDetail()">
+  <div class="tm-modal" id="tm-modal"></div>
+</div>
+
+<script src="https://code.iconify.design/iconify-icon/2.1.0/iconify-icon.min.js"></script>
+<script src="shared/translations.js?v=105"></script>
+<script src="shared/toast.js?v=105"></script>
+<script src="shared/api.js?v=105"></script>
+<script src="shared/layout.js?v=105"></script>
+<script>
+    let data = null;
+    const TABS = ['receive', 'return', 'holders', 'byTech', 'admin'];
+
+    function switchTab(next) {
+        TABS.forEach(k => {
+            document.getElementById('tm-tab-' + k).classList.toggle('active', k === next);
+            document.getElementById('panel-' + k).style.display = k === next ? '' : 'none';
+        });
+    }
+
+    const esc = s => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+    const fmtDate = d => d ? new Date(d).toLocaleString('th-TH', { dateStyle: 'medium', timeStyle: 'short' }) : '—';
+    const dash = s => s ? esc(s) : '<span class="text-muted">—</span>';
+    // Ticket.TechEmail holds a real address for locally-created techs but an employee code
+    // (e.g. "0110030") for anything synced from KMM, which would make a mailto: link dead.
+    const isEmail = s => !!s && s.includes('@');
+
+    function durLabel(hours) {
+        if (hours == null) return '—';
+        if (hours < 24) return `${Math.round(hours)} ชม.`;
+        const d = Math.floor(hours / 24), h = Math.round(hours % 24);
+        return h ? `${d} วัน ${h} ชม.` : `${d} วัน`;
+    }
+    function sevClass(days) { return days >= 7 ? 'crit' : days >= 3 ? 'high' : days >= 1 ? 'mid' : 'low'; }
+    function sevBadge(days, text) { return `<span class="tm-sev ${sevClass(days)}">${days >= 3 ? '⚠️ ' : ''}${text}</span>`; }
+
+    function whoCell(r) {
+        const tel = r.tel
+            ? `<a class="tel" href="tel:${esc(r.tel)}" onclick="event.stopPropagation()">📞 ${esc(r.tel)}</a>`
+            : `<span class="notel">ไม่มีเบอร์ในระบบ</span>`;
+        return `<div class="tm-who"><span class="name">${dash(r.techName)}</span>${tel}${r.techDept ? `<span class="dept">${esc(r.techDept)}</span>` : ''}</div>`;
+    }
+    function partsHtml(parts) {
+        if (!parts || !parts.length) return '<span class="text-muted">—</span>';
+        return `<div class="tm-parts">${parts.map(p => `<span>${esc(p.partName)} <b>×${p.qty}</b> <span class="pn">${esc(p.partNo)}</span></span>`).join('')}</div>`;
+    }
+    const docCell = r => `<div class="tm-small"><div><b>${dash(r.slipNo)}</b></div><div>${dash(r.caseNo)}</div></div>`;
+
+    // ── Filtering ── every tab shares the same filter bar; rows keep their ORIGINAL index so the
+    // detail buttons still open the right record after filtering/sorting.
+    const lateDays = {
+        receive: r => (r.hoursOverdue ?? 0) / 24,
+        return:  r => r.daysOverdue ?? 0,
+        admin:   r => (r.hoursWaiting ?? 0) / 24,
+        holders: r => Math.max(0, (r.oldestDaysHeld ?? 0) - (data?.returnDueDays ?? 0)),
+        byTech:  () => 0,
+    };
+    function fv(id) { return document.getElementById(id).value; }
+    function passes(kind, r) {
+        const q = fv('tm-search').trim().toLowerCase();
+        if (q && ![r.techName, r.techDept, r.tel, r.caseNo, r.slipNo, ...(r.batches || []).map(b => b.caseNo)]
+                .some(v => v && String(v).toLowerCase().includes(q))) return false;
+        const dept = fv('tm-dept');
+        if (dept && r.techDept !== dept) return false;
+        const sev = +fv('tm-sev');
+        if (sev && kind !== 'byTech' && lateDays[kind](r) < sev) return false;
+        if (document.getElementById('tm-hasphone').checked && kind !== 'admin' && !r.tel) return false;
+        return true;
+    }
+    function rowsFor(kind, list) {
+        const rows = list.map((r, i) => [r, i]).filter(([r]) => passes(kind, r));
+        if (fv('tm-sort') === 'name') rows.sort(([a], [b]) => (a.techName || '').localeCompare(b.techName || '', 'th'));
+        return rows;
+    }
+
+    function renderActiveFilters() {
+        const chips = [];
+        const q = fv('tm-search').trim();
+        if (q) chips.push(`ค้นหา: ${esc(q)}`);
+        if (fv('tm-dept')) chips.push(`แผนก: ${esc(fv('tm-dept'))}`);
+        if (+fv('tm-sev')) chips.push(`เลยกำหนด ≥ ${fv('tm-sev')} วัน`);
+        if (document.getElementById('tm-hasphone').checked) chips.push('มีเบอร์โทร');
+        document.getElementById('tm-active-filters').innerHTML = chips.length
+            ? `กำลังกรอง: ${chips.map(c => `<span class="tm-chip">${c}</span>`).join('')} <button class="tm-clear" onclick="clearFilters()">ล้างตัวกรอง</button>`
+            : '';
+    }
+    function clearFilters() {
+        document.getElementById('tm-search').value = '';
+        document.getElementById('tm-dept').value = '';
+        document.getElementById('tm-sev').value = '0';
+        document.getElementById('tm-hasphone').checked = false;
+        renderAll();
+    }
+    function fillDeptOptions() {
+        const sel = document.getElementById('tm-dept');
+        const current = sel.value;
+        const depts = [...new Set([data.overdueReceive, data.overdueReturn, data.topHolders, data.returnByTech, data.adminPending]
+            .flat().map(r => r.techDept).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'th'));
+        sel.innerHTML = '<option value="">ทั้งหมด</option>' + depts.map(d => `<option value="${esc(d)}">${esc(d)}</option>`).join('');
+        sel.value = depts.includes(current) ? current : '';
+    }
+
+    function renderAll() {
+        if (!data) return;
+        renderActiveFilters();
+        renderCards(); renderReceive(); renderReturn(); renderHolders(); renderByTech(); renderAdmin();
+    }
+
+    async function loadMonitor() {
+        try {
+            data = await api.tickets.techMonitor(fv('tm-due-days'));
+            fillDeptOptions();
+            renderAll();
+        } catch (e) {
+            showToast?.(e.message || 'โหลดข้อมูลไม่สำเร็จ', 'error');
+        }
+    }
+
+    function renderCards() {
+        const s = data.summary;
+        const card = (cls, ic, lbl, val, sub, tab) => `
+            <div class="tm-card ${cls}" onclick="switchTab('${tab}')" title="คลิกเพื่อดูรายการ">
+                <div class="top"><span class="lbl">${lbl}</span><span class="ic">${ic}</span></div>
+                <div class="val">${val.toLocaleString()}</div>
+                <div class="sub">${sub}</div>
+            </div>`;
+        document.getElementById('tm-cards').innerHTML =
+            card(s.overdueReceiveCount ? 'alert' : 'ok', '📦', 'ยังไม่กดรับอะไหล่', s.overdueReceiveCount, 'ใบเบิกที่ของควรถึงมือช่างแล้ว', 'receive') +
+            card(s.overdueReturnCount ? 'alert' : 'ok', '⏰', `ค้างคืนเกิน ${data.returnDueDays} วัน`, s.overdueReturnCount, `จาก ${s.heldBatchCount} ใบเบิกที่ยังไม่คืน`, 'return') +
+            card(s.adminPendingCount ? 'warn' : 'ok', '🗂', 'ค้างที่ Admin', s.adminPendingCount, 'รออนุมัติ / รอส่งเมล DHL', 'admin') +
+            card('', '🔧', 'อะไหล่ในมือช่าง', s.heldPartQty, `ชิ้น · ช่าง ${s.techHoldingCount} คน`, 'holders');
+        document.getElementById('cnt-receive').textContent = rowsFor('receive', data.overdueReceive).length;
+        document.getElementById('cnt-return').textContent  = rowsFor('return', data.overdueReturn).length;
+        document.getElementById('cnt-holders').textContent = rowsFor('holders', data.topHolders).length;
+        document.getElementById('cnt-byTech').textContent  = rowsFor('byTech', data.returnByTech).filter(([t]) => !t.complete).length;
+        document.getElementById('cnt-admin').textContent   = rowsFor('admin', data.adminPending).length;
+    }
+
+    const emptyRow = (cols, text) => `<tr><td colspan="${cols}" class="empty-state">${text}</td></tr>`;
+    const filtered = () => !!(fv('tm-search').trim() || fv('tm-dept') || +fv('tm-sev') || document.getElementById('tm-hasphone').checked);
+
+    function renderReceive() {
+        const rows = rowsFor('receive', data.overdueReceive);
+        document.getElementById('tbody-receive').innerHTML = rows.length ? rows.map(([r, i]) => `
+            <tr>
+                <td>${whoCell(r)}</td>
+                <td>${sevBadge(r.hoursOverdue / 24, durLabel(r.hoursOverdue))}</td>
+                <td>${partsHtml(r.parts)}</td>
+                <td>${docCell(r)}</td>
+                <td class="tm-small">${r.slaAssumed ? '<span class="text-muted">ไม่มี SLA (คิดตาม NBD17)</span>' : dash(r.sla)}<div>${fmtDate(r.deadline)}</div></td>
+                <td><button class="btn-follow" onclick="showDetail('receive',${i})">ดูรายละเอียด</button></td>
+            </tr>`).join('')
+            : emptyRow(6, filtered() ? 'ไม่พบรายการที่ตรงกับตัวกรอง' : 'ไม่มีใบเบิกที่ช่างค้างกดรับ 🎉');
+    }
+
+    function renderReturn() {
+        const rows = rowsFor('return', data.overdueReturn);
+        document.getElementById('tbody-return').innerHTML = rows.length ? rows.map(([r, i]) => `
+            <tr>
+                <td>${whoCell(r)}</td>
+                <td>${sevBadge(r.daysOverdue, `+${r.daysOverdue} วัน`)}</td>
+                <td>${partsHtml(r.parts)}</td>
+                <td>${docCell(r)}</td>
+                <td class="tm-small">${fmtDate(r.receivedAt)}<div>ถือมาแล้ว ${r.daysHeld} วัน</div></td>
+                <td><button class="btn-follow" onclick="showDetail('return',${i})">ดูรายละเอียด</button></td>
+            </tr>`).join('')
+            : emptyRow(6, filtered() ? 'ไม่พบรายการที่ตรงกับตัวกรอง' : 'ไม่มีใบเบิกที่ค้างคืนเกินกำหนด 🎉');
+    }
+
+    function renderHolders() {
+        const rows = rowsFor('holders', data.topHolders);
+        const max = rows.length ? Math.max(...rows.map(([h]) => h.batchCount)) : 0;
+        document.getElementById('tbody-holders').innerHTML = rows.length ? rows.map(([h]) => `
+            <tr>
+                <td>${whoCell(h)}</td>
+                <td><div class="tm-rank"><div class="tm-rank-track"><div class="tm-rank-fill" style="width:${max ? h.batchCount / max * 100 : 0}%"></div></div><span class="tm-rank-n">${h.batchCount}</span></div></td>
+                <td>${h.overdueCount ? sevBadge(7, `${h.overdueCount} ใบ`) : '<span class="tm-sev low">0</span>'}</td>
+                <td><b>${h.partQty}</b> ชิ้น</td>
+                <td>${h.oldestDaysHeld > data.returnDueDays ? sevBadge(h.oldestDaysHeld - data.returnDueDays, `${h.oldestDaysHeld} วัน`) : `${h.oldestDaysHeld} วัน`}</td>
+            </tr>`).join('')
+            : emptyRow(5, filtered() ? 'ไม่พบรายการที่ตรงกับตัวกรอง' : 'ไม่มีช่างที่ถืออะไหล่ค้างอยู่ 🎉');
+    }
+
+    function progressBar(done, total) {
+        const pct = total ? Math.round(done / total * 100) : 100;
+        return `<div class="tm-rank"><div class="tm-rank-track"><div class="tm-rank-fill" style="width:${pct}%;background:${pct >= 100 ? 'var(--green)' : 'var(--orange)'}"></div></div><span class="tm-rank-n" style="font-size:12px;">${pct}%</span></div>`;
+    }
+
+    function renderByTech() {
+        const mode = fv('tm-return-filter');
+        const rows = rowsFor('byTech', data.returnByTech).filter(([t]) => mode === 'all' || (mode === 'complete' ? t.complete : !t.complete));
+        const empty = filtered() ? 'ไม่พบรายการที่ตรงกับตัวกรอง'
+            : mode === 'complete' ? 'ยังไม่มีช่างที่คืนครบ' : mode === 'outstanding' ? 'ไม่มีช่างที่ยังคืนไม่ครบ 🎉' : 'ไม่พบข้อมูล';
+        document.getElementById('tbody-byTech').innerHTML = rows.length ? rows.map(([t, i]) => `
+            <tr>
+                <td>${whoCell(t)}</td>
+                <td>${t.complete ? '<span class="tm-badge ok">✓ คืนครบ</span>' : `<span class="tm-badge miss">ยังขาด ${t.outstandingQty} ชิ้น</span>`}</td>
+                <td>${progressBar(t.returnedQty, t.withdrawnQty)}</td>
+                <td>${t.withdrawnQty}</td>
+                <td>${t.returnedQty}</td>
+                <td>${t.receivedBackQty}</td>
+                <td style="font-weight:800;color:${t.outstandingQty ? 'var(--red)' : 'inherit'};">${t.outstandingQty}</td>
+                <td><button class="btn-follow ghost" onclick="showTechDetail(${i})">ดูรายละเอียด</button></td>
+            </tr>`).join('')
+            : emptyRow(8, empty);
+    }
+
+    function renderAdmin() {
+        const rows = rowsFor('admin', data.adminPending);
+        document.getElementById('tbody-admin').innerHTML = rows.length ? rows.map(([r]) => `
+            <tr>
+                <td style="font-size:13px;font-weight:700;">${dash(r.stage)}</td>
+                <td>${sevBadge(r.hoursWaiting / 24, durLabel(r.hoursWaiting))}</td>
+                <td><div class="tm-who"><span class="name">${dash(r.techName)}</span>${r.techDept ? `<span class="dept">${esc(r.techDept)}</span>` : ''}</div></td>
+                <td>${docCell(r)}</td>
+                <td class="tm-small">${fmtDate(r.since)}</td>
+                <td><a class="btn-follow ghost" href="admin-tickets.html">ไปจัดการ →</a></td>
+            </tr>`).join('')
+            : emptyRow(6, filtered() ? 'ไม่พบรายการที่ตรงกับตัวกรอง' : 'ไม่มีงานค้างที่ฝั่ง Admin 🎉');
+    }
+
+    // ── Detail modal — ordered by what Admin needs first to chase someone:
+    //    1) who + phone (big, one-tap call/copy)  2) how late  3) document details  4) parts
+    function heroHtml(r) {
+        const initial = (r.techName || '?').trim().charAt(0);
+        const phone = r.tel
+            ? `<a class="num" href="tel:${esc(r.tel)}">${esc(r.tel)}</a>`
+            : `<span class="none">ไม่มีเบอร์โทรในระบบ (ดูที่ FE Contact List)</span>`;
+        const sub = r.techEmail ? `${isEmail(r.techEmail) ? '✉' : '🆔'} ${esc(r.techEmail)}` : '';
+        const actions = r.tel ? `
+            <div class="tm-hero-actions">
+                <button class="btn-follow ghost" onclick="copyPhone('${esc(r.tel)}')">📋 คัดลอกเบอร์</button>
+            </div>` : '';
+        return `
+            <div class="tm-hero">
+                <div class="tm-avatar">${esc(initial)}</div>
+                <div class="tm-hero-main">
+                    <div class="tm-hero-name">${dash(r.techName)}</div>
+                    ${r.techDept ? `<span class="tm-hero-dept">${esc(r.techDept)}</span>` : ''}
+                    <div class="tm-hero-phone">📞 ${phone}</div>
+                    ${sub ? `<div class="tm-hero-sub">${sub}</div>` : ''}
+                </div>
+                ${actions}
+            </div>`;
+    }
+    const gridHtml = items => `<div class="tm-grid">${items.map(([k, v]) => `<div><div class="k">${k}</div><div class="v">${v}</div></div>`).join('')}</div>`;
+    const partListHtml = parts => `<div class="tm-partlist">${(parts || []).map(p =>
+        `<div class="row"><span>${esc(p.partName)} <span class="text-muted" style="font-size:11px;">${esc(p.partNo)}</span></span><span class="q">× ${p.qty}</span></div>`).join('')
+        || '<div class="row"><span class="text-muted">ไม่มีรายการ</span></div>'}</div>`;
+    function openModal(html, wide = false) {
+        const m = document.getElementById('tm-modal');
+        m.innerHTML = html;
+        m.classList.toggle('wide', wide);
+        document.getElementById('tm-overlay').classList.add('open');
+    }
+    function closeDetail() { document.getElementById('tm-overlay').classList.remove('open'); }
+    async function copyPhone(tel) {
+        try { await navigator.clipboard.writeText(tel); showToast?.(`คัดลอก ${tel} แล้ว`, 'success'); }
+        catch { showToast?.('คัดลอกไม่สำเร็จ', 'error'); }
+    }
+    const modalTop = kind => `<div class="tm-modal-top"><span class="tm-modal-kind">${kind}</span><button class="tm-x" onclick="closeDetail()" aria-label="ปิด">✕</button></div>`;
+    const modalFoot = `<div class="tm-modal-foot"><button class="btn-follow ghost" onclick="closeDetail()">ปิด</button></div>`;
+
+    function showDetail(kind, idx) {
+        const r = (kind === 'receive' ? data.overdueReceive : data.overdueReturn)[idx];
+        const days = kind === 'receive' ? r.hoursOverdue / 24 : r.daysOverdue;
+        const status = kind === 'receive'
+            ? `<div class="tm-status ${sevClass(days)}"><span class="big">${durLabel(r.hoursOverdue)}</span><span>เลยกำหนดที่อะไหล่ควรถึงมือช่าง แต่ช่างยังไม่กดยืนยันรับของ</span></div>`
+            : `<div class="tm-status ${sevClass(days)}"><span class="big">+${r.daysOverdue} วัน</span><span>เกินกำหนดคืนอะไหล่ (ถือไว้แล้ว ${r.daysHeld} วัน)</span></div>`;
+        const info = [['ใบเบิก', dash(r.slipNo)], ['Ticket (Case No.)', dash(r.caseNo)]];
+        if (kind === 'receive') {
+            info.push(['SLA', r.slaAssumed ? 'ไม่มี SLA (คิดตาม NBD17)' : dash(r.sla)]);
+            info.push([r.slaAssumed ? 'ออกเดินทางเมื่อ' : 'ส่งเมลแจ้ง DHL เมื่อ', fmtDate(r.emailSentAt)]);
+            info.push(['ของควรถึงมือช่าง', fmtDate(r.deadline)]);
+        } else {
+            info.push(['ช่างรับของเมื่อ', fmtDate(r.receivedAt)]);
+        }
+        info.push(['FE ID / จุดติดตั้ง', dash(r.feId)], ['รหัสตู้ ATM', dash(r.atmCode)]);
+        openModal(`
+            ${modalTop(kind === 'receive' ? 'ติดตาม · ยังไม่กดรับอะไหล่' : 'ติดตาม · ค้างคืนอะไหล่')}
+            ${heroHtml(r)}
+            ${status}
+            ${r.wasRejectedBefore ? `<div class="tm-note">⚠️ เคยยื่นคืนแล้วถูกปฏิเสธ และยังไม่ได้ยื่นใหม่</div>` : ''}
+            <div class="tm-section"><div class="tm-section-t">ข้อมูลใบเบิก</div>${gridHtml(info)}</div>
+            <div class="tm-section"><div class="tm-section-t">อะไหล่ (${(r.parts || []).length} รายการ)</div>${partListHtml(r.parts)}</div>
+            ${modalFoot}`);
+    }
+
+    const RETURN_STATUS_LABEL = { 'รอ': 'ยื่นคืนแล้ว รออนุมัติ', 'อนุมัติคืน': 'อนุมัติคืนแล้ว',
+        'กำลังเดินทางรับคืน': 'DHL กำลังไปรับ', 'เดินทาง': 'กำลังส่งคืน', 'คืน': 'ถึงคลังแล้ว', 'Reject': 'ถูกปฏิเสธ', 'Cancel': 'ยกเลิก' };
+
+    function showTechDetail(idx) {
+        const t = data.returnByTech[idx];
+        const status = t.complete
+            ? `<div class="tm-status ok"><span class="big">✓ คืนครบ</span><span>เบิก ${t.withdrawnQty} ชิ้น · คืนแล้ว ${t.returnedQty} ชิ้น · ถึงคลังแล้ว ${t.receivedBackQty} ชิ้น</span></div>`
+            : `<div class="tm-status crit"><span class="big">ยังขาด ${t.outstandingQty} ชิ้น</span><span>เบิก ${t.withdrawnQty} · คืนแล้ว ${t.returnedQty} · ถึงคลังแล้ว ${t.receivedBackQty}</span></div>`;
+        const batches = t.batches.map(b => `
+            <div class="tm-batch">
+                <div class="tm-batch-head">
+                    <span><b>${dash(b.slipNo || b.returnSlipNo)}</b> · Ticket ${dash(b.caseNo)}</span>
+                    <span>
+                        ${b.noWithdrawRecord ? '<span class="tm-badge info">ไม่มีข้อมูลเบิก</span>' : ''}
+                        <span class="tm-badge info">${esc(RETURN_STATUS_LABEL[b.returnStatus] || 'ยังไม่ยื่นคืน')}</span>
+                        ${b.outstanding ? `<span class="tm-badge miss">ขาด ${b.outstanding}</span>` : '<span class="tm-badge ok">ครบ</span>'}
+                    </span>
+                </div>
+                <table><thead><tr><th style="text-align:left;">อะไหล่</th><th>เบิก</th><th>คืน</th><th>ขาด</th></tr></thead><tbody>
+                ${b.parts.map(p => `<tr>
+                    <td>${esc(p.partName)} <span class="text-muted">(${esc(p.partNo)})</span></td>
+                    <td style="text-align:center;">${p.withdrawn}</td>
+                    <td style="text-align:center;">${p.returned}</td>
+                    <td style="text-align:center;font-weight:700;color:${p.withdrawn - p.returned ? 'var(--red)' : 'inherit'};">${p.withdrawn - p.returned}</td>
+                </tr>`).join('') || '<tr><td colspan="4" class="text-muted">ไม่มีรายการอะไหล่</td></tr>'}
+                </tbody></table>
+            </div>`).join('');
+        openModal(`
+            ${modalTop('สถานะการคืนของช่าง')}
+            ${heroHtml(t)}
+            ${status}
+            ${t.noWithdrawRecordCount ? `<div class="tm-note">ℹ️ ${t.noWithdrawRecordCount} ใบไม่มีข้อมูลการเบิกในระบบ (นำเข้าจาก DHL) — ใช้จำนวนที่คืนแทนจำนวนที่เบิก</div>` : ''}
+            <div class="tm-section"><div class="tm-section-t">ใบเบิกทั้งหมด (${t.batchCount} ใบ)</div>${batches}</div>
+            ${modalFoot}`, true);
+    }
+
+    document.addEventListener('keydown', e => { if (e.key === 'Escape') closeDetail(); });
+
+    initLayout();
+    applyLang();
+    function onLangChange() { renderAll(); }
+    loadMonitor();
+</script>
+</body>
+</html>

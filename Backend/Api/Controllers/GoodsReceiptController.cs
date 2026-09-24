@@ -66,6 +66,9 @@ public class GoodsReceiptController : ControllerBase
         if (dto.Source == "LocalVendor" && dto.VendorId == null)
             return BadRequest(new { message = "VendorId is required for LocalVendor source." });
 
+        if (string.IsNullOrWhiteSpace(dto.ReceivedBy))
+            return BadRequest(new { message = "กรุณากรอกชื่อผู้รับเข้า" });
+
         var receipt = new GoodsReceipt
         {
             ReceiptNo    = $"GR-{DateTime.Now.ToString("yyyyMMddHHmmss", System.Globalization.CultureInfo.InvariantCulture)}",
@@ -73,7 +76,7 @@ public class GoodsReceiptController : ControllerBase
             VendorId     = dto.VendorId,
             RefDocument  = dto.RefDocument,
             LocationId   = dto.LocationId,
-            ReceivedBy   = dto.ReceivedBy ?? "Unknown",
+            ReceivedBy   = dto.ReceivedBy.Trim(),
             ReceivedAt   = DateTime.Now,
             HandlingCost = dto.HandlingCost
         };

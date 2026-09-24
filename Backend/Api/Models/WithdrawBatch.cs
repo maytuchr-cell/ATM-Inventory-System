@@ -27,6 +27,20 @@ public class WithdrawBatch
     // happen well before Admin gets around to emailing DHL).
     public DateTime? EmailSentAt { get; set; }
 
+    // Admin's planned date/time to send the DHL email, set at approve time (see ApproveBatch).
+    // DHL only reads Admin's daily email once, at ~16:30 — Admin often approves a batch well in
+    // advance of actually sending it (e.g. preparing tomorrow's urgent withdraws tonight), so the
+    // SLA deadline preview shown before EmailSentAt exists has to be computed from THIS, not from
+    // "now". Once EmailSentAt is actually set, that real timestamp wins (see the
+    // ComputeDhlDeliveryDeadline call sites: emailSentAt ?? plannedSendAt).
+    public DateTime? PlannedSendAt { get; set; }
+
+    // Set when the tech confirms physical receipt (เดินทาง → เบิก, see ReceiveBatch). Distinct
+    // from UpdatedAt, which a later return submission overwrites — this one stays put, so
+    // "how long has the tech been holding these parts without returning them" (the tech-monitor
+    // report) keeps measuring from the right moment even across a reject→resubmit return cycle.
+    public DateTime? ReceivedAt { get; set; }
+
     public string? WithdrawAddress { get; set; }
 
     // Free-text note from the tech on why they need these parts (e.g. "Card reader เสีย,

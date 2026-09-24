@@ -165,12 +165,17 @@ const api = {
     // or its Nth ("เบิกเพิ่ม" is just calling this again on the same ticketId).
     submitWithdraw:   (ticketId, dto)             => apiFetch(`/Ticket/${ticketId}/withdraw-batches`, { method: 'POST', body: JSON.stringify(dto) }),
     resubmitWithdraw: (ticketId, batchId, dto)    => apiFetch(`/Ticket/${ticketId}/withdraw-batches/${batchId}/resubmit`, { method: 'PUT', body: JSON.stringify(dto) }),
-    approveBatch:     (ticketId, batchId, sla)     => apiFetch(`/Ticket/${ticketId}/withdraw-batches/${batchId}/approve`, { method: 'PUT', body: JSON.stringify({ sla: sla || null }) }),
+    approveBatch:     (ticketId, batchId, sla, plannedSendAt)     => apiFetch(`/Ticket/${ticketId}/withdraw-batches/${batchId}/approve`, { method: 'PUT', body: JSON.stringify({ sla: sla || null, plannedSendAt: plannedSendAt || null }) }),
+    previewDeadline:  (sla, plannedSendAt)         => apiFetch(`/Ticket/preview-deadline?sla=${encodeURIComponent(sla)}&plannedSendAt=${encodeURIComponent(plannedSendAt)}`),
+    techMonitor:      (returnDueDays = 14)         => apiFetch(`/Ticket/tech-monitor?returnDueDays=${returnDueDays}`),
     sendEmailConfirmedBatch: (ticketId, batchId)  => apiFetch(`/Ticket/${ticketId}/withdraw-batches/${batchId}/send-email`, { method: 'PUT' }),
     rejectBatch:      (ticketId, batchId, reason) => apiFetch(`/Ticket/${ticketId}/withdraw-batches/${batchId}/reject`, { method: 'PUT', body: JSON.stringify({ reason }) }),
     cancelBatch:      (ticketId, batchId)         => apiFetch(`/Ticket/${ticketId}/withdraw-batches/${batchId}/cancel`, { method: 'PUT' }),
     receiveBatch:     (ticketId, batchId)         => apiFetch(`/Ticket/${ticketId}/withdraw-batches/${batchId}/receive`, { method: 'PUT' }),
     substitutePart:   (ticketId, batchId, lineId, partNo) => apiFetch(`/Ticket/${ticketId}/withdraw-batches/${batchId}/lines/${lineId}/substitute`, { method: 'PUT', body: JSON.stringify({ partNo }) }),
+    addLine:          (ticketId, batchId, partNo, quantity)         => apiFetch(`/Ticket/${ticketId}/withdraw-batches/${batchId}/lines`, { method: 'POST', body: JSON.stringify({ partNo, quantity }) }),
+    updateLine:       (ticketId, batchId, lineId, partNo, quantity) => apiFetch(`/Ticket/${ticketId}/withdraw-batches/${batchId}/lines/${lineId}`, { method: 'PUT', body: JSON.stringify({ partNo, quantity }) }),
+    removeLine:       (ticketId, batchId, lineId)                   => apiFetch(`/Ticket/${ticketId}/withdraw-batches/${batchId}/lines/${lineId}`, { method: 'DELETE' }),
     // Binary response (an .xlsx file), not JSON — bypasses apiFetch's res.json() and hands back
     // the raw Blob + the filename the server suggested, for the caller to trigger a save with.
     // Both withdraw and return candidates are batch ids now ("คืนตามใบเบิก").
@@ -260,13 +265,6 @@ const api = {
     create:  (data) => apiFetch('/Disposal', { method: 'POST', body: JSON.stringify(data) }),
     approve: (id, userName) => apiFetch(`/Disposal/${id}/approve`, { method: 'PUT', body: JSON.stringify({ userName }) }),
     dispose: (id, userName) => apiFetch(`/Disposal/${id}/dispose`, { method: 'PUT', body: JSON.stringify({ userName }) }),
-  },
-  dashboard: {
-    alerts:    () => apiFetch('/Dashboard/alerts'),
-    stock:     () => apiFetch('/Dashboard/stock'),
-    aging:     (days) => apiFetch('/Dashboard/aging?' + new URLSearchParams({ days: days ?? 30 })),
-    topBottom: () => apiFetch('/Dashboard/top-bottom'),
-    recurrentFailures: (days) => apiFetch('/Dashboard/recurrent-failures?' + new URLSearchParams({ days: days ?? 30 })),
   },
   reports: {
     auditChecklist: (params = {}) => apiFetch('/Report/audit-checklist?' + new URLSearchParams(params)),

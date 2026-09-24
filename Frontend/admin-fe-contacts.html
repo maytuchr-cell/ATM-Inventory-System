@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>FE Contact List — ATM Inventory</title>
-  <link rel="stylesheet" href="shared/styles.css?v=81">
+  <link rel="stylesheet" href="shared/styles.css?v=103">
   <style>
     .fc-upload-box { border:2px dashed var(--border); border-radius:12px; padding:24px; text-align:center; margin-bottom:18px; }
     .fc-note { font-size:12px; color:var(--text-secondary); }
@@ -29,7 +29,12 @@
             <div class="fc-note" style="margin-bottom:14px;">ระบบจะอ่านชีต "Contact list DataOne FE" อัตโนมัติ — อัปเดตทับตาม FE ID เดิม ไม่ลบของเก่าที่ไม่มีในไฟล์ใหม่</div>
             <input type="file" id="fc-file-input" accept=".xlsx" style="display:none" onchange="handleFileSelected(this.files[0])">
             <button class="btn btn-primary" onclick="document.getElementById('fc-file-input').click()">เลือกไฟล์</button>
+            <button class="btn btn-secondary" onclick="downloadImportTemplate('feContacts')">📄 ดาวน์โหลด Template</button>
             <div id="fc-filename" class="fc-note" style="margin-top:10px;"></div>
+            <div id="fc-confirm-row" style="display:none;margin-top:10px;gap:8px;justify-content:center;">
+              <button class="btn btn-primary" id="fc-confirm-btn" onclick="confirmImport()">✔ ยืนยันนำเข้า</button>
+              <button class="btn btn-secondary" onclick="cancelImport()">ยกเลิก</button>
+            </div>
           </div>
         </div>
 
@@ -57,10 +62,11 @@
   </div>
 
   <script src="https://code.iconify.design/iconify-icon/2.1.0/iconify-icon.min.js"></script>
-  <script src="shared/translations.js?v=81"></script>
-  <script src="shared/toast.js?v=81"></script>
-  <script src="shared/api.js?v=81"></script>
-  <script src="shared/layout.js?v=81"></script>
+  <script src="shared/translations.js?v=103"></script>
+  <script src="shared/toast.js?v=103"></script>
+  <script src="shared/api.js?v=103"></script>
+  <script src="shared/import-templates.js?v=103"></script>
+  <script src="shared/layout.js?v=103"></script>
   <script>
     initLayout();
 
@@ -87,15 +93,35 @@
       }
     }
 
-    async function handleFileSelected(file) {
+    let pendingFile = null;
+
+    function handleFileSelected(file) {
       if (!file) return;
-      document.getElementById('fc-filename').textContent = file.name;
+      pendingFile = file;
+      document.getElementById('fc-filename').textContent = `ไฟล์ที่เลือก: ${file.name} — กด "ยืนยันนำเข้า" เพื่อบันทึก`;
+      document.getElementById('fc-confirm-row').style.display = 'flex';
+    }
+
+    function cancelImport() {
+      pendingFile = null;
+      document.getElementById('fc-file-input').value = '';
+      document.getElementById('fc-filename').textContent = '';
+      document.getElementById('fc-confirm-row').style.display = 'none';
+    }
+
+    async function confirmImport() {
+      if (!pendingFile) return;
+      const btn = document.getElementById('fc-confirm-btn');
+      btn.disabled = true;
       try {
-        const result = await api.feContacts.import(file);
-        toast.success(`นำเข้าสำเร็จ — เพิ่มใหม่ ${result.added} รายการ, อัปเดต ${result.updated} รายการ`);
+        const result = await api.feContacts.import(pendingFile);
+        showToast(`นำเข้าสำเร็จ — เพิ่มใหม่ ${result.added} รายการ, อัปเดต ${result.updated} รายการ`, 'success');
+        cancelImport();
         loadContacts();
       } catch (e) {
-        toast.error(e.message || 'นำเข้าไฟล์ไม่สำเร็จ');
+        showToast(e.message || 'นำเข้าไฟล์ไม่สำเร็จ', 'error');
+      } finally {
+        btn.disabled = false;
       }
     }
 

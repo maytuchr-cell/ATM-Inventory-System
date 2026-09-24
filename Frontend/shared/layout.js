@@ -48,6 +48,7 @@
         { key: 'nav.tracking', href: 'admin-tracking.html', icon: 'mdi:magnify',                adminOnly: true },
         { key: 'nav.auditlog', href: 'admin-audit-log.html', icon: 'mdi:clipboard-text-clock-outline', adminOnly: true },
         { key: 'nav.shortagereport', href: 'admin-shortage-report.html', icon: 'mdi:package-variant-remove', adminOnly: true },
+        { key: 'nav.techmonitor', href: 'admin-tech-monitor.html', icon: 'mdi:account-clock-outline', adminOnly: true },
       ]
     },
     {

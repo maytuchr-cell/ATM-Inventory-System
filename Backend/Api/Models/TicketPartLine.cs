@@ -24,6 +24,15 @@ public class TicketPartLine
 
     public int Quantity { get; set; }
 
+    // Withdraw lines only. Set once, the first time Admin changes this line's quantity (see
+    // TicketController.UpdateWithdrawLine) — the amount the tech originally asked for, so both
+    // sides can see "asked for 2, got 5". Null means the quantity was never touched by Admin.
+    public int? OriginalQuantity { get; set; }
+
+    // Withdraw lines only — true when Admin added this line to the tech's request themselves
+    // (TicketController.AddWithdrawLine) rather than it coming from the tech's own submission.
+    public bool AddedByAdmin { get; set; }
+
     public string LineType { get; set; } = "Withdraw"; // Withdraw | Return
 
     // Return lines only — how much of Quantity has been confirmed physically received so far via

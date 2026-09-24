@@ -4,13 +4,97 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Goods Receipt — ATM Inventory</title>
-  <link rel="stylesheet" href="shared/styles.css?v=81">
+  <link rel="stylesheet" href="shared/styles.css?v=104">
   <style>
-    .line-row { display:grid; grid-template-columns:2fr 1fr 1fr 1.2fr 2fr auto; gap:10px; align-items:end; margin-bottom:10px; }
+    /* ── Mode tabs ── */
+    .gr-tabs { display:inline-flex; gap:4px; padding:4px; background:var(--bg-subtle); border:1px solid var(--border); border-radius:12px; margin-bottom:18px; }
+    .gr-tab { border:none; background:none; padding:9px 18px; border-radius:9px; font-family:inherit; font-size:13.5px; font-weight:600; color:var(--text-secondary); cursor:pointer; display:inline-flex; align-items:center; gap:7px; transition:all .15s; }
+    .gr-tab:hover { color:var(--text-primary); }
+    .gr-tab.active { background:var(--bg-card); color:var(--orange); box-shadow:var(--shadow-card); }
+
+    /* ── Cards / sections ── */
+    .gr-card { background:var(--bg-card); border:1px solid var(--border); border-radius:14px; box-shadow:var(--shadow-card); margin-bottom:18px; overflow:hidden; }
+    .gr-card-head { display:flex; align-items:center; justify-content:space-between; gap:12px; padding:18px 22px; border-bottom:1px solid var(--border); flex-wrap:wrap; }
+    .gr-card-title { display:flex; align-items:center; gap:10px; font-size:15.5px; font-weight:700; color:var(--text-primary); }
+    .gr-card-title .ic { width:34px; height:34px; border-radius:9px; background:var(--orange-light); color:var(--orange); display:grid; place-items:center; font-size:17px; }
+    .gr-card-sub { font-size:12px; color:var(--text-muted); font-weight:500; margin-top:2px; }
+    .gr-card-body { padding:20px 22px; }
+    .gr-step { font-size:11.5px; font-weight:700; letter-spacing:.04em; text-transform:uppercase; color:var(--text-muted); margin:0 0 12px; display:flex; align-items:center; gap:8px; }
+    .gr-step .n { width:20px; height:20px; border-radius:50%; background:var(--orange); color:#fff; display:grid; place-items:center; font-size:11px; letter-spacing:0; }
+
+    /* ── Header fields ── */
+    .gr-fields { display:grid; grid-template-columns:repeat(3, minmax(0,1fr)); gap:14px 16px; }
+    .gr-fields .form-group { margin-bottom:0; }
+    .req { color:var(--red); margin-left:2px; }
+    .form-input:invalid:not(:placeholder-shown) { border-color:var(--red); }
+
+    /* ── Line table ── */
+    .gr-lines { border:1px solid var(--border); border-radius:12px; overflow:visible; }
+    .gr-line-head, .line-row {
+      display:grid; grid-template-columns:26px minmax(160px,2.4fr) 76px 116px minmax(80px,1.1fr) minmax(80px,1.3fr) 34px;
+      gap:8px; align-items:center; padding:10px 12px;
+    }
+    .gr-line-head { background:var(--bg-subtle); border-bottom:1px solid var(--border); border-radius:12px 12px 0 0; font-size:11.5px; font-weight:700; color:var(--text-secondary); }
+    #lines-wrap { counter-reset:grline; }
+    .line-row { border-bottom:1px solid var(--border); counter-increment:grline; }
+    .line-row:last-child { border-bottom:none; }
+    .line-row::before { content:counter(grline); font-size:12px; font-weight:700; color:var(--text-muted); text-align:center; }
     .line-row .form-group { margin-bottom:0; }
-    .btn-remove-line { background:var(--red-light); color:var(--red); border:1.5px solid transparent; border-radius:8px; width:38px; height:38px; cursor:pointer; font-size:14px; }
-    .btn-remove-line:hover { background:var(--red); color:#fff; }
-    .lines-wrap { border:1px solid var(--border); border-radius:10px; padding:16px; background:var(--bg-subtle); margin-bottom:16px; }
+    .line-row .form-input, .line-row .form-select { padding:8px 10px; font-size:13px; }
+    .btn-remove-line { background:transparent; color:var(--text-muted); border:1.5px solid var(--border); border-radius:8px; width:34px; height:34px; cursor:pointer; font-size:13px; transition:all .15s; }
+    .btn-remove-line:hover { background:var(--red-light); color:var(--red); border-color:var(--red); }
+    .gr-lines-foot { display:flex; align-items:center; justify-content:space-between; gap:12px; padding:12px; border-top:1px dashed var(--border); flex-wrap:wrap; }
+    .btn-add-line { background:none; border:1.5px dashed var(--orange); color:var(--orange); border-radius:9px; padding:8px 14px; font-family:inherit; font-size:13px; font-weight:600; cursor:pointer; }
+    .btn-add-line:hover { background:var(--orange-light); }
+    .gr-summary { font-size:13px; color:var(--text-secondary); }
+    .gr-summary b { color:var(--text-primary); }
+
+    .gr-submit-bar { display:flex; justify-content:flex-end; gap:10px; padding:16px 22px; border-top:1px solid var(--border); background:var(--bg-subtle); }
+    .gr-submit-bar .btn { min-width:160px; justify-content:center; }
+
+    /* ── Part search dropdown ── */
+    .part-picker { position:relative; }
+    .part-dropdown {
+      position:absolute; top:calc(100% + 4px); left:0; right:0; z-index:50;
+      max-height:280px; overflow-y:auto; background:var(--bg-card);
+      border:1px solid var(--border); border-radius:10px; box-shadow:0 10px 24px rgba(0,0,0,.14);
+    }
+    .part-option { padding:8px 12px; font-size:13px; cursor:pointer; }
+    .part-option:hover, .part-option.active { background:var(--orange-light); }
+    .part-option .pn { color:var(--text-secondary); font-size:11.5px; }
+    .part-option-empty { padding:10px 12px; font-size:12.5px; color:var(--text-secondary); }
+
+    /* ── Import drop zone ── */
+    .gr-drop { display:flex; flex-direction:column; align-items:center; justify-content:center; gap:6px; text-align:center;
+               border:2px dashed var(--border); border-radius:12px; padding:28px 18px; cursor:pointer; transition:all .15s; background:var(--bg-subtle); }
+    .gr-drop:hover, .gr-drop.drag { border-color:var(--orange); background:var(--orange-light); }
+    .gr-drop .big { font-size:30px; }
+    .gr-drop .t { font-size:14px; font-weight:700; color:var(--text-primary); }
+    .gr-drop .s { font-size:12px; color:var(--text-muted); }
+    .gr-drop.has-file { border-style:solid; border-color:var(--green); background:var(--green-light); }
+    .gr-hint { font-size:12px; color:var(--text-muted); margin-top:10px; line-height:1.6; }
+    .gr-hint code { background:var(--bg-subtle); padding:1px 5px; border-radius:4px; font-size:11.5px; }
+
+    .gr-preview-head { display:flex; align-items:center; justify-content:space-between; gap:10px; margin:18px 0 8px; flex-wrap:wrap; }
+    .gr-preview-scroll { max-height:300px; overflow-y:auto; border:1px solid var(--border); border-radius:10px; }
+
+    /* ── History ── */
+    .gr-src { display:inline-block; padding:3px 9px; border-radius:20px; font-size:11.5px; font-weight:700; white-space:nowrap; }
+    .gr-src.grg { background:#dbeafe; color:#1d4ed8; }
+    .gr-src.local { background:var(--orange-light); color:var(--orange); }
+
+    @media (max-width: 1100px) {
+      .gr-fields { grid-template-columns:repeat(2, minmax(0,1fr)); }
+    }
+    @media (max-width: 960px) {
+      .gr-fields { grid-template-columns:1fr; }
+      .gr-line-head { display:none; }
+      .line-row { grid-template-columns:1fr 1fr; }
+      .line-row::before { display:none; }
+      .line-row .part-picker { grid-column:1 / -1; }
+      .line-row .btn-remove-line { justify-self:end; }
+      .gr-submit-bar .btn { width:100%; }
+    }
   </style>
 </head>
 <body>
@@ -19,154 +103,182 @@
     <div class="main-content">
       <div class="topbar">
         <div>
-          <div class="topbar-title" data-i18n="gr.title">Goods Receipt</div>
-          <div class="topbar-sub"   data-i18n="gr.sub">Receive spare parts from GRG or local vendors</div>
+          <div class="topbar-title">รับอะไหล่เข้าคลัง (Goods Receipt)</div>
+          <div class="topbar-sub">บันทึกอะไหล่ที่รับเข้าจาก GRG หรือผู้จำหน่ายในประเทศ</div>
         </div>
       </div>
 
       <div class="page-body">
-        <!-- New Receipt Form -->
-        <div class="card">
-          <div class="card-body" style="padding:24px;">
-            <div class="section-head" style="display:flex;align-items:center;gap:10px;margin-bottom:20px;">
-              <div class="section-accent" style="width:4px;height:22px;background:var(--orange);border-radius:2px;"></div>
-              <span class="section-title" style="font-size:16px;font-weight:700;" data-i18n="gr.new">New Goods Receipt</span>
+        <div class="gr-tabs" role="tablist">
+          <button class="gr-tab active" id="gr-tab-manual" onclick="switchGrTab('manual')">✍️ บันทึกเอง</button>
+          <button class="gr-tab" id="gr-tab-import" onclick="switchGrTab('import')">📥 นำเข้าจากไฟล์ Excel / CSV</button>
+        </div>
+
+        <!-- ═══ Manual entry ═══ -->
+        <div id="gr-panel-manual">
+          <form id="gr-form" onsubmit="submitReceipt(event)" class="gr-card">
+            <div class="gr-card-head">
+              <div class="gr-card-title">
+                <span class="ic">📦</span>
+                <div>ใบรับเข้าใหม่<div class="gr-card-sub">กรอกข้อมูลการรับเข้า แล้วเพิ่มรายการอะไหล่ด้านล่าง</div></div>
+              </div>
             </div>
 
-            <form id="gr-form" onsubmit="submitReceipt(event)">
-              <div class="form-grid-2">
+            <div class="gr-card-body">
+              <div class="gr-step"><span class="n">1</span>ข้อมูลการรับเข้า</div>
+              <div class="gr-fields">
                 <div class="form-group">
-                  <label class="form-label" data-i18n="gr.source">Source</label>
+                  <label class="form-label">แหล่งที่มา<span class="req">*</span></label>
                   <select class="form-select" id="f-source" onchange="onSourceChange()" required>
-                    <option value="GRG" data-i18n="gr.source.grg">GRG Procurement</option>
-                    <option value="LocalVendor" data-i18n="gr.source.local">Local Vendor</option>
+                    <option value="GRG">GRG Procurement</option>
+                    <option value="LocalVendor">ผู้จำหน่ายในประเทศ</option>
                   </select>
                 </div>
                 <div class="form-group" id="vendor-group">
-                  <label class="form-label" data-i18n="gr.vendor">Vendor</label>
+                  <label class="form-label">ผู้จำหน่าย<span class="req">*</span></label>
                   <select class="form-select" id="f-vendor"></select>
                 </div>
                 <div class="form-group">
-                  <label class="form-label" id="refdoc-label" data-i18n="gr.refdoc.grg">Forecast / Lot Reference</label>
-                  <input class="form-input" id="f-refdoc" data-i18n-ph="gr.refdoc.ph">
+                  <label class="form-label" id="refdoc-label">เลข Forecast / Lot</label>
+                  <input class="form-input" id="f-refdoc" placeholder="เช่น PO-2026-0001">
                 </div>
                 <div class="form-group">
-                  <label class="form-label" data-i18n="gr.location">Target Location</label>
+                  <label class="form-label">คลังปลายทาง<span class="req">*</span></label>
                   <select class="form-select" id="f-location" required></select>
                 </div>
                 <div class="form-group">
-                  <label class="form-label" data-i18n="gr.receivedby">Received By</label>
-                  <input class="form-input" id="f-receivedby" data-i18n-ph="gr.receivedby.ph">
+                  <label class="form-label">ผู้รับเข้า<span class="req">*</span></label>
+                  <input class="form-input" id="f-receivedby" placeholder="ชื่อผู้รับของ" required>
+                </div>
+              </div>
+
+              <div class="gr-step" style="margin-top:24px;"><span class="n">2</span>รายการอะไหล่</div>
+              <div class="gr-lines">
+                <div class="gr-line-head">
+                  <span style="text-align:center;">#</span>
+                  <span>อะไหล่<span class="req">*</span></span>
+                  <span>จำนวน<span class="req">*</span></span>
+                  <span>สภาพ</span>
+                  <span>Serial No.</span>
+                  <span>หมายเหตุ</span>
+                  <span></span>
+                </div>
+                <div id="lines-wrap"></div>
+                <div class="gr-lines-foot">
+                  <button type="button" class="btn-add-line" onclick="addLine()">+ เพิ่มรายการ</button>
+                  <span class="gr-summary" id="gr-line-summary"></span>
+                </div>
+              </div>
+            </div>
+
+            <div class="gr-submit-bar">
+              <button type="submit" class="btn btn-primary">✓ บันทึกรับเข้า</button>
+            </div>
+          </form>
+        </div>
+
+        <!-- ═══ File import ═══ -->
+        <div id="gr-panel-import" style="display:none;">
+          <div class="gr-card">
+            <div class="gr-card-head">
+              <div class="gr-card-title">
+                <span class="ic">📊</span>
+                <div>นำเข้าจำนวนมาก<div class="gr-card-sub">รับไฟล์ .xlsx / .xls / .csv — ตรวจสอบรายการก่อนกดนำเข้า</div></div>
+              </div>
+              <button class="btn btn-secondary btn-sm" onclick="downloadImportTemplate('goodsReceipt')">📄 ดาวน์โหลด Template</button>
+            </div>
+
+            <div class="gr-card-body">
+              <div class="gr-step"><span class="n">1</span>ข้อมูลการรับเข้า</div>
+              <div class="gr-fields">
+                <div class="form-group">
+                  <label class="form-label">แหล่งที่มา<span class="req">*</span></label>
+                  <select class="form-select" id="csv-source" onchange="onCsvSourceChange()">
+                    <option value="GRG">GRG Procurement</option>
+                    <option value="LocalVendor">ผู้จำหน่ายในประเทศ</option>
+                  </select>
+                </div>
+                <div class="form-group" id="csv-vendor-group" style="display:none;">
+                  <label class="form-label">ผู้จำหน่าย<span class="req">*</span></label>
+                  <select class="form-select" id="csv-vendor"></select>
                 </div>
                 <div class="form-group">
-                  <label class="form-label" data-i18n="gr.handlingcost">Handling Cost</label>
-                  <input class="form-input" id="f-handlingcost" type="number" min="0" step="0.01" value="0">
+                  <label class="form-label">คลังปลายทาง<span class="req">*</span></label>
+                  <select class="form-select" id="csv-location"></select>
+                </div>
+                <div class="form-group">
+                  <label class="form-label">ผู้รับเข้า<span class="req">*</span></label>
+                  <input class="form-input" id="csv-receivedby" placeholder="ชื่อผู้รับของ" required>
                 </div>
               </div>
 
-              <label class="form-label" style="margin:8px 0 12px;display:block;" data-i18n="gr.lines">Part Lines</label>
-              <div class="lines-wrap" id="lines-wrap"></div>
-              <button type="button" class="btn btn-secondary" onclick="addLine()" style="margin-bottom:20px;">
-                + <span data-i18n="gr.addline">Add Line</span>
-              </button>
-
-              <div class="modal-footer" style="justify-content:flex-end;display:flex;gap:10px;">
-                <button type="submit" class="btn btn-primary" data-i18n="gr.submit">Submit Receipt</button>
+              <div class="gr-step" style="margin-top:24px;"><span class="n">2</span>เลือกไฟล์</div>
+              <label class="gr-drop" id="gr-drop" for="csv-file"
+                     ondragover="event.preventDefault();this.classList.add('drag')"
+                     ondragleave="this.classList.remove('drag')"
+                     ondrop="onGrDrop(event)">
+                <span class="big">📂</span>
+                <span class="t" id="gr-drop-title">คลิกเพื่อเลือกไฟล์ หรือลากไฟล์มาวางที่นี่</span>
+                <span class="s">.xlsx · .xls · .csv</span>
+              </label>
+              <input type="file" id="csv-file" accept=".xlsx,.xls,.csv" style="display:none" onchange="onFileChange(this)">
+              <div class="gr-hint">
+                Excel: คอลัมน์ <code>No.</code> <code>Part Number</code> <code>D1 Part Description</code> <code>Serial Number</code> <code>Quantity</code> <code>Status</code> (เรียงตามนี้)<br>
+                CSV: คอลัมน์ <code>PartNo</code> <code>SerialNo</code> <code>Qty</code> <code>Condition</code> — แถวแรกเป็นหัวตาราง ระบบข้ามให้อัตโนมัติ
               </div>
-            </form>
+
+              <div id="xl-preview-wrap" style="display:none;">
+                <div class="gr-preview-head">
+                  <div class="gr-step" style="margin:0;"><span class="n">3</span><span id="xl-preview-count"></span></div>
+                  <button class="btn btn-secondary btn-sm" onclick="clearPreview()">✕ ล้างไฟล์</button>
+                </div>
+                <div class="gr-preview-scroll">
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>#</th>
+                        <th>รหัสอะไหล่</th>
+                        <th>ชื่ออะไหล่</th>
+                        <th>Serial No.</th>
+                        <th>จำนวน</th>
+                        <th>สภาพ</th>
+                      </tr>
+                    </thead>
+                    <tbody id="xl-preview-tbody"></tbody>
+                  </table>
+                </div>
+              </div>
+              <div id="csv-result" style="margin-top:12px;font-size:13px;"></div>
+            </div>
+
+            <div class="gr-submit-bar">
+              <button class="btn btn-primary" onclick="importFile()" id="btn-import" disabled>↑ นำเข้าข้อมูล</button>
+            </div>
           </div>
         </div>
 
-        <!-- Excel / CSV Bulk Import -->
-        <div class="card">
-          <div class="card-body" style="padding:24px;">
-            <div class="section-head" style="display:flex;align-items:center;gap:10px;margin-bottom:16px;">
-              <div class="section-accent" style="width:4px;height:22px;background:var(--orange);border-radius:2px;"></div>
-              <span class="section-title" style="font-size:16px;font-weight:700;">นำเข้าจำนวนมากผ่าน Excel / CSV</span>
+        <!-- ═══ History ═══ -->
+        <div class="gr-card">
+          <div class="gr-card-head">
+            <div class="gr-card-title">
+              <span class="ic">🕘</span>
+              <div>ประวัติการรับเข้า<div class="gr-card-sub" id="gr-history-sub"></div></div>
             </div>
-            <p style="font-size:12px;color:var(--text-secondary);margin-bottom:14px;">
-              รองรับไฟล์ <strong>.xlsx / .xls</strong> (columns: Part Number, D1 Part Description, Serial Number, Quantity, Status)
-              และ <strong>.csv</strong> (columns: PartNo, SerialNo, Qty, Condition). Row แรก = header (ข้ามอัตโนมัติ)
-            </p>
-
-            <!-- Preview table (hidden until file picked) -->
-            <div id="xl-preview-wrap" style="display:none;margin-bottom:16px;">
-              <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;">
-                <strong id="xl-preview-count" style="font-size:13px;color:var(--text-primary);"></strong>
-                <button class="btn btn-secondary btn-sm" onclick="clearPreview()">✕ ล้าง</button>
-              </div>
-              <div style="max-height:260px;overflow-y:auto;border:1px solid var(--border);border-radius:8px;">
-                <table>
-                  <thead>
-                    <tr>
-                      <th>#</th>
-                      <th>รหัสอะไหล่</th>
-                      <th>ชื่ออะไหล่</th>
-                      <th>Serial No.</th>
-                      <th>จำนวน</th>
-                      <th>สภาพ</th>
-                    </tr>
-                  </thead>
-                  <tbody id="xl-preview-tbody"></tbody>
-                </table>
-              </div>
-            </div>
-
-            <div class="form-grid-2" style="margin-bottom:14px;">
-              <div class="form-group">
-                <label class="form-label">คลังปลายทาง</label>
-                <select class="form-select" id="csv-location"></select>
-              </div>
-              <div class="form-group">
-                <label class="form-label">แหล่งที่มา</label>
-                <select class="form-select" id="csv-source" onchange="onCsvSourceChange()">
-                  <option value="GRG">GRG Procurement</option>
-                  <option value="LocalVendor">ผู้จำหน่ายในประเทศ</option>
-                </select>
-              </div>
-              <div class="form-group" id="csv-vendor-group" style="display:none;">
-                <label class="form-label">ผู้จำหน่าย</label>
-                <select class="form-select" id="csv-vendor"></select>
-              </div>
-              <div class="form-group">
-                <label class="form-label">ผู้รับเข้า</label>
-                <input class="form-input" id="csv-receivedby" placeholder="ชื่อผู้รับ">
-              </div>
-              <div class="form-group">
-                <label class="form-label">เลือกไฟล์ (.xlsx / .xls / .csv)</label>
-                <input class="form-input" type="file" id="csv-file" accept=".xlsx,.xls,.csv"
-                       onchange="onFileChange(this)">
-              </div>
-            </div>
-            <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;">
-              <button class="btn btn-primary" onclick="importFile()" id="btn-import" disabled>
-                ↑ Import ข้อมูล
-              </button>
-            </div>
-            <div id="csv-result" style="margin-top:12px;font-size:13px;"></div>
           </div>
-        </div>
-
-        <!-- History -->
-        <div class="card">
-          <div class="section-head" style="display:flex;align-items:center;gap:10px;margin-bottom:20px;padding:24px 24px 0;">
-            <div class="section-accent" style="width:4px;height:22px;background:var(--orange);border-radius:2px;"></div>
-            <span class="section-title" style="font-size:16px;font-weight:700;" data-i18n="gr.history">Receipt History</span>
-          </div>
-          <div class="tbl-wrap" style="padding:0 24px 24px;">
+          <div class="tbl-wrap">
             <table>
               <thead>
                 <tr>
-                  <th data-i18n="gr.col.receiptno">Receipt No.</th>
-                  <th data-i18n="gr.col.source">Source</th>
-                  <th data-i18n="gr.col.location">Location</th>
-                  <th data-i18n="gr.col.lines">Parts Received</th>
-                  <th data-i18n="gr.col.date">Date</th>
-                  <th data-i18n="gr.col.by">Received By</th>
+                  <th>เลขที่ใบรับ</th>
+                  <th>แหล่งที่มา</th>
+                  <th>คลังปลายทาง</th>
+                  <th>อะไหล่ที่รับ</th>
+                  <th>วันที่รับ</th>
+                  <th>ผู้รับเข้า</th>
                 </tr>
               </thead>
               <tbody id="history-tbody">
-                <tr><td colspan="6" class="empty-state" data-i18n="connecting">Connecting…</td></tr>
+                <tr><td colspan="6" class="empty-state">กำลังโหลด…</td></tr>
               </tbody>
             </table>
           </div>
@@ -176,10 +288,11 @@
   </div>
 
   <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
-  <script src="shared/translations.js?v=81"></script>
-  <script src="shared/toast.js?v=81"></script>
-  <script src="shared/api.js?v=81"></script>
-  <script src="shared/layout.js?v=81"></script>
-  <script src="admin-goods-receipt.js?v=81"></script>
+  <script src="shared/translations.js?v=104"></script>
+  <script src="shared/toast.js?v=104"></script>
+  <script src="shared/api.js?v=104"></script>
+  <script src="shared/import-templates.js?v=104"></script>
+  <script src="shared/layout.js?v=104"></script>
+  <script src="admin-goods-receipt.js?v=104"></script>
 </body>
 </html>

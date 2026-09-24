@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Tickets — ATM Inventory</title>
-    <link rel="stylesheet" href="shared/styles.css?v=81">
+    <link rel="stylesheet" href="shared/styles.css?v=103">
     <style>
         /* Page-specific overrides */
         .section-head { display:flex; align-items:center; gap:10px; margin-bottom:20px; }
@@ -67,6 +67,16 @@
         .select-part:focus { border-color:var(--orange); box-shadow:0 0 0 3px var(--orange-ring); }
 
         /* Reject-reason modal */
+        .line-qty-input { width:64px; padding:4px 6px; border:1.5px solid var(--border); border-radius:6px; font-family:inherit; font-size:13px; font-weight:700; text-align:center; background:var(--bg-card); color:var(--text-primary); }
+        .line-note { font-size:11px; color:var(--orange); background:var(--orange-light); border-radius:6px; padding:3px 8px; }
+        .btn-line-action { display:inline-flex; align-items:center; gap:5px; background:var(--bg-card); color:var(--text-primary); border:1.5px solid var(--border); border-radius:7px; padding:6px 12px; font-family:inherit; font-size:12px; font-weight:600; cursor:pointer; }
+        .btn-line-action:hover { border-color:var(--orange); color:var(--orange); }
+        .btn-line-action.danger:hover { border-color:var(--red); color:var(--red); }
+        .lp-list { max-height:260px; overflow-y:auto; border:1px solid var(--border); border-radius:8px; margin:8px 0 12px; }
+        .lp-opt { padding:7px 12px; font-size:13px; cursor:pointer; border-bottom:1px solid var(--border); }
+        .lp-opt:hover { background:var(--orange-light); }
+        .lp-opt.sel { background:var(--orange); color:#fff; }
+        .lp-opt .pn { font-size:11px; opacity:.75; }
         .reason-overlay { display:none; position:fixed; inset:0; background:rgba(0,0,0,.45); z-index:950; align-items:center; justify-content:center; padding:20px; }
         .reason-overlay.open { display:flex; }
         .reason-modal { background:var(--bg-card); border-radius:16px; border:1px solid var(--border); width:100%; max-width:420px; padding:22px; box-shadow:0 20px 60px rgba(0,0,0,.25); }
@@ -456,16 +466,36 @@
         <h3>อนุมัติใบเบิก</h3>
         <p>สถานะจะเปลี่ยนเป็น "รอส่งเมล DHL" — เลือก SLA สำหรับแจ้ง DHL</p>
         <label style="font-size:12px;color:var(--text-secondary);display:block;margin-bottom:6px;">SLA</label>
-        <select id="approveSlaSelect" class="select-part" style="margin-bottom:14px;">
+        <select id="approveSlaSelect" class="select-part" style="margin-bottom:14px;" onchange="refreshApprovePreview()">
             <option value="Urgent 2 Hr (Cut-off 15:30)">Urgent 2 Hr (Cut-off 15:30)</option>
             <option value="Urgent 4 Hr (Cut-off 13:30)">Urgent 4 Hr (Cut-off 13:30)</option>
             <option value="SBD (Cut-off 11:00)">SBD (Cut-off 11:00)</option>
             <option value="NBD12 (Cut-off 16:00)">NBD12 (Cut-off 16:00)</option>
             <option value="NBD17 (Cut-off 16:00)" selected>NBD17 (Cut-off 16:00)</option>
         </select>
+        <label style="font-size:12px;color:var(--text-secondary);display:block;margin-bottom:6px;">วันเวลาที่จะส่งเมลแจ้ง DHL</label>
+        <input type="datetime-local" id="approvePlannedSendAt" class="select-part" style="margin-bottom:14px;" onchange="refreshApprovePreview()">
+        <div id="approveDeadlinePreview" style="font-size:13px;background:var(--bg-subtle);border-radius:8px;padding:10px 12px;margin-bottom:14px;">
+        </div>
         <div class="reason-modal-actions">
             <button class="btn-cancel" style="width:auto;padding:8px 16px;" onclick="closeApproveModal()">ยกเลิก</button>
             <button class="btn-approve" style="width:auto;padding:8px 16px;margin-bottom:0;" onclick="confirmApprove()">อนุมัติ</button>
+        </div>
+    </div>
+</div>
+
+<!-- Admin line picker — add a part to a withdraw batch, or swap a line to any other part -->
+<div class="reason-overlay" id="linePickerOverlay">
+    <div class="reason-modal" style="max-width:520px;">
+        <h3 id="lpTitle">เพิ่มอะไหล่</h3>
+        <input id="lpSearch" class="select-part" placeholder="🔍 พิมพ์ค้นหารหัสหรือชื่ออะไหล่..." oninput="renderLinePicker()" autocomplete="off">
+        <div class="lp-list" id="lpList"></div>
+        <div id="lpSelected" style="font-size:13px;margin-bottom:10px;color:var(--text-secondary);">ยังไม่ได้เลือกอะไหล่</div>
+        <label style="font-size:12px;color:var(--text-secondary);display:block;margin-bottom:6px;">จำนวน</label>
+        <input id="lpQty" type="number" min="1" value="1" class="select-part" style="margin-bottom:14px;">
+        <div class="reason-modal-actions">
+            <button class="btn-cancel" style="width:auto;padding:8px 16px;" onclick="closeLinePicker()">ยกเลิก</button>
+            <button class="btn-approve" style="width:auto;padding:8px 16px;margin-bottom:0;" onclick="confirmLinePicker()">บันทึก</button>
         </div>
     </div>
 </div>
@@ -483,10 +513,10 @@
     </div>
 </div>
 
-<script src="shared/translations.js?v=81"></script>
-<script src="shared/toast.js?v=81"></script>
-<script src="shared/api.js?v=81"></script>
-<script src="shared/layout.js?v=81"></script>
+<script src="shared/translations.js?v=103"></script>
+<script src="shared/toast.js?v=103"></script>
+<script src="shared/api.js?v=103"></script>
+<script src="shared/layout.js?v=103"></script>
 <script>
     let cachedTickets = [];
     let rejectTargetId = null;
@@ -1043,21 +1073,48 @@
     // tech-filled form field, now Admin's call at this same step, defaulting to NBD17).
     let approveTargetTicketId = null;
     let approveTargetBatchId = null;
+    // "datetime-local" inputs want/give "YYYY-MM-DDTHH:mm" in the BROWSER's local time (no
+    // timezone suffix) — toISOString() would convert to UTC first and shift the displayed value,
+    // so this builds the string from the local getters instead.
+    function toLocalDatetimeInputValue(d) {
+        const pad = n => String(n).padStart(2, '0');
+        return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+    }
     function openApproveModal(ticketId, batchId) {
         approveTargetTicketId = ticketId;
         approveTargetBatchId = batchId;
         document.getElementById('approveSlaSelect').value = 'NBD17 (Cut-off 16:00)';
+        document.getElementById('approvePlannedSendAt').value = toLocalDatetimeInputValue(new Date());
         document.getElementById('approveOverlay').classList.add('open');
+        refreshApprovePreview();
     }
     function closeApproveModal() {
         document.getElementById('approveOverlay').classList.remove('open');
         approveTargetTicketId = null;
         approveTargetBatchId = null;
     }
+    // Live "คาดว่าถึงช่าง" preview — calls the real backend rule engine (Ticket/preview-deadline)
+    // with whatever SLA + planned-send date/time Admin currently has picked, so the preview can
+    // never drift out of sync with what actually gets computed once approved.
+    async function refreshApprovePreview() {
+        const box = document.getElementById('approveDeadlinePreview');
+        const sla = document.getElementById('approveSlaSelect').value;
+        const plannedSendAt = document.getElementById('approvePlannedSendAt').value;
+        if (!plannedSendAt) { box.textContent = ''; return; }
+        box.textContent = 'กำลังคำนวณ...';
+        try {
+            const { deadline } = await api.tickets.previewDeadline(sla, plannedSendAt);
+            const locale = getLang() === 'th' ? 'th-TH' : 'en-GB';
+            box.innerHTML = deadline
+                ? `📦 คาดว่าจะถึงมือช่าง: <strong>${new Date(deadline).toLocaleString(locale)}</strong>`
+                : `📦 SLA นี้ไม่มีกำหนดเวลาส่งที่คำนวณได้`;
+        } catch (e) { box.textContent = ''; }
+    }
     async function confirmApprove() {
         const sla = document.getElementById('approveSlaSelect').value;
+        const plannedSendAt = document.getElementById('approvePlannedSendAt').value;
         try {
-            await api.tickets.approveBatch(approveTargetTicketId, approveTargetBatchId, sla);
+            await api.tickets.approveBatch(approveTargetTicketId, approveTargetBatchId, sla, plannedSendAt || null);
             await fetchTickets();
             showToast?.('อนุมัติใบเบิกแล้ว', 'success');
         } catch (e) { showToast?.(e.message || 'เกิดข้อผิดพลาด กรุณาลองใหม่', 'error'); }
@@ -1203,9 +1260,111 @@
     // the Ticket — clicking "ดูรายละเอียด" on a specific row in the ทุก Ticket/คืนอะไหล่ tables
     // (each row is one batch, see renderTicketsTable/returnBatchRows) should show that row's own
     // batch, not dump the Ticket's whole withdraw history on top of it.
+    // ── Admin edits to a tech's withdraw lines (add / change part / change qty / remove) ──
+    // Every action reloads tickets and re-opens the same detail view, since the backend re-runs
+    // the stock check and the batch can flip between "รอ" and "รออะไหล่" as a result.
+    let lastDetail = null;
+    async function refreshAfterLineEdit(message) {
+        await fetchTickets(true);
+        if (lastDetail) showDetail(lastDetail.id, lastDetail.batchId);
+        showToast?.(message, 'success');
+    }
+
+    async function adminSetLineQty(ticketId, batchId, lineId, value, oldQty) {
+        const qty = parseInt(value, 10);
+        if (!qty || qty < 1) {
+            showToast?.('จำนวนต้องมากกว่า 0 — ถ้าไม่ต้องการแล้วให้กด "ลบรายการ"', 'error');
+            if (lastDetail) showDetail(lastDetail.id, lastDetail.batchId);
+            return;
+        }
+        if (qty === oldQty) return;
+        try {
+            await api.tickets.updateLine(ticketId, batchId, lineId, null, qty);
+            await refreshAfterLineEdit(`แก้จำนวนเป็น ${qty} แล้ว`);
+        } catch (e) { showToast?.(e.message || 'แก้จำนวนไม่สำเร็จ', 'error'); }
+    }
+
+    // Two-click confirm instead of confirm() — Chrome can silently suppress repeated native
+    // dialogs on a page, which would make this button look dead (same reason confirmSubstitute
+    // has no confirm()).
+    async function adminRemoveLine(ticketId, batchId, lineId, partName, btn = event?.currentTarget) {
+        if (btn && !btn.dataset.armed) {
+            btn.dataset.armed = '1';
+            btn.textContent = `กดอีกครั้งเพื่อยืนยันลบ`;
+            setTimeout(() => { if (btn.isConnected) { delete btn.dataset.armed; btn.textContent = '🗑 ลบรายการ'; } }, 3000);
+            return;
+        }
+        try {
+            await api.tickets.removeLine(ticketId, batchId, lineId);
+            await refreshAfterLineEdit('ลบรายการแล้ว');
+        } catch (e) { showToast?.(e.message || 'ลบไม่สำเร็จ', 'error'); }
+    }
+
+    let pickerParts = null;
+    let picker = null; // { mode: 'add'|'change', ticketId, batchId, lineId, selected }
+    const escHtml = s => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+
+    async function openLinePicker(mode, ticketId, batchId, lineId = null, currentQty = 1) {
+        picker = { mode, ticketId, batchId, lineId, selected: null };
+        document.getElementById('lpTitle').textContent = mode === 'add' ? '➕ เพิ่มอะไหล่ในใบเบิก' : '🔁 เปลี่ยนเป็นอะไหล่อื่น';
+        document.getElementById('lpSearch').value = '';
+        document.getElementById('lpQty').value = currentQty;
+        document.getElementById('lpSelected').textContent = 'ยังไม่ได้เลือกอะไหล่';
+        document.getElementById('linePickerOverlay').classList.add('open');
+        document.getElementById('lpList').innerHTML = '<div class="lp-opt">กำลังโหลดรายการอะไหล่...</div>';
+        try {
+            pickerParts ??= await api.parts.getAll({ isActive: true });
+        } catch (e) {
+            showToast?.('โหลดรายการอะไหล่ไม่สำเร็จ', 'error');
+            return closeLinePicker();
+        }
+        renderLinePicker();
+        document.getElementById('lpSearch').focus();
+    }
+
+    function renderLinePicker() {
+        const q = document.getElementById('lpSearch').value.trim().toLowerCase();
+        const matches = q
+            ? pickerParts.filter(p => p.partNo.toLowerCase().includes(q) || (p.partName || '').toLowerCase().includes(q))
+            : pickerParts;
+        const countLine = `<div class="lp-opt" style="cursor:default;font-size:11px;color:var(--text-muted);background:var(--bg-subtle);">
+            ${q ? `พบ ${matches.length} จาก ${pickerParts.length} รายการ` : `อะไหล่ทั้งหมด ${pickerParts.length} รายการ — พิมพ์ค้นหาเพื่อกรอง`}</div>`;
+        document.getElementById('lpList').innerHTML = matches.length
+            ? countLine + matches.map(p => `<div class="lp-opt ${picker.selected === p.partNo ? 'sel' : ''}" data-pn="${escHtml(p.partNo)}"
+                                    onclick="selectPickerPart(this.dataset.pn)">
+                    ${escHtml(p.partName)} <span class="pn">(${escHtml(p.partNo)})</span></div>`).join('')
+            : '<div class="lp-opt">ไม่พบอะไหล่ที่ตรงกับคำค้นหา</div>';
+    }
+
+    function selectPickerPart(partNo) {
+        picker.selected = partNo;
+        const p = pickerParts.find(x => x.partNo === partNo);
+        document.getElementById('lpSelected').innerHTML = `เลือก: <strong>${escHtml(p?.partName)}</strong> (${escHtml(partNo)})`;
+        renderLinePicker();
+    }
+
+    function closeLinePicker() {
+        document.getElementById('linePickerOverlay').classList.remove('open');
+        picker = null;
+    }
+
+    async function confirmLinePicker() {
+        if (!picker?.selected) { showToast?.('กรุณาเลือกอะไหล่จากรายการ', 'error'); return; }
+        const qty = parseInt(document.getElementById('lpQty').value, 10);
+        if (!qty || qty < 1) { showToast?.('จำนวนต้องมากกว่า 0', 'error'); return; }
+        const { mode, ticketId, batchId, lineId, selected } = picker;
+        try {
+            if (mode === 'add') await api.tickets.addLine(ticketId, batchId, selected, qty);
+            else await api.tickets.updateLine(ticketId, batchId, lineId, selected, qty);
+            closeLinePicker();
+            await refreshAfterLineEdit(mode === 'add' ? 'เพิ่มอะไหล่แล้ว' : 'เปลี่ยนอะไหล่แล้ว');
+        } catch (e) { showToast?.(e.message || 'บันทึกไม่สำเร็จ', 'error'); }
+    }
+
     function showDetail(id, batchId = null) {
         const tk = cachedTickets.find(t => t.ticketId === id);
         if (!tk) return;
+        lastDetail = { id, batchId };
 
         const none = `<span class="detail-empty">ไม่ระบุ</span>`;
         const fmt  = d => d ? new Date(d).toLocaleString('th-TH') : '—';
@@ -1218,22 +1377,39 @@
         const batchCardHtml = batch => {
             const canSubstitute = batch.status === "รอ" || batch.status === "รออะไหล่";
             const bBadge = STATUS_BADGE[batch.status] || STATUS_BADGE["รอ"];
+            const ids = `${tk.ticketId}, ${batch.withdrawBatchId}`;
             const linesHtml = batch.lines.length
                 ? batch.lines.map(l => {
                     const short = (l.availableStock ?? 0) < l.quantity;
+                    const lid = l.ticketPartLineId;
+                    const qtyCell = canSubstitute
+                        ? `<input type="number" min="1" value="${l.quantity}" class="line-qty-input" title="แก้จำนวน"
+                                  onchange="adminSetLineQty(${ids}, ${lid}, this.value, ${l.quantity})">`
+                        : `<span class="fw-600">×${l.quantity}</span>`;
                     return `<div style="padding:8px 0;border-bottom:1px solid var(--border);">
                         <div style="display:flex;justify-content:space-between;align-items:center;gap:6px;">
-                            <span>${l.partName}</span>
+                            <span>${l.partName} <span style="font-size:11px;color:var(--text-muted);">(${l.partNo})</span></span>
                             <span style="display:flex;align-items:center;gap:6px;">
                                 <span style="font-size:11px;font-weight:600;color:${short ? 'var(--red)' : 'var(--text-muted)'};">${short ? `⚠ คงเหลือ ${l.availableStock ?? 0}` : `คงเหลือ ${l.availableStock ?? 0}`}</span>
-                                <span class="fw-600">×${l.quantity}</span>
+                                ${qtyCell}
                             </span>
                         </div>
-                        ${l.originalPartName ? `<div style="margin-top:4px;font-size:11px;color:var(--orange);background:var(--orange-light);border-radius:6px;padding:4px 8px;display:inline-block;">🔄 ช่างขอ <strong>${l.originalPartName}</strong> — เปลี่ยนเป็นอะไหล่เทียบเคียงนี้แทน</div>` : ''}
-                        ${canSubstitute ? `<button class="btn-substitute-full" onclick="closeDetailModal();openSubstituteModal(${tk.ticketId}, ${batch.withdrawBatchId}, ${l.ticketPartLineId}, '${l.partNo}', '${(l.partName || '').replace(/'/g, "\\'")}')">🔄 เปลี่ยนเป็นอะไหล่เทียบเคียง</button>` : ''}
+                        <div style="display:flex;flex-wrap:wrap;gap:4px;margin-top:4px;">
+                            ${l.addedByAdmin ? `<span class="line-note">➕ Admin เพิ่มรายการนี้</span>` : ''}
+                            ${l.originalPartName ? `<span class="line-note">🔄 ช่างขอ <strong>${l.originalPartName}</strong> — Admin เปลี่ยนเป็นรายการนี้</span>` : ''}
+                            ${l.originalQuantity != null ? `<span class="line-note">✏️ ช่างขอ ${l.originalQuantity} ชิ้น — Admin แก้เป็น ${l.quantity}</span>` : ''}
+                        </div>
+                        ${canSubstitute ? `<div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:6px;">
+                            <button class="btn-substitute-full" style="margin:0;width:auto;" onclick="closeDetailModal();openSubstituteModal(${ids}, ${lid}, '${l.partNo}', '${(l.partName || '').replace(/'/g, "\\'")}')">🔄 อะไหล่เทียบเคียง</button>
+                            <button class="btn-line-action" onclick="openLinePicker('change', ${ids}, ${lid}, ${l.quantity})">🔁 เปลี่ยนเป็นอะไหล่อื่น</button>
+                            <button class="btn-line-action danger" onclick="adminRemoveLine(${ids}, ${lid}, '${(l.partName || '').replace(/'/g, "\\'")}')">🗑 ลบรายการ</button>
+                        </div>` : ''}
                     </div>`;
                 }).join('')
                 : `<span class="detail-empty">—</span>`;
+            const addLineBtn = canSubstitute
+                ? `<button class="btn-line-action" style="margin-top:10px;" onclick="openLinePicker('add', ${ids})">+ เพิ่มอะไหล่</button>`
+                : '';
             return `
                 <div class="detail-section" style="background:var(--bg-subtle);border:1px solid var(--border);border-radius:10px;padding:14px;">
                     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
@@ -1249,6 +1425,7 @@
                         ${batch.dhlDeliveryDeadline ? `<div class="detail-field full"><label>📦 อะไหล่ต้องถึงช่างภายใน (ตาม SLA)</label><span style="font-weight:700;color:var(--orange);">${new Date(batch.dhlDeliveryDeadline).toLocaleString('th-TH', { dateStyle: 'medium', timeStyle: 'short' })}</span></div>` : ''}
                     </div>
                     ${linesHtml}
+                    ${addLineBtn}
                     ${batch.withdrawDescription ? `<div style="margin-top:8px;font-size:13px;color:var(--text-primary);background:var(--bg-card);border:1px solid var(--border);border-radius:8px;padding:8px 10px;white-space:pre-wrap;">${batch.withdrawDescription}</div>` : ''}
                     ${(batch.attachments || []).length ? `<div style="margin-top:8px;">${attachmentGalleryHtml(batch.attachments)}</div>` : ''}
                     ${batch.rejectReason ? `<div class="detail-desc" style="margin-top:8px;">เหตุผลที่ Reject: ${batch.rejectReason}</div>` : ''}

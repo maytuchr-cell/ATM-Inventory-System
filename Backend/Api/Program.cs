@@ -510,6 +510,12 @@ using (var scope = app.Services.CreateScope())
                 context.Database.ExecuteSqlRaw("ALTER TABLE TicketPartLines ADD COLUMN Condition TEXT NULL;");
                 Console.WriteLine("✅ Migration: added TicketPartLines.Condition");
             }
+            if (!tplCols.Contains("OriginalQuantity"))
+            {
+                context.Database.ExecuteSqlRaw("ALTER TABLE TicketPartLines ADD COLUMN OriginalQuantity INTEGER NULL;");
+                context.Database.ExecuteSqlRaw("ALTER TABLE TicketPartLines ADD COLUMN AddedByAdmin INTEGER NOT NULL DEFAULT 0;");
+                Console.WriteLine("✅ Migration: added TicketPartLines.OriginalQuantity/AddedByAdmin");
+            }
             if (!tplCols.Contains("OriginalPartNo"))
             {
                 context.Database.ExecuteSqlRaw("ALTER TABLE TicketPartLines ADD COLUMN OriginalPartNo TEXT NULL;");
@@ -600,6 +606,20 @@ using (var scope = app.Services.CreateScope())
             {
                 context.Database.ExecuteSqlRaw("ALTER TABLE WithdrawBatches ADD COLUMN ReturnSlipNo TEXT NULL;");
                 Console.WriteLine("✅ Migration: added WithdrawBatches.ReturnSlipNo");
+            }
+            if (!wbCols.Contains("PlannedSendAt"))
+            {
+                context.Database.ExecuteSqlRaw("ALTER TABLE WithdrawBatches ADD COLUMN PlannedSendAt TEXT NULL;");
+                Console.WriteLine("✅ Migration: added WithdrawBatches.PlannedSendAt");
+            }
+            if (!wbCols.Contains("ReceivedAt"))
+            {
+                context.Database.ExecuteSqlRaw("ALTER TABLE WithdrawBatches ADD COLUMN ReceivedAt TEXT NULL;");
+                // Backfill for batches already received before this column existed: UpdatedAt is
+                // the receive moment for any batch still sitting on เบิก with no return activity.
+                context.Database.ExecuteSqlRaw(
+                    "UPDATE WithdrawBatches SET ReceivedAt = UpdatedAt WHERE Status = 'เบิก' AND ReturnStatus IS NULL;");
+                Console.WriteLine("✅ Migration: added WithdrawBatches.ReceivedAt (backfilled from UpdatedAt)");
             }
 
             var tplCols2 = new HashSet<string>(StringComparer.OrdinalIgnoreCase);

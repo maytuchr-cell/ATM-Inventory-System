@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Equivalent Groups — ATM Inventory</title>
-  <link rel="stylesheet" href="shared/styles.css?v=81">
+  <link rel="stylesheet" href="shared/styles.css?v=103">
   <style>
     .group-card { border:1.5px solid var(--border); border-radius:12px; padding:18px 20px; margin-bottom:14px; background:var(--bg-card); }
     .group-header { display:flex; justify-content:space-between; align-items:center; gap:12px; }
@@ -36,6 +36,7 @@
         </div>
         <div class="topbar-controls">
           <input type="file" id="import-file-input" accept=".xlsx" style="display:none" onchange="handleImportFile(this)">
+          <button class="btn" onclick="downloadImportTemplate('equivalent')" title="ดาวน์โหลดไฟล์ Excel เปล่าที่มีหัวคอลัมน์ตรงกับที่ระบบ import ได้">📄 Template</button>
           <button class="btn" onclick="document.getElementById('import-file-input').click()">📥 Import จาก Excel</button>
           <button class="btn btn-primary" onclick="openNewGroupModal()">+ <span data-i18n="eg.btn.newgroup">New Group</span></button>
         </div>
@@ -87,10 +88,11 @@
     </div>
   </div>
 
-  <script src="shared/translations.js?v=81"></script>
-  <script src="shared/toast.js?v=81"></script>
-  <script src="shared/api.js?v=81"></script>
-  <script src="shared/layout.js?v=81"></script>
-  <script src="admin-equivalent-groups.js?v=81"></script>
+  <script src="shared/translations.js?v=103"></script>
+  <script src="shared/toast.js?v=103"></script>
+  <script src="shared/api.js?v=103"></script>
+  <script src="shared/import-templates.js?v=103"></script>
+  <script src="shared/layout.js?v=103"></script>
+  <script src="admin-equivalent-groups.js?v=103"></script>
 </body>
 </html>

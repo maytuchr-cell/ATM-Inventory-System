@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Tech Workspace — ATM Inventory</title>
-    <link rel="stylesheet" href="shared/styles.css?v=81">
+    <link rel="stylesheet" href="shared/styles.css?v=103">
     <style>
         .section-head { display:flex; align-items:center; gap:10px; margin-bottom:20px; }
         .section-accent { width:4px; height:22px; background:var(--orange); border-radius:2px; }
@@ -407,10 +407,10 @@
     </div>
 </div>
 
-<script src="shared/translations.js?v=81"></script>
-<script src="shared/toast.js?v=81"></script>
-<script src="shared/api.js?v=81"></script>
-<script src="shared/layout.js?v=81"></script>
+<script src="shared/translations.js?v=103"></script>
+<script src="shared/toast.js?v=103"></script>
+<script src="shared/api.js?v=103"></script>
+<script src="shared/layout.js?v=103"></script>
 <script>
     // Auth guard — runs before anything else renders. No token means nobody actually signed in
     // through login-tech.html (or login.html); bounce there immediately instead of quietly
@@ -577,10 +577,19 @@
     // Split-column / batch-scoped line list — no (เบิก)/(คืน) tag needed since each list is
     // already scoped to one lineType (a batch's own lines are always Withdraw; tk.lines from the
     // API is always Return-only now, see TicketController.GetAllTickets).
+    // What Admin changed on a line the tech requested — shown so the tech isn't surprised when
+    // the delivered parts/quantities differ from what they submitted.
+    function adminChangeNoteHtml(l) {
+        const notes = [];
+        if (l.addedByAdmin) notes.push('➕ Admin เพิ่มรายการนี้ให้');
+        if (l.originalPartName) notes.push(`🔄 ขอไป: ${l.originalPartName} — Admin เปลี่ยนเป็นรายการนี้`);
+        if (l.originalQuantity != null) notes.push(`✏️ ขอไป ${l.originalQuantity} ชิ้น — Admin แก้เป็น ${l.quantity}`);
+        return notes.map(t => `<div style="font-size:10px;color:var(--orange);margin-top:1px;">${t}</div>`).join('');
+    }
     function linesSummaryHtml(lines) {
         return lines.length
             ? lines.map(l => `<div style="font-size:12px;">${l.partName} <span class="text-muted">×${l.quantity}</span>${l.condition ? ` <span style="font-size:10px;color:var(--text-muted)">(${CONDITION_LABEL[l.condition]})</span>` : ''}${l.isOffTicket ? ' <span style="font-size:10px;color:var(--orange);">🆕 นอกใบเบิก</span>' : ''}
-                ${l.originalPartName ? `<div style="font-size:10px;color:var(--orange);margin-top:1px;">🔄 ขอไป: ${l.originalPartName} — Admin เปลี่ยนเป็นอะไหล่เทียบเคียงนี้แทน</div>` : ''}</div>`).join('')
+                ${adminChangeNoteHtml(l)}</div>`).join('')
             : `<span class="text-muted">—</span>`;
     }
     // History tab needs both legs together in one cell — grouped by WithdrawBatch (so it's clear
@@ -592,7 +601,7 @@
         if (!batches.length) return `<span class="text-muted">—</span>`;
 
         const lineHtml = (l, tag) => `<div style="font-size:12px;">${l.partName} <span class="text-muted">×${l.quantity}</span> <span style="font-size:10px;color:var(--text-muted)">(${tag}${l.condition ? ' — ' + CONDITION_LABEL[l.condition] : ''})</span>${l.isOffTicket ? ' <span style="font-size:10px;color:var(--orange);">🆕 นอกใบเบิก</span>' : ''}
-            ${l.originalPartName ? `<div style="font-size:10px;color:var(--orange);margin-top:1px;">🔄 ขอไป: ${l.originalPartName} — Admin เปลี่ยนเป็นอะไหล่เทียบเคียงนี้แทน</div>` : ''}</div>`;
+            ${adminChangeNoteHtml(l)}</div>`;
 
         let html = '';
         batches.forEach((b, i) => {

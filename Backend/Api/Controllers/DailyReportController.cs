@@ -965,7 +965,11 @@ public class DailyReportController : ControllerBase
             }
             var str = cell.GetString().Trim();
             if (string.IsNullOrEmpty(str)) return null;
-            if (DateTime.TryParse(str, out var dt)) return dt;
+            // Invariant culture only — on a Thai-locale server, unqualified TryParse silently
+            // reads a plain "2026" as Buddhist Era (2026 - 543 = 1483 CE), shifting every date
+            // ~543 years into the past. That's still a valid DateTime (so no error, no null), it
+            // just makes every row compare as "before baseline" forever.
+            if (DateTime.TryParse(str, System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.None, out var dt)) return dt;
             if (DateTime.TryParseExact(str, new[] {
                 "dd-MMM-yyyy", "dd-MMM-yyyy HH:mm:ss", "d-MMM-yyyy",
                 "yyyy-MM-dd", "yyyy-MM-dd HH:mm:ss", "dd/MM/yyyy", "d/M/yyyy"

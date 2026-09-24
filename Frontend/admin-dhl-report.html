@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Daily Report — ATM Inventory</title>
-  <link rel="stylesheet" href="shared/styles.css?v=99">
+  <link rel="stylesheet" href="shared/styles.css?v=103">
   <style>
     .dr-stats { display:grid; grid-template-columns:repeat(5, 1fr); gap:10px; margin:14px 0 18px; }
     @media (max-width: 1024px) {
@@ -128,7 +128,7 @@
       <div class="topbar">
         <div>
           <div class="topbar-title">รายงานประจำวัน DHL (Daily Report)</div>
-          <div class="topbar-sub">นำเข้าไฟล์ Daily Report — ประมวลผลส่งมอบอะไหล่ (Outbound), รับคืน (Return) และซ่อมเสร็จ (Inbound Normal)</div>
+          <div class="topbar-sub">นำเข้าไฟล์รายงานประจำวันจาก DHL เพื่ออัปเดตการส่งอะไหล่ให้ช่าง การคืนอะไหล่ และของซ่อมเสร็จ</div>
         </div>
       </div>
 
@@ -151,10 +151,11 @@
               <div style="font-size:36px;margin-bottom:8px;">📦</div>
               <div style="font-weight:700;font-size:16px;margin-bottom:4px;">อัปโหลดไฟล์ Daily Report (.xlsx)</div>
               <div class="dr-note" style="margin-bottom:14px;">
-                ระบบรองรับการอ่านแบบ Multi-Sheet: <b>Outbound Order</b>, <b>Return inbound</b>, <b>Inbound normal</b>, <b>Minimum Stock</b> และ <b>24x7 ACTIVITY</b>
+                ใช้ไฟล์ที่ DHL ส่งมาได้เลย ระบบอ่านทุกชีตให้อัตโนมัติ (ส่งอะไหล่ให้ช่าง, ช่างส่งคืน, ของซ่อมเสร็จ, ยอดคงคลัง)
               </div>
               <input type="file" id="dr-file-input" accept=".xlsx" style="display:none" onchange="handleFileSelected(this.files[0])">
               <button class="btn btn-primary" onclick="document.getElementById('dr-file-input').click()">เลือกไฟล์ Excel</button>
+              <button class="btn btn-secondary" onclick="downloadImportTemplate('dhlDaily')">📄 ดาวน์โหลด Template</button>
               <div id="dr-filename" class="dr-note" style="margin-top:10px;font-weight:600;"></div>
             </div>
 
@@ -163,87 +164,87 @@
               <div id="dr-date-gap-banner" style="display:none;margin-bottom:16px;padding:12px 16px;background:#fffbeb;border:1px solid #fde68a;border-radius:8px;color:#92400e;font-size:13px;align-items:flex-start;gap:10px;">
                 <iconify-icon icon="mdi:alert-outline" width="20" style="color:#d97706;flex-shrink:0;margin-top:2px;"></iconify-icon>
                 <div>
-                  <div style="font-weight:700;margin-bottom:2px;">คำเตือน: ตรวจพบช่วงวันขาดตอน (Date Sequence Gap)</div>
+                  <div style="font-weight:700;margin-bottom:2px;">คำเตือน: มีไฟล์บางวันที่ยังไม่ได้นำเข้า</div>
                   <div id="dr-date-gap-msg"></div>
                 </div>
               </div>
 
               <!-- Summary Statistics Cards (5 cards) -->
               <div class="dr-stats" style="grid-template-columns:repeat(auto-fit, minmax(160px, 1fr));">
-                <div class="dr-stat outbound" onclick="filterSheet('OUTBOUND')" title="คลิกเพื่อดูกลุ่มส่งมอบอะไหล่">
+                <div class="dr-stat outbound" onclick="filterSheet('OUTBOUND')" title="คลิกเพื่อดูรายการที่ DHL ส่งให้ช่าง">
                   <div class="dr-stat-num" id="stat-outbound">0</div>
-                  <div class="dr-stat-label">ส่งมอบอะไหล่ (Outbound)</div>
+                  <div class="dr-stat-label">📤 DHL ส่งอะไหล่ให้ช่าง</div>
                   <div class="dr-stat-sub" id="stat-outbound-sub">—</div>
                 </div>
-                <div class="dr-stat good" onclick="filterSheet('RETURN')" title="คลิกเพื่อดูกลุ่มรับคืน">
+                <div class="dr-stat good" onclick="filterSheet('RETURN')" title="คลิกเพื่อดูรายการที่ช่างส่งคืน">
                   <div class="dr-stat-num" id="stat-confirmed">0</div>
-                  <div class="dr-stat-label">รับคืน Return Inbound</div>
+                  <div class="dr-stat-label">📥 ช่างส่งคืนอะไหล่</div>
                   <div class="dr-stat-sub" id="stat-confirmed-sub">—</div>
                 </div>
-                <div class="dr-stat repair" onclick="filterSheet('INBOUND')" title="คลิกเพื่อดูกลุ่มรับเข้าอะไหล่ซ่อม">
+                <div class="dr-stat repair" onclick="filterSheet('INBOUND')" title="คลิกเพื่อดูของซ่อมเสร็จ">
                   <div class="dr-stat-num" id="stat-inbound">0</div>
-                  <div class="dr-stat-label">รับเข้า Inbound Normal</div>
+                  <div class="dr-stat-label">🔧 ของซ่อมเสร็จกลับเข้าคลัง</div>
                   <div class="dr-stat-sub" id="stat-inbound-sub">—</div>
                 </div>
                 <div class="dr-stat warn" onclick="filterSheet('NEW')" title="คลิกเพื่อดูรายการใหม่รอปรับสต็อก">
                   <div class="dr-stat-num" id="stat-new">0</div>
-                  <div class="dr-stat-label">⚡ รวมรายการใหม่ปรับสต็อก</div>
-                  <div class="dr-stat-sub" id="stat-new-sub">ตัด/เพิ่มสต็อกคลังจริง</div>
+                  <div class="dr-stat-label">⚡ รายการใหม่ที่จะปรับสต็อก</div>
+                  <div class="dr-stat-sub" id="stat-new-sub">จะเพิ่ม/ลดยอดในคลังจริง</div>
                 </div>
-                <div class="dr-stat reconcile" onclick="filterSheet('RECONCILE')" title="คลิกเพื่อดูกระทบยอด Minimum Stock">
+                <div class="dr-stat reconcile" onclick="filterSheet('RECONCILE')" title="คลิกเพื่อดูการเทียบยอดคงคลัง">
                   <div class="dr-stat-num" id="stat-reconcile">0 / 0</div>
-                  <div class="dr-stat-label">🔍 กระทบยอด (ตรง / ต่าง)</div>
-                  <div class="dr-stat-sub" id="stat-reconcile-sub">Minimum Stock</div>
+                  <div class="dr-stat-label">🔍 เทียบยอดคงคลัง (ตรง / ไม่ตรง)</div>
+                  <div class="dr-stat-sub" id="stat-reconcile-sub">ยอด DHL เทียบกับระบบเรา</div>
                 </div>
               </div>
 
               <!-- Sheet Filter Tabs -->
               <div class="dr-subtabs">
                 <button class="dr-subtab active" id="filter-all" onclick="filterSheet('ALL')">ทั้งหมด (<span id="count-all">0</span>)</button>
-                <button class="dr-subtab" id="filter-outbound" onclick="filterSheet('OUTBOUND')">📤 ส่งมอบอะไหล่ Outbound (<span id="count-outbound">0</span>)</button>
-                <button class="dr-subtab" id="filter-return" onclick="filterSheet('RETURN')">📥 รับคืน Return Inbound (<span id="count-return">0</span>)</button>
-                <button class="dr-subtab" id="filter-inbound" onclick="filterSheet('INBOUND')">🔧 รับเข้าซ่อม Inbound Normal (<span id="count-inbound">0</span>)</button>
-                <button class="dr-subtab" id="filter-new" onclick="filterSheet('NEW')">⚡ รายการใหม่รอปรับสต็อก (<span id="count-new">0</span>)</button>
-                <button class="dr-subtab" id="filter-reconcile" onclick="filterSheet('RECONCILE')">🔍 ตรวจสอบสต็อก Minimum Stock (<span id="count-reconcile">0</span>)</button>
+                <button class="dr-subtab" id="filter-outbound" onclick="filterSheet('OUTBOUND')">📤 DHL ส่งให้ช่าง (<span id="count-outbound">0</span>)</button>
+                <button class="dr-subtab" id="filter-return" onclick="filterSheet('RETURN')">📥 ช่างส่งคืน (<span id="count-return">0</span>)</button>
+                <button class="dr-subtab" id="filter-inbound" onclick="filterSheet('INBOUND')">🔧 ซ่อมเสร็จกลับเข้าคลัง (<span id="count-inbound">0</span>)</button>
+                <button class="dr-subtab" id="filter-new" onclick="filterSheet('NEW')">⚡ รายการใหม่ที่จะปรับสต็อก (<span id="count-new">0</span>)</button>
+                <button class="dr-subtab" id="filter-reconcile" onclick="filterSheet('RECONCILE')">🔍 เทียบยอดคงคลัง (<span id="count-reconcile">0</span>)</button>
               </div>
 
               <!-- Filter Toolbar for Preview -->
               <div class="dr-filter-bar" id="preview-filter-bar">
-                <input id="dr-search-input" type="text" class="dr-filter-input" placeholder="🔍 ค้นหา Part No, S/N, ช่าง, เลขเคส..." oninput="applyActiveFilters()">
+                <input id="dr-search-input" type="text" class="dr-filter-input" placeholder="🔍 ค้นหารหัสอะไหล่, S/N, ชื่อช่าง, เลข Ticket..." oninput="applyActiveFilters()">
                 
                 <select id="dr-match-filter" class="dr-filter-select" onchange="applyActiveFilters()">
-                  <option value="">ทุกผลการจับคู่ (All Match Types)</option>
-                  <option value="OutboundConfirmed">📤 ส่งมอบตามใบเบิก</option>
-                  <option value="OutboundAutoTicket">✨ สร้างใบเบิกอัตโนมัติ</option>
-                  <option value="OutboundUnmatched">📤 ส่งมอบนอกระบบ (ไม่ผูกใบเบิก)</option>
-                  <option value="ReturnConfirmed">✅ คืนสำเร็จ (ปิดใบเบิก)</option>
-                  <option value="ExportRepair">🚚 ส่งไปศูนย์ซ่อม (D1 Room Repair)</option>
-                  <option value="InboundRepaired">📥 รับเข้าอะไหล่ซ่อม</option>
-                  <option value="RepairCompleted">🔧 ซ่อมเสร็จ</option>
-                  <option value="StillInRepair">⏳ อยู่ระหว่างการซ่อม (เคสย้อนหลัง)</option>
-                  <option value="Unmatched">📥 รับคืนเข้าสต็อก (เคสย้อนหลัง)</option>
-                  <option value="PriorToBaseline">📌 ก่อนวันตั้งต้น (3 ก.ย.)</option>
-                  <option value="AlreadyImported">🔁 เคยนำเข้าแล้ว</option>
+                  <option value="">ทุกผลการจับคู่</option>
+                  <option value="OutboundConfirmed">📤 ส่งให้ช่างแล้ว (ตรงใบเบิก)</option>
+                  <option value="OutboundAutoTicket">✨ ส่งให้ช่างแล้ว (ระบบสร้างใบเบิกให้)</option>
+                  <option value="OutboundUnmatched">⚠️ ส่งให้ช่างแล้ว แต่ไม่พบใบเบิก</option>
+                  <option value="ReturnConfirmed">✅ ช่างคืนของแล้ว (ปิดใบเบิก)</option>
+                  <option value="ExportRepair">🚚 ส่งของเสียไปซ่อม</option>
+                  <option value="InboundRepaired">📥 ซ่อมเสร็จ รับเข้าคลัง (ไม่มีประวัติส่งซ่อม)</option>
+                  <option value="RepairCompleted">🔧 ซ่อมเสร็จ กลับเข้าคลัง</option>
+                  <option value="StillInRepair">⏳ กำลังซ่อม</option>
+                  <option value="Unmatched">⚠️ ช่างคืนของแล้ว แต่ไม่พบใบเบิก</option>
+                  <option value="PriorToBaseline">📌 ข้อมูลก่อน 3 ก.ย. (ไม่ปรับสต็อก)</option>
+                  <option value="AlreadyImported">🔁 ซ้ำกับไฟล์ก่อน (ข้าม)</option>
                 </select>
 
                 <div id="reconcile-filter-wrap" style="display:none;align-items:center;gap:10px;">
                   <select id="dr-reconcile-status-filter" class="dr-filter-select" onchange="applyActiveFilters()" style="min-width:140px;">
-                    <option value="">ทุกสถานะ (All Items)</option>
-                    <option value="DIFF">⚠️ มีผลต่าง (Diff Only)</option>
-                    <option value="DIFF_GOOD">🟢 ต่างเฉพาะของดี (Good Diff)</option>
-                    <option value="DIFF_REPAIR">🔴 ต่างเฉพาะรอซ่อม (Repair Diff)</option>
-                    <option value="MATCH">✅ ตรงกันทั้งหมด (Match Only)</option>
+                    <option value="">ทุกรายการ</option>
+                    <option value="DIFF">⚠️ เฉพาะยอดไม่ตรงกัน</option>
+                    <option value="DIFF_GOOD">🟢 ต่างเฉพาะของดี</option>
+                    <option value="DIFF_REPAIR">🔴 ต่างเฉพาะของเสีย</option>
+                    <option value="MATCH">✅ เฉพาะยอดตรงกัน</option>
                   </select>
                   <label style="display:inline-flex;align-items:center;gap:6px;font-size:12.5px;cursor:pointer;font-weight:600;color:var(--text-main);">
                     <input type="checkbox" id="dr-diff-only" onchange="applyActiveFilters()">
-                    <span>⚠️ เฉพาะที่มีผลต่าง</span>
+                    <span>⚠️ เฉพาะยอดไม่ตรงกัน</span>
                   </label>
                 </div>
 
                 <!-- Checkbox to toggle inclusion of historical rows before baseline (hidden by default) -->
                 <label id="wrap-show-prior" style="display:inline-flex;align-items:center;gap:6px;font-size:12px;cursor:pointer;font-weight:600;color:var(--text-secondary);background:var(--surface,#fff);padding:6px 11px;border-radius:7px;border:1px solid var(--border);user-select:none;">
                   <input type="checkbox" id="dr-show-prior" onchange="applyActiveFilters()">
-                  <span>📌 รวมประวัติก่อนวันตั้งต้น (<span id="count-prior-badge">0</span>)</span>
+                  <span>📌 แสดงข้อมูลก่อน 3 ก.ย. ด้วย (<span id="count-prior-badge">0</span>)</span>
                 </label>
 
                 <div style="margin-left:auto;display:flex;align-items:center;gap:10px;">
@@ -257,13 +258,13 @@
                 <table>
                   <thead>
                     <tr>
-                      <th>ชีต / ประเภท</th>
+                      <th>ประเภท</th>
                       <th>รหัสอะไหล่</th>
                       <th>Serial No.</th>
-                      <th>ช่าง (FE)</th>
-                      <th>เลขเคส (Case No)</th>
+                      <th>ช่าง</th>
+                      <th>เลข Ticket</th>
                       <th>จำนวน</th>
-                      <th>สถานะ</th>
+                      <th>สภาพของ</th>
                       <th>ผลการจับคู่</th>
                       <th>รายละเอียด</th>
                     </tr>
@@ -277,15 +278,19 @@
                 <table>
                   <thead>
                     <tr>
-                      <th>รหัสอะไหล่ (Part No.)</th>
-                      <th>ชื่ออะไหล่ (Part Description)</th>
-                      <th class="th-good">DHL ดี</th>
-                      <th class="th-good">ระบบ ดี</th>
-                      <th class="th-good">ผลต่างดี</th>
-                      <th class="th-repair">DHL รอซ่อม</th>
-                      <th class="th-repair">ระบบ ซ่อม</th>
-                      <th class="th-repair">ผลต่างซ่อม</th>
-                      <th style="text-align:center;">สถานะ</th>
+                      <th rowspan="2">รหัสอะไหล่</th>
+                      <th rowspan="2">ชื่ออะไหล่</th>
+                      <th class="th-good" colspan="3" style="text-align:center;">🟢 ของดี (จำนวนชิ้น)</th>
+                      <th class="th-repair" colspan="3" style="text-align:center;">🔴 ของเสีย (จำนวนชิ้น)</th>
+                      <th rowspan="2" style="text-align:center;">ผลการเทียบ</th>
+                    </tr>
+                    <tr>
+                      <th class="th-good" title="จำนวนที่ DHL นับได้จริงในคลัง">ยอดของ DHL</th>
+                      <th class="th-good" title="จำนวนที่ระบบของเราบันทึกไว้">ยอดในระบบเรา</th>
+                      <th class="th-good" title="ยอด DHL ลบ ยอดในระบบ">ต่างกัน</th>
+                      <th class="th-repair" title="จำนวนที่ DHL นับได้จริงในคลัง">ยอดของ DHL</th>
+                      <th class="th-repair" title="จำนวนที่ระบบของเราบันทึกไว้">ยอดในระบบเรา</th>
+                      <th class="th-repair" title="ยอด DHL ลบ ยอดในระบบ">ต่างกัน</th>
                     </tr>
                   </thead>
                   <tbody id="reconcile-tbody"></tbody>
@@ -296,7 +301,7 @@
                 <div class="dr-note" id="preview-footer-note"></div>
                 <div style="display:flex;gap:10px;">
                   <button class="btn" onclick="cancelPreview()">ยกเลิก</button>
-                  <button class="btn btn-primary" id="confirm-btn" onclick="confirmImport()">✅ ยืนยัน Import เข้าสู่ระบบ</button>
+                  <button class="btn btn-primary" id="confirm-btn" onclick="confirmImport()">✅ ยืนยันนำเข้าข้อมูล</button>
                 </div>
               </div>
             </div>
@@ -310,15 +315,15 @@
               <table>
                 <thead>
                   <tr>
-                    <th>วันที่ Import</th>
+                    <th>วันที่นำเข้า</th>
                     <th>ชื่อไฟล์</th>
                     <th>ผู้นำเข้า</th>
-                    <th style="text-align:right;">ส่งมอบ</th>
-                    <th style="text-align:right;">คืนสำเร็จ</th>
-                    <th style="text-align:right;">ซ่อมเสร็จ</th>
-                    <th style="text-align:right;">รับเข้าซ่อม</th>
-                    <th style="text-align:right;">ยังไม่จับคู่</th>
-                    <th style="text-align:right;">รวมแถว</th>
+                    <th style="text-align:right;">ส่งให้ช่าง</th>
+                    <th style="text-align:right;">ช่างคืนแล้ว</th>
+                    <th style="text-align:right;">ซ่อมเสร็จกลับเข้าคลัง</th>
+                    <th style="text-align:right;">ซ่อมเสร็จ (ไม่มีประวัติ)</th>
+                    <th style="text-align:right;">⚠️ ไม่พบใบเบิก</th>
+                    <th style="text-align:right;">รวมทั้งหมด</th>
                     <th></th>
                   </tr>
                 </thead>
@@ -363,7 +368,7 @@
       <div class="modal-header" style="border-bottom:1px solid var(--border); padding-bottom:12px; margin-bottom:16px;">
         <div class="modal-title" style="display:flex; align-items:center; gap:8px; color:var(--orange); font-size:17px; font-weight:700;">
           <iconify-icon icon="mdi:alert-circle-outline" width="24" height="24"></iconify-icon>
-          <span>ยืนยันการนำเข้าข้อมูล Daily Report</span>
+          <span>ยืนยันการนำเข้ารายงานประจำวัน DHL</span>
         </div>
       </div>
       <div class="modal-body" style="font-size:13px; line-height:1.6;">
@@ -380,24 +385,24 @@
         <!-- Section 1: Breakdown by Sheet / Operation (Sums to 100% of Total Rows) -->
         <div style="margin-bottom:16px;">
           <div style="font-size:12.5px; font-weight:700; margin-bottom:8px; color:var(--text-primary); display:flex; justify-content:space-between; align-items:center;">
-            <span>1. จำแนกตามชีต / ประเภทงาน (รายการในไฟล์):</span>
+            <span>1. ในไฟล์มีอะไรบ้าง:</span>
             <span style="font-size:12px; font-weight:800; color:var(--orange);">รวมทั้งหมด <span id="cm-total">0</span> รายการ</span>
           </div>
           <div style="display:grid; grid-template-columns:repeat(3, 1fr); gap:8px;">
             <div style="background:var(--bg-subtle); padding:10px 12px; border-radius:8px; border:1px solid var(--border); text-align:center;">
-              <div style="font-size:11px; color:var(--text-secondary);">📤 ส่งมอบอะไหล่ (Outbound)</div>
+              <div style="font-size:11px; color:var(--text-secondary);">📤 DHL ส่งอะไหล่ให้ช่าง</div>
               <div style="font-size:18px; font-weight:800; color:#2563eb; margin-top:2px;" id="cm-outbound">0</div>
-              <div style="font-size:10px; color:var(--text-muted); margin-top:2px;">ชีต Outbound & 24x7</div>
+              <div style="font-size:10px; color:var(--text-muted); margin-top:2px;">จากชีต Outbound และ 24x7</div>
             </div>
             <div style="background:var(--bg-subtle); padding:10px 12px; border-radius:8px; border:1px solid var(--border); text-align:center;">
-              <div style="font-size:11px; color:var(--text-secondary);">📥 รับคืน (Return)</div>
+              <div style="font-size:11px; color:var(--text-secondary);">📥 ช่างส่งคืนอะไหล่</div>
               <div style="font-size:18px; font-weight:800; color:var(--green); margin-top:2px;" id="cm-return">0</div>
-              <div style="font-size:10px; color:var(--text-muted); margin-top:2px;">ชีต Return inbound</div>
+              <div style="font-size:10px; color:var(--text-muted); margin-top:2px;">จากชีต Return inbound</div>
             </div>
             <div style="background:var(--bg-subtle); padding:10px 12px; border-radius:8px; border:1px solid var(--border); text-align:center;">
-              <div style="font-size:11px; color:var(--text-secondary);">🔧 รับเข้าซ่อม (Inbound)</div>
+              <div style="font-size:11px; color:var(--text-secondary);">🔧 ของซ่อมเสร็จกลับเข้าคลัง</div>
               <div style="font-size:18px; font-weight:800; color:var(--orange); margin-top:2px;" id="cm-inbound">0</div>
-              <div style="font-size:10px; color:var(--text-muted); margin-top:2px;">ชีต Inbound normal</div>
+              <div style="font-size:10px; color:var(--text-muted); margin-top:2px;">จากชีต Inbound normal</div>
             </div>
           </div>
           <div style="font-size:11px; color:var(--text-muted); margin-top:5px; text-align:right;" id="cm-math-explanation">
@@ -408,25 +413,25 @@
         <!-- Section 2: Breakdown by Stock Impact -->
         <div style="margin-bottom:16px;">
           <div style="font-size:12.5px; font-weight:700; margin-bottom:8px; color:var(--text-primary);">
-            2. ผลกระทบต่อสต็อกสินค้า (Stock Processing):
+            2. จะมีผลกับสต็อกอย่างไร:
           </div>
           <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px;">
             <div style="background:#fefce8; padding:12px 14px; border-radius:8px; border:1.5px solid #fde047; display:flex; flex-direction:column; justify-content:space-between;">
               <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:10px;">
-                <span style="font-size:12px; font-weight:700; color:#854d0e; line-height:1.35;">⚡ รายการใหม่ตัด/เพิ่มสต็อกจริง</span>
+                <span style="font-size:12px; font-weight:700; color:#854d0e; line-height:1.35;">⚡ รายการใหม่ (จะเพิ่ม/ลดสต็อก)</span>
                 <span style="font-size:22px; font-weight:800; color:#ca8a04; line-height:1; flex-shrink:0;" id="cm-new">0</span>
               </div>
               <div style="font-size:10.5px; color:#a16207; margin-top:8px; line-height:1.4;">
-                รายการธุรกรรมรอบนี้ที่จะไปปรับยอดคงคลัง
+                รายการของรอบนี้ ที่ระบบจะไปปรับยอดในคลัง
               </div>
             </div>
             <div style="background:var(--bg-subtle); padding:12px 14px; border-radius:8px; border:1px solid var(--border); display:flex; flex-direction:column; justify-content:space-between;">
               <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:10px;">
-                <span style="font-size:12px; font-weight:700; color:var(--text-secondary); line-height:1.35;">ℹ️ รายการเดิม / ไม่ปรับสต็อกซ้ำ</span>
+                <span style="font-size:12px; font-weight:700; color:var(--text-secondary); line-height:1.35;">ℹ️ รายการเก่า (ไม่ปรับสต็อกซ้ำ)</span>
                 <span style="font-size:22px; font-weight:800; color:var(--text-primary); line-height:1; flex-shrink:0;" id="cm-unchanged">0</span>
               </div>
               <div style="font-size:10.5px; color:var(--text-muted); margin-top:8px; line-height:1.4;">
-                ประวัติย้อนหลังและรายการเดิม (บันทึก S/N ไม่แตะยอดสต็อกซ้ำ)
+                ข้อมูลย้อนหลังหรือเคยนำเข้าแล้ว — บันทึก S/N อย่างเดียว ไม่เปลี่ยนยอดสต็อก
               </div>
             </div>
           </div>
@@ -439,21 +444,21 @@
         <div id="cm-reconcile-section" style="display:none; margin-bottom:16px;">
           <div style="font-size:12.5px; font-weight:700; margin-bottom:8px; color:var(--text-primary); display:flex; align-items:center; gap:6px;">
             <iconify-icon icon="mdi:scale-balance" width="16" style="color:#0d9488;"></iconify-icon>
-            3. ตรวจสอบยอดคงคลัง (Minimum Stock Reconciliation):
+            3. เทียบยอดคงคลัง DHL กับระบบเรา:
           </div>
           <div style="background:var(--bg-subtle); padding:10px 14px; border-radius:8px; border:1px solid var(--border); margin-bottom:10px;">
             <div style="display:flex; justify-content:space-between; align-items:center; font-size:12px;">
-              <span>ยอดตรงกับ DHL: <strong id="cm-rec-match" style="color:var(--green);">0</strong> รายการ</span>
-              <span>มีผลต่าง (Diff): <strong id="cm-rec-diff" style="color:var(--orange);">0</strong> รายการ</span>
+              <span>ยอดตรงกัน: <strong id="cm-rec-match" style="color:var(--green);">0</strong> รายการ</span>
+              <span>ยอดไม่ตรงกัน: <strong id="cm-rec-diff" style="color:var(--orange);">0</strong> รายการ</span>
             </div>
           </div>
           <div style="background:#f0fdf4; border:1.5px solid #86efac; border-radius:8px; padding:12px 14px;">
             <label style="display:flex; align-items:flex-start; gap:10px; cursor:pointer; font-weight:700; color:#166534; user-select:none;">
               <input type="checkbox" id="cm-sync-reconcile" style="margin-top:3px; width:18px; height:18px; accent-color:#16a34a;" checked>
               <div>
-                <div style="font-size:13px;">ปรับยอดคงคลังให้ตรงกับยอดตรวจนับของ DHL (ยึดตาม Minimum Stock)</div>
+                <div style="font-size:13px;">แก้ยอดในระบบเราให้ตรงกับที่ DHL นับได้</div>
                 <div style="font-size:11px; font-weight:400; color:#15803d; margin-top:2px;">
-                  ปรับสต็อกคลังกลาง (DHL-BKK) สำหรับรายการที่มีผลต่างให้เท่ากับตัวเลขในไฟล์ DHL ทันที (Diff จะกลายเป็น 0)
+                  รายการที่ยอดไม่ตรงกัน ระบบจะเปลี่ยนยอดคลังกลาง (DHL-BKK) ให้เท่ากับตัวเลขในไฟล์ DHL ทันที
                 </div>
               </div>
             </label>
@@ -463,7 +468,7 @@
         <div style="background:#fff7ed; border:1px solid #fed7aa; border-radius:8px; padding:10px 14px; font-size:12px; color:#9a3412; display:flex; gap:8px; align-items:flex-start;">
           <iconify-icon icon="mdi:alert" width="18" height="18" style="flex-shrink:0; margin-top:2px;"></iconify-icon>
           <div>
-            เมื่อกดยืนยัน ระบบจะทำการบันทึกข้อมูลเข้าสู่ฐานข้อมูล ตัด/เพิ่มสต็อกคลังกลาง และอัปเดตสถานะ Serial Numbers ทันที
+            เมื่อกดยืนยัน ระบบจะบันทึกข้อมูล เพิ่ม/ลดสต็อกคลังกลาง และอัปเดตสถานะ S/N ทันที
           </div>
         </div>
       </div>
@@ -482,7 +487,7 @@
       <div class="modal-header" style="border-bottom:1px solid var(--border); padding-bottom:12px; margin-bottom:16px;">
         <div class="modal-title" style="display:flex; align-items:center; gap:8px; color:var(--green); font-size:18px; font-weight:800;">
           <iconify-icon icon="mdi:check-decagram" width="26" height="26"></iconify-icon>
-          <span>นำเข้าข้อมูล Daily Report สำเร็จเรียบร้อย!</span>
+          <span>นำเข้ารายงานประจำวันเรียบร้อยแล้ว</span>
         </div>
       </div>
       <div class="modal-body" style="font-size:13px; line-height:1.6;">
@@ -505,17 +510,17 @@
               <div style="font-size:10px; color:var(--text-muted); margin-top:2px;">รายการในไฟล์</div>
             </div>
             <div style="background:var(--bg-subtle); padding:10px; border-radius:10px; border:1px solid var(--border); text-align:center;">
-              <div style="font-size:11px; color:var(--text-secondary);">ส่งมอบ (Outbound)</div>
+              <div style="font-size:11px; color:var(--text-secondary);">DHL ส่งให้ช่าง</div>
               <div style="font-size:20px; font-weight:800; color:#2563eb;" id="rm-outbound">0</div>
-              <div style="font-size:10px; color:var(--text-muted); margin-top:2px;">ตัดสต็อก/ช่างถือ</div>
+              <div style="font-size:10px; color:var(--text-muted); margin-top:2px;">ย้ายไปอยู่กับช่าง</div>
             </div>
             <div style="background:var(--bg-subtle); padding:10px; border-radius:10px; border:1px solid var(--border); text-align:center;">
-              <div style="font-size:11px; color:var(--text-secondary);">รับคืน (Return)</div>
+              <div style="font-size:11px; color:var(--text-secondary);">ช่างส่งคืน</div>
               <div style="font-size:20px; font-weight:800; color:var(--green);" id="rm-return">0</div>
-              <div style="font-size:10px; color:var(--text-muted); margin-top:2px;">รับคืนเข้าคลัง/S/N</div>
+              <div style="font-size:10px; color:var(--text-muted); margin-top:2px;">กลับเข้าคลัง</div>
             </div>
             <div style="background:var(--bg-subtle); padding:10px; border-radius:10px; border:1px solid var(--border); text-align:center;">
-              <div style="font-size:11px; color:var(--text-secondary);">รับเข้าซ่อม (Inbound)</div>
+              <div style="font-size:11px; color:var(--text-secondary);">ซ่อมเสร็จ</div>
               <div style="font-size:20px; font-weight:800; color:var(--orange);" id="rm-inbound">0</div>
               <div style="font-size:10px; color:var(--text-muted); margin-top:2px;">ซ่อมเสร็จเข้าคลัง</div>
             </div>
@@ -524,17 +529,17 @@
 
         <div id="rm-reconcile-wrap" style="display:none; background:var(--bg-subtle); border:1px solid var(--border); border-radius:10px; padding:10px 14px; margin-bottom:16px;">
           <div style="font-size:12px; font-weight:700; color:var(--text-primary); margin-bottom:4px; display:flex; align-items:center; gap:6px;">
-            <iconify-icon icon="mdi:scale-balance" width="16"></iconify-icon> การกระทบยอด Minimum Stock:
+            <iconify-icon icon="mdi:scale-balance" width="16"></iconify-icon> เทียบยอดคงคลัง:
           </div>
           <div style="font-size:12px; color:var(--text-secondary);" id="rm-reconcile-text">
-            ยอดสต็อกตรงกับคลัง DHL: — รายการ • มีผลต่าง: — รายการ
+            ยอดตรงกัน: — รายการ • ยอดไม่ตรงกัน: — รายการ
           </div>
         </div>
       </div>
       <div class="modal-footer" style="display:flex; justify-content:space-between; align-items:center; margin-top:20px; border-top:1px solid var(--border); padding-top:14px;">
         <button type="button" class="btn btn-secondary" onclick="closeResultModal()">ปิดหน้าต่าง</button>
         <button type="button" class="btn btn-primary" id="btn-view-imported-batch" onclick="viewImportedBatchDetails()">
-          <iconify-icon icon="mdi:clipboard-list-outline" width="16"></iconify-icon> ดูรายการละเอียดในประวัติ (Batch Details) ↗
+          <iconify-icon icon="mdi:clipboard-list-outline" width="16"></iconify-icon> ดูรายละเอียดทั้งหมด ↗
         </button>
       </div>
     </div>
@@ -577,7 +582,7 @@
             ขั้นตอนหลังจากกดล้างข้อมูล:
           </div>
           <div style="font-size:12px; color:#15803d; line-height:1.5;">
-            คุณสามารถอัปโหลดไฟล์ <b>"Dataone Daily Report 03 Sep 2026_.xlsx"</b> จากนั้นเลือกติ๊กถูก <b>"ปรับยอดคงคลังให้ตรงกับยอดตรวจนับของ DHL (ยึดตาม Minimum Stock)"</b> เพื่อสถาปนายอดสต็อกตั้งต้น 03 ก.ย. ได้อย่างถูกต้อง 100% (Diff = 0)
+            คุณสามารถอัปโหลดไฟล์ <b>"Dataone Daily Report 03 Sep 2026_.xlsx"</b> จากนั้นเลือกติ๊กถูก <b>"แก้ยอดในระบบเราให้ตรงกับที่ DHL นับได้"</b> เพื่อสถาปนายอดสต็อกตั้งต้น 03 ก.ย. ได้อย่างถูกต้อง 100% (Diff = 0)
           </div>
         </div>
 
@@ -598,10 +603,11 @@
   </div>
 
   <script src="https://code.iconify.design/iconify-icon/2.1.0/iconify-icon.min.js"></script>
-  <script src="shared/translations.js?v=100"></script>
-  <script src="shared/toast.js?v=100"></script>
-  <script src="shared/api.js?v=100"></script>
-  <script src="shared/layout.js?v=100"></script>
+  <script src="shared/translations.js?v=103"></script>
+  <script src="shared/toast.js?v=103"></script>
+  <script src="shared/api.js?v=103"></script>
+  <script src="shared/import-templates.js?v=103"></script>
+  <script src="shared/layout.js?v=103"></script>
   <script>
     let pendingFile = null;
     let lastPreviewRows = [];
@@ -621,18 +627,32 @@
       if (tab === 'history') loadHistory();
     }
 
+    // Sheet names come straight from DHL's file — show what each one means instead.
+    function sheetLabel(sheet) {
+      const s = (sheet || '').trim().toLowerCase().replace(/\s+/g, '');
+      if (!s) return '—';
+      if (s.includes('24x7')) return '📤 DHL ส่งให้ช่าง (24 ชม.)';
+      if (s.startsWith('outboundordeexport') || s.startsWith('outboundorderexport')) return '🚚 ส่งของเสียไปซ่อม';
+      if (s.startsWith('outbound')) return '📤 DHL ส่งให้ช่าง';
+      if (s.startsWith('return')) return '📥 ช่างส่งคืน';
+      if (s.startsWith('inbound')) return '🔧 ซ่อมเสร็จกลับเข้าคลัง';
+      return sheet;
+    }
+
+    const DHL_STATUS_LABEL = { GOOD: '🟢 ของดี', BAD: '🔴 ของเสีย' };
+
     const MATCH_LABEL = {
-      OutboundConfirmed:  '📤 ส่งมอบตามใบเบิก',
-      OutboundAutoTicket: '✨ สร้างใบเบิกอัตโนมัติ',
-      OutboundUnmatched:  '📤 ส่งมอบนอกระบบ (ไม่ผูกใบเบิก)',
-      ReturnConfirmed:   '✅ คืนสำเร็จ (ปิดใบเบิก)',
-      ExportRepair:      '🚚 ส่งไปศูนย์ซ่อม (D1 Room Repair)',
-      RepairCompleted:   '🔧 ซ่อมเสร็จ',
-      StillInRepair:     '⏳ อยู่ระหว่างการซ่อม (เคสย้อนหลัง)',
-      InboundRepaired:   '📥 รับเข้าอะไหล่ซ่อม',
-      Unmatched:         '📥 รับคืนเข้าสต็อก (เคสย้อนหลัง)',
-      PriorToBaseline:   '📌 ก่อนวันตั้งต้น (3 ก.ย.)',
-      AlreadyImported:   '🔁 เคยนำเข้าแล้ว'
+      OutboundConfirmed:  '📤 ส่งให้ช่างแล้ว (ตรงใบเบิก)',
+      OutboundAutoTicket: '✨ ส่งให้ช่างแล้ว (ระบบสร้างใบเบิกให้)',
+      OutboundUnmatched:  '⚠️ ส่งให้ช่างแล้ว แต่ไม่พบใบเบิก',
+      ReturnConfirmed:   '✅ ช่างคืนของแล้ว (ปิดใบเบิก)',
+      ExportRepair:      '🚚 ส่งของเสียไปซ่อม',
+      RepairCompleted:   '🔧 ซ่อมเสร็จ กลับเข้าคลัง',
+      StillInRepair:     '⏳ กำลังซ่อม',
+      InboundRepaired:   '📥 ซ่อมเสร็จ รับเข้าคลัง (ไม่มีประวัติส่งซ่อม)',
+      Unmatched:         '⚠️ ช่างคืนของแล้ว แต่ไม่พบใบเบิก',
+      PriorToBaseline:   '📌 ข้อมูลก่อน 3 ก.ย. (ไม่ปรับสต็อก)',
+      AlreadyImported:   '🔁 ซ้ำกับไฟล์ก่อน (ข้าม)'
     };
 
     async function handleFileSelected(file) {
@@ -845,13 +865,13 @@
       document.getElementById('preview-tbody').innerHTML = rows.length
         ? rows.map(r => `
           <tr>
-            <td><span class="dr-note"><b>${r.sourceSheet}</b></span></td>
+            <td><span class="dr-note"><b>${sheetLabel(r.sourceSheet)}</b></span></td>
             <td><code>${r.partNo}</code></td>
             <td>${r.serialNo ? `<b>${r.serialNo}</b>` : '—'}</td>
             <td>${r.feName || '—'}</td>
             <td>${r.caseNo ? `<code>${r.caseNo}</code>` : '—'}</td>
             <td style="text-align:center;">${r.qty}</td>
-            <td><span class="dr-note">${r.dhlStatus}</span></td>
+            <td><span class="dr-note">${DHL_STATUS_LABEL[(r.dhlStatus || '').toUpperCase()] || r.dhlStatus || '—'}</span></td>
             <td><span class="dr-badge ${r.matchType}">${MATCH_LABEL[r.matchType] || r.matchType}</span></td>
             <td class="dr-note">${r.note || ''}${r.externalTicketNo ? ` (ใบเบิก ${r.externalTicketNo})` : ''}</td>
           </tr>`).join('')
@@ -864,8 +884,8 @@
             const isMatch = item.status === 'MATCH';
             const isMissing = item.status === 'NOT_IN_SYSTEM';
             const badge = isMatch
-              ? `<span class="badge-match">ตรงกัน</span>`
-              : (isMissing ? `<span class="badge-missing">ไม่มีในระบบ</span>` : `<span class="badge-diff">มีผลต่าง</span>`);
+              ? `<span class="badge-match">✓ ยอดตรงกัน</span>`
+              : (isMissing ? `<span class="badge-missing">ไม่มีอะไหล่นี้ในระบบเรา</span>` : `<span class="badge-diff">⚠️ ยอดไม่ตรงกัน</span>`);
 
             const diffGoodText = item.diffGood === 0
               ? `<span style="color:var(--green);font-weight:600;">0</span>`
@@ -1003,7 +1023,7 @@
           recWrap.style.display = 'block';
           const syncedNote = (s.reconcileDiffCount === 0 && s.reconcileMatchCount > 0) ? ' • ปรับยอดตรงตาม DHL เรียบร้อย 100%' : '';
           document.getElementById('rm-reconcile-text').textContent =
-            `ยอดสต็อกตรงกับคลัง DHL: ${(s.reconcileMatchCount || 0).toLocaleString()} รายการ • มีผลต่าง: ${(s.reconcileDiffCount || 0).toLocaleString()} รายการ${syncedNote}`;
+            `ยอดตรงกัน: ${(s.reconcileMatchCount || 0).toLocaleString()} รายการ • ยอดไม่ตรงกัน: ${(s.reconcileDiffCount || 0).toLocaleString()} รายการ${syncedNote}`;
         } else {
           recWrap.style.display = 'none';
         }
@@ -1117,7 +1137,7 @@
       document.getElementById('batch-detail-tbody').innerHTML = rows.length
         ? rows.map(r => `
           <tr style="${r.undone ? 'opacity:.45;' : ''}">
-            <td><span class="dr-note">${r.sourceSheet || '—'}</span></td>
+            <td><span class="dr-note">${sheetLabel(r.sourceSheet)}</span></td>
             <td><code>${r.partNo}</code></td>
             <td>${r.serialNo ? `<b>${r.serialNo}</b>` : '—'}</td>
             <td>${r.feName || '—'}</td>

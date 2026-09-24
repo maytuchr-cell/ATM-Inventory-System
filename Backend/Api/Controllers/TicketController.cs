@@ -75,9 +75,11 @@ public class TicketController : ControllerBase
     //   NBD12 / NBD17 (Next Business Day) — delivered by 12:00 / 17:00 the next business day, as
     //     long as sent before the 16:00 cutoff; sent after cutoff, the courier's last pickup for
     //     that day is already gone, so it rolls one more business day out.
-    //   SBD (Same Business Day) — delivered before end of the same day, but only if sent before
-    //     its own 11:00 cutoff; sent after cutoff, it simply can't be same-day and rolls to the
-    //     next business day (with no further sub-deadline of its own).
+    //   SBD (Same Business Day) — delivered by 17:00 the SAME day, but only if sent before its own
+    //     11:00 cutoff; sent after cutoff it can't make that day's round, so it rolls to 17:00 the
+    //     next business day. The 17:00 is not in DHL's SLA list (which names only the cutoff) but
+    //     is the delivery time Ops confirmed — without it this returned a bare date, i.e. 00:00,
+    //     which read as "arrives at midnight" and understated the real deadline by a full day.
     //   Express — DHL's own SLA list carries no published cutoff/duration for it, so there is
     //     nothing to compute; returns null (shown as "-" wherever this is displayed).
     // Business day = skips Saturday/Sunday only — no Thai public-holiday calendar is wired in, so
@@ -117,7 +119,8 @@ public class TicketController : ControllerBase
         if (sla.StartsWith("SBD", StringComparison.OrdinalIgnoreCase))
         {
             var cutoffToday = sent.Date + new TimeSpan(11, 0, 0);
-            return sent <= cutoffToday ? sent.Date : NextBusinessDay(sent);
+            var day = sent <= cutoffToday ? sent.Date : NextBusinessDay(sent);
+            return day + new TimeSpan(17, 0, 0);
         }
         if (sla.StartsWith("NBD12", StringComparison.OrdinalIgnoreCase))
             return Nbd(new TimeSpan(16, 0, 0), new TimeSpan(12, 0, 0));
@@ -125,6 +128,16 @@ public class TicketController : ControllerBase
             return Nbd(new TimeSpan(16, 0, 0), new TimeSpan(17, 0, 0));
 
         return null; // Express or an unrecognized SLA string — no computable deadline
+    }
+
+    // GET /api/Ticket/preview-deadline?sla=...&plannedSendAt=... — live "คาดว่าถึงช่าง" preview for
+    // the approve modal, before Admin actually commits. Runs the exact same rule engine as the
+    // real dhlDeliveryDeadline field (ComputeDhlDeliveryDeadline) against the SLA + planned-send
+    // date/time Admin has picked so far, so the preview can never drift from what gets stored.
+    [HttpGet("preview-deadline")]
+    public IActionResult PreviewDeadline(string sla, DateTime plannedSendAt)
+    {
+        return Ok(new { deadline = ComputeDhlDeliveryDeadline(plannedSendAt, sla) });
     }
 
     // "รออะไหล่" no longer times out into an auto-reject (removed — see TryAutoApprove) — a batch
@@ -283,6 +296,304 @@ public class TicketController : ControllerBase
         return File(stream.ToArray(), "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", fileName);
     }
 
+    // Same normalization FeContactController.Suggest uses to match a Ticket.TechName against the
+    // FE contact sheet's FEName column — kept in sync with that copy by hand (both strip
+    // whitespace/honorifics and case-fold) since the two controllers don't share a base class.
+    private static readonly string[] NameHonorifics = { "นาย", "นาง", "นางสาว", "คุณ", "mr.", "mr", "mrs.", "mrs", "ms.", "ms" };
+    private static string NormalizeName(string name)
+    {
+        var s = name.Trim().ToLowerInvariant();
+        foreach (var h in NameHonorifics)
+            if (s.StartsWith(h)) { s = s[h.Length..]; break; }
+        return new string(s.Where(ch => !char.IsWhiteSpace(ch)).ToArray());
+    }
+
+    // GET /api/Ticket/tech-monitor?returnDueDays=14 — the Admin follow-up board: who is sitting on
+    // parts they should have acted on. Four independent lists, each answering a different "who do I
+    // chase" question:
+    //   overdueReceive — batch is เดินทาง and its SLA delivery deadline has already passed, so DHL
+    //     should have handed the part over by now but the tech never pressed "รับอะไหล่". Either
+    //     they forgot to confirm, or the delivery genuinely failed — both need a phone call.
+    //   overdueReturn — batch is เบิก, no return in flight, and held longer than returnDueDays.
+    //     Only an explicit UsageStatus of "Keep" is excluded (that one IS the tech's own buffer
+    //     stock and is never coming back). Everything else counts, INCLUDING UsageStatus == null:
+    //     the field is optional on the withdraw form and unset on the overwhelming majority of
+    //     rows, so requiring "Repair" here would silently empty this list and read as "nobody is
+    //     late" — the one way a follow-up report must never be wrong.
+    //   topHolders — the same held-parts set grouped per tech, worst first: who to escalate on.
+    //   adminPending — deliberately NOT about the techs: batches parked on a step ADMIN owns
+    //     (รอ = waiting for approval, รอส่งเมล DHL = approved but the DHL email never went out,
+    //     and the two return-leg equivalents). Without this, a monitor page reads as "techs are
+    //     always the holdup" when half the delay can be on this side of the desk.
+    [HttpGet("tech-monitor")]
+    public IActionResult GetTechMonitor(int returnDueDays = 14)
+    {
+        returnDueDays = Math.Max(1, returnDueDays);
+        var now = DateTime.Now;
+
+        var batches = _context.WithdrawBatches.Include(b => b.Ticket)
+            .Where(b => b.Status == "เดินทาง" || b.Status == "เบิก" || b.Status == "รอ" || b.Status == "รอส่งเมล DHL")
+            .ToList();
+
+        var batchIds = batches.Select(b => b.WithdrawBatchId).ToList();
+        var lines = _context.TicketPartLines
+            .Where(l => l.WithdrawBatchId != null && batchIds.Contains(l.WithdrawBatchId.Value) && l.LineType == "Withdraw")
+            .ToList();
+        var partNameById = _context.Parts.ToDictionary(p => p.Id, p => p.PartName);
+        // Tel comes from the FE contact sheet — the only phone number this system holds for a
+        // technician. Batches often have FeId typed by hand (or left blank/wrong) on the withdraw
+        // form, so a FeId lookup alone misses a lot of real techs; fall back to the same
+        // normalized-name match FeContactController.Suggest uses to autofill the withdraw form
+        // (strip whitespace/honorifics, case-fold, exact-then-contains) against Ticket.TechName.
+        var allContacts = _context.FeContacts.ToList();
+        var telByFeId = allContacts
+            .GroupBy(c => c.FeId)
+            .ToDictionary(g => g.Key, g => g.First().Tel, StringComparer.OrdinalIgnoreCase);
+        var contactsNormalized = allContacts
+            .Select(c => (c.Tel, Norm: NormalizeName(c.FeName)))
+            .Where(c => c.Norm.Length > 0)
+            .ToList();
+        var telByNormName = new Dictionary<string, string?>();
+        string? TelByName(string? techName)
+        {
+            if (string.IsNullOrWhiteSpace(techName)) return null;
+            var target = NormalizeName(techName);
+            if (target.Length == 0) return null;
+            if (telByNormName.TryGetValue(target, out var cached)) return cached;
+            var exact = contactsNormalized.FirstOrDefault(c => c.Norm == target);
+            var match = exact.Norm != null ? exact
+                : contactsNormalized.FirstOrDefault(c => c.Norm.Contains(target) || target.Contains(c.Norm));
+            return telByNormName[target] = match.Norm != null ? match.Tel : null;
+        }
+
+        List<object> PartsOf(int batchId) => lines.Where(l => l.WithdrawBatchId == batchId)
+            .Select(l => (object)new
+            {
+                partNo = l.PartNo,
+                partName = partNameById.GetValueOrDefault(l.PartId, l.PartNo),
+                qty = l.Quantity
+            }).ToList();
+
+        int QtyOf(int batchId) => lines.Where(l => l.WithdrawBatchId == batchId).Sum(l => l.Quantity);
+
+        string? TelOf(WithdrawBatch b) =>
+            (string.IsNullOrWhiteSpace(b.FeId) ? null : telByFeId.GetValueOrDefault(b.FeId))
+            ?? TelByName(b.Ticket?.TechName);
+
+        // ── 1. In transit, SLA deadline blown, tech never confirmed receipt ──
+        // Most in-transit batches auto-created by the DHL Daily Report import carry no SLA and no
+        // EmailSentAt, so ComputeDhlDeliveryDeadline returns null for them. Dropping those would
+        // hide nearly every in-transit batch, so fall back to NBD17 (the same default ApproveBatch
+        // applies) measured from the best "left the warehouse" timestamp available, and flag it.
+        const string DefaultSla = "NBD17 (Cut-off 16:00)";
+        var overdueReceive = batches
+            .Where(b => b.Status == "เดินทาง")
+            .Select(b =>
+            {
+                var slaAssumed = string.IsNullOrWhiteSpace(b.Sla) || ComputeDhlDeliveryDeadline(now, b.Sla) == null;
+                var sentAt = b.EmailSentAt ?? b.PlannedSendAt ?? b.ApprovedAt ?? b.CreatedAt;
+                return new { b, slaAssumed, sentAt, deadline = ComputeDhlDeliveryDeadline(sentAt, slaAssumed ? DefaultSla : b.Sla) };
+            })
+            .Where(x => x.deadline != null && now > x.deadline.Value)
+            .OrderBy(x => x.deadline)
+            .Select(x => new
+            {
+                withdrawBatchId = x.b.WithdrawBatchId,
+                ticketId = x.b.TicketId,
+                slipNo = x.b.WithdrawSlipNo,
+                caseNo = x.b.Ticket?.ExternalTicketNo,
+                techName = x.b.Ticket?.TechName,
+                techDept = x.b.Ticket?.TechDept,
+                techEmail = x.b.Ticket?.TechEmail,
+                feId = x.b.FeId,
+                tel = TelOf(x.b),
+                atmCode = x.b.AtmCode,
+                sla = x.b.Sla,
+                x.slaAssumed,
+                emailSentAt = x.sentAt,
+                deadline = x.deadline,
+                hoursOverdue = Math.Round((now - x.deadline!.Value).TotalHours, 1),
+                parts = PartsOf(x.b.WithdrawBatchId)
+            }).ToList();
+
+        // ── 2. Received, borrowed for a repair, held past the return window ──
+        var heldBatches = batches
+            .Where(b => b.Status == "เบิก"
+                        && b.UsageStatus != "Keep"
+                        && (b.ReturnStatus == null || b.ReturnStatus == "Reject"))
+            .ToList();
+
+        var overdueReturn = heldBatches
+            .Select(b => new { b, since = b.ReceivedAt ?? b.UpdatedAt })
+            .Where(x => (now - x.since).TotalDays > returnDueDays)
+            .OrderBy(x => x.since)
+            .Select(x => new
+            {
+                withdrawBatchId = x.b.WithdrawBatchId,
+                ticketId = x.b.TicketId,
+                slipNo = x.b.WithdrawSlipNo,
+                caseNo = x.b.Ticket?.ExternalTicketNo,
+                techName = x.b.Ticket?.TechName,
+                techDept = x.b.Ticket?.TechDept,
+                techEmail = x.b.Ticket?.TechEmail,
+                feId = x.b.FeId,
+                tel = TelOf(x.b),
+                atmCode = x.b.AtmCode,
+                receivedAt = x.since,
+                daysHeld = (int)(now - x.since).TotalDays,
+                daysOverdue = (int)(now - x.since).TotalDays - returnDueDays,
+                wasRejectedBefore = x.b.ReturnStatus == "Reject",
+                partQty = QtyOf(x.b.WithdrawBatchId),
+                parts = PartsOf(x.b.WithdrawBatchId)
+            }).ToList();
+
+        // ── 3. Per-tech ranking over the whole held set (not just the overdue ones) ──
+        var topHolders = heldBatches
+            .GroupBy(b => new { name = b.Ticket?.TechName ?? "—", dept = b.Ticket?.TechDept ?? "", email = b.Ticket?.TechEmail ?? "" })
+            .Select(g => new
+            {
+                techName = g.Key.name,
+                techDept = g.Key.dept,
+                techEmail = g.Key.email,
+                tel = g.Select(TelOf).FirstOrDefault(t => !string.IsNullOrWhiteSpace(t)),
+                batchCount = g.Count(),
+                overdueCount = g.Count(b => (now - (b.ReceivedAt ?? b.UpdatedAt)).TotalDays > returnDueDays),
+                partQty = g.Sum(b => QtyOf(b.WithdrawBatchId)),
+                oldestDaysHeld = g.Max(b => (int)(now - (b.ReceivedAt ?? b.UpdatedAt)).TotalDays),
+                caseNos = g.Select(b => b.Ticket?.ExternalTicketNo).Where(c => c != null).Distinct().ToList()
+            })
+            .OrderByDescending(x => x.batchCount).ThenByDescending(x => x.oldestDaysHeld)
+            .ToList();
+
+        // ── 3b. Per-tech return completeness over every received batch (fully returned ones too,
+        // so Admin can see who is done, not only who is behind). A batch's return counts once it
+        // has been submitted and not rejected/cancelled; "received back" narrows that to returns
+        // that actually landed (ReturnStatus คืน). Keep batches are excluded — never coming back.
+        var receivedBatches = batches.Where(b => b.Status == "เบิก" && b.UsageStatus != "Keep").ToList();
+        var receivedIds = receivedBatches.Select(b => b.WithdrawBatchId).ToList();
+        var returnLines = _context.TicketPartLines
+            .Where(l => l.LineType == "Return" && l.WithdrawBatchId != null && receivedIds.Contains(l.WithdrawBatchId.Value))
+            .ToList();
+        bool ReturnCounts(WithdrawBatch b) => b.ReturnStatus is not (null or "Reject" or "Cancel");
+
+        var returnByTech = receivedBatches
+            .GroupBy(b => new { name = b.Ticket?.TechName ?? "—", dept = b.Ticket?.TechDept ?? "", email = b.Ticket?.TechEmail ?? "" })
+            .Select(g =>
+            {
+                var batchRows = g.Select(b =>
+                {
+                    var wLines = lines.Where(l => l.WithdrawBatchId == b.WithdrawBatchId).ToList();
+                    var rLines = ReturnCounts(b) ? returnLines.Where(l => l.WithdrawBatchId == b.WithdrawBatchId).ToList() : new();
+                    // Batches created by the DHL Daily Report import carry return lines but no
+                    // withdraw lines (the part left before this system existed). The return is the
+                    // only quantity on record, so it stands in for "withdrawn" — flagged so the UI
+                    // can say this is inferred rather than a verified full return.
+                    var noWithdrawRecord = wLines.Count == 0;
+                    if (noWithdrawRecord) wLines = rLines;
+                    var withdrawn = wLines.Sum(l => l.Quantity);
+                    var returned = Math.Min(withdrawn, rLines.Sum(l => l.Quantity));
+                    return new
+                    {
+                        withdrawBatchId = b.WithdrawBatchId,
+                        slipNo = b.WithdrawSlipNo,
+                        returnSlipNo = b.ReturnSlipNo,
+                        caseNo = b.Ticket?.ExternalTicketNo,
+                        returnStatus = b.ReturnStatus,
+                        receivedAt = b.ReceivedAt ?? b.UpdatedAt,
+                        noWithdrawRecord,
+                        withdrawn,
+                        returned,
+                        receivedBack = b.ReturnStatus == "คืน" ? returned : 0,
+                        outstanding = withdrawn - returned,
+                        parts = wLines.GroupBy(l => l.PartNo).Select(pg => new
+                        {
+                            partNo = pg.Key,
+                            partName = partNameById.GetValueOrDefault(pg.First().PartId, pg.Key),
+                            withdrawn = pg.Sum(l => l.Quantity),
+                            returned = Math.Min(pg.Sum(l => l.Quantity),
+                                rLines.Where(r => r.PartNo == pg.Key || r.PartNo == pg.First().OriginalPartNo).Sum(r => r.Quantity))
+                        }).ToList()
+                    };
+                }).OrderByDescending(x => x.outstanding).ThenBy(x => x.receivedAt).ToList();
+
+                var withdrawnQty = batchRows.Sum(x => x.withdrawn);
+                var returnedQty = batchRows.Sum(x => x.returned);
+                return new
+                {
+                    techName = g.Key.name,
+                    techDept = g.Key.dept,
+                    techEmail = g.Key.email,
+                    tel = g.Select(TelOf).FirstOrDefault(t => !string.IsNullOrWhiteSpace(t)),
+                    batchCount = batchRows.Count,
+                    noWithdrawRecordCount = batchRows.Count(x => x.noWithdrawRecord),
+                    withdrawnQty,
+                    returnedQty,
+                    receivedBackQty = batchRows.Sum(x => x.receivedBack),
+                    outstandingQty = withdrawnQty - returnedQty,
+                    complete = withdrawnQty - returnedQty == 0,
+                    batches = batchRows
+                };
+            })
+            .OrderByDescending(x => x.outstandingQty).ThenBy(x => x.techName)
+            .ToList();
+
+        // ── 4. Stuck on Admin's own side of the desk ──
+        // Return leg counts too: tech submitted a return (รอ = needs review) or Admin approved it
+        // but never emailed DHL to come collect (อนุมัติคืน).
+        var returnPending = _context.WithdrawBatches.Include(b => b.Ticket)
+            .Where(b => b.ReturnStatus == "รอ" || b.ReturnStatus == "อนุมัติคืน").ToList();
+
+        var adminPending = batches
+            .Where(b => b.Status == "รอ" || b.Status == "รอส่งเมล DHL")
+            .Select(b => new
+            {
+                b,
+                stage = b.Status == "รอ" ? "รออนุมัติใบเบิก" : "อนุมัติแล้ว แต่ยังไม่ส่งเมล DHL",
+                slipNo = b.WithdrawSlipNo,
+                since = b.Status == "รอ" ? b.CreatedAt : (b.ApprovedAt ?? b.UpdatedAt)
+            })
+            .Concat(returnPending.Select(b => new
+            {
+                b,
+                stage = b.ReturnStatus == "รอ" ? "รออนุมัติการคืน" : "อนุมัติคืนแล้ว แต่ยังไม่ส่งเมล DHL",
+                slipNo = b.ReturnSlipNo,
+                since = b.ReturnStatus == "รอ" ? (b.ReturnRequestedAt ?? b.UpdatedAt) : (b.ReturnApprovedAt ?? b.UpdatedAt)
+            }))
+            .OrderByDescending(x => now - x.since)
+            .Select(x => new
+            {
+                withdrawBatchId = x.b.WithdrawBatchId,
+                ticketId = x.b.TicketId,
+                x.stage,
+                x.slipNo,
+                caseNo = x.b.Ticket?.ExternalTicketNo,
+                techName = x.b.Ticket?.TechName,
+                techDept = x.b.Ticket?.TechDept,
+                x.since,
+                hoursWaiting = Math.Round((now - x.since).TotalHours, 1)
+            })
+            .ToList();
+
+        return Ok(new
+        {
+            returnDueDays,
+            summary = new
+            {
+                overdueReceiveCount = overdueReceive.Count,
+                overdueReturnCount = overdueReturn.Count,
+                adminPendingCount = adminPending.Count,
+                heldBatchCount = heldBatches.Count,
+                heldPartQty = heldBatches.Sum(b => QtyOf(b.WithdrawBatchId)),
+                techHoldingCount = topHolders.Count
+            },
+            overdueReceive,
+            overdueReturn,
+            topHolders,
+            returnByTech,
+            adminPending
+        });
+    }
+
     // GET /api/Ticket
     [HttpGet]
     public IActionResult GetAllTickets()
@@ -317,6 +628,8 @@ public class TicketController : ControllerBase
             availableStock = l.LineType == "Withdraw" ? stockByPartId.GetValueOrDefault(l.PartId, 0) : (int?)null,
             l.OriginalPartNo,
             originalPartName = l.OriginalPartNo == null ? null : partNameByNo.GetValueOrDefault(l.OriginalPartNo, l.OriginalPartNo),
+            l.OriginalQuantity,
+            l.AddedByAdmin,
             isOffTicket = l.LineType == "Return" && !withdrawnPartNos.Contains(l.PartNo)
         };
 
@@ -346,8 +659,8 @@ public class TicketController : ControllerBase
                         b.WithdrawBatchId, b.Status, b.RejectReason, b.ApproverName, b.ApprovedAt, b.EmailSentAt,
                         b.WithdrawAddress, b.WithdrawDescription, b.WithdrawSlipNo, b.WithdrawDate,
                         b.EmployeeCode, b.UsageStatus, b.TechSupportName, b.CreatedAt, b.UpdatedAt,
-                        b.NeededByDate, b.FeId, b.Sla, b.AtmCode, b.WaitingSinceAt,
-                        dhlDeliveryDeadline = ComputeDhlDeliveryDeadline(b.EmailSentAt, b.Sla),
+                        b.NeededByDate, b.FeId, b.Sla, b.AtmCode, b.WaitingSinceAt, b.PlannedSendAt,
+                        dhlDeliveryDeadline = ComputeDhlDeliveryDeadline(b.EmailSentAt ?? b.PlannedSendAt, b.Sla),
                         b.ReturnStatus, b.ReturnRejectReason, b.ReturnApproverName, b.ReturnApprovedAt,
                         b.ReturnAddress, b.ReturnEmailSentAt, b.ReturnSlipNo,
                         lines = lines.Where(l => l.WithdrawBatchId == b.WithdrawBatchId && l.LineType == "Withdraw")
@@ -585,6 +898,118 @@ public class TicketController : ControllerBase
         return Ok(new { message = "Substituted.", batch, line });
     }
 
+    // ── Admin edits to a tech's withdraw request (add / change / remove lines) ──
+    // Unlike SubstitutePart these are not restricted to registered equivalents: Admin can put any
+    // active part on the batch. Same gate as SubstitutePart — only while the batch is still "รอ" or
+    // "รออะไหล่", because approval is where stock actually leaves DHL-BKK. Every change re-runs the
+    // stock check so the batch lands on the right status immediately, and the tech's original
+    // request stays visible via OriginalPartNo / OriginalQuantity / AddedByAdmin.
+    private (WithdrawBatch? batch, IActionResult? error) LoadEditableBatch(int ticketId, int batchId)
+    {
+        var batch = _context.WithdrawBatches.FirstOrDefault(b => b.WithdrawBatchId == batchId && b.TicketId == ticketId);
+        if (batch == null) return (null, NotFound(new { message = "ไม่พบใบเบิก" }));
+        if (batch.Status != "รอ" && batch.Status != "รออะไหล่")
+            return (null, BadRequest(new { message = "แก้ไขอะไหล่ได้เฉพาะใบเบิกที่ยังไม่อนุมัติ (สถานะ รอ / รออะไหล่)" }));
+        return (batch, null);
+    }
+
+    // POST /api/Ticket/{ticketId}/withdraw-batches/{batchId}/lines
+    [HttpPost("{ticketId}/withdraw-batches/{batchId}/lines")]
+    public IActionResult AddWithdrawLine(int ticketId, int batchId, [FromBody] EditWithdrawLineDto dto)
+    {
+        var (batch, error) = LoadEditableBatch(ticketId, batchId);
+        if (error != null) return error;
+        if (dto.Quantity is not > 0) return BadRequest(new { message = "จำนวนต้องมากกว่า 0" });
+
+        var part = _context.Parts.FirstOrDefault(p => p.PartNo == dto.PartNo && p.IsActive);
+        if (part == null) return BadRequest(new { message = $"ไม่พบอะไหล่ {dto.PartNo}" });
+        if (_context.TicketPartLines.Any(l => l.WithdrawBatchId == batchId && l.LineType == "Withdraw" && l.PartId == part.Id))
+            return BadRequest(new { message = $"มี {part.PartNo} ในใบเบิกนี้อยู่แล้ว — ให้แก้จำนวนของรายการเดิมแทน" });
+
+        var line = new TicketPartLine
+        {
+            TicketId = ticketId,
+            WithdrawBatchId = batchId,
+            PartId = part.Id,
+            PartNo = part.PartNo,
+            Quantity = dto.Quantity.Value,
+            LineType = "Withdraw",
+            AddedByAdmin = true
+        };
+        _context.TicketPartLines.Add(line);
+        _context.SaveChanges();
+        _audit.Log(User, "WithdrawBatch", batchId.ToString(), "ADMIN_ADD_LINE", null,
+            new { batchId, line.TicketPartLineId, part.PartNo, line.Quantity });
+
+        TryAutoApprove(batch!);
+        _context.SaveChanges();
+        return Ok(new { message = "เพิ่มอะไหล่แล้ว", status = batch!.Status });
+    }
+
+    // PUT /api/Ticket/{ticketId}/withdraw-batches/{batchId}/lines/{lineId} — change quantity
+    // and/or swap to any active part.
+    [HttpPut("{ticketId}/withdraw-batches/{batchId}/lines/{lineId}")]
+    public IActionResult UpdateWithdrawLine(int ticketId, int batchId, int lineId, [FromBody] EditWithdrawLineDto dto)
+    {
+        var (batch, error) = LoadEditableBatch(ticketId, batchId);
+        if (error != null) return error;
+
+        var line = _context.TicketPartLines.FirstOrDefault(l => l.TicketPartLineId == lineId && l.WithdrawBatchId == batchId && l.LineType == "Withdraw");
+        if (line == null) return NotFound(new { message = "ไม่พบรายการอะไหล่" });
+        if (dto.Quantity is <= 0) return BadRequest(new { message = "จำนวนต้องมากกว่า 0 (ถ้าไม่ต้องการแล้วให้ลบรายการ)" });
+
+        var before = new { line.PartNo, line.Quantity };
+
+        if (!string.IsNullOrWhiteSpace(dto.PartNo) && dto.PartNo != line.PartNo)
+        {
+            var part = _context.Parts.FirstOrDefault(p => p.PartNo == dto.PartNo && p.IsActive);
+            if (part == null) return BadRequest(new { message = $"ไม่พบอะไหล่ {dto.PartNo}" });
+            if (_context.TicketPartLines.Any(l => l.WithdrawBatchId == batchId && l.LineType == "Withdraw" && l.PartId == part.Id && l.TicketPartLineId != lineId))
+                return BadRequest(new { message = $"มี {part.PartNo} ในใบเบิกนี้อยู่แล้ว — แก้จำนวนของรายการนั้นแทน" });
+            if (!line.AddedByAdmin) line.OriginalPartNo ??= line.PartNo;
+            line.PartId = part.Id;
+            line.PartNo = part.PartNo;
+        }
+        if (dto.Quantity.HasValue && dto.Quantity.Value != line.Quantity)
+        {
+            if (!line.AddedByAdmin) line.OriginalQuantity ??= line.Quantity;
+            line.Quantity = dto.Quantity.Value;
+        }
+        if (line.OriginalPartNo == line.PartNo) line.OriginalPartNo = null;
+        if (line.OriginalQuantity == line.Quantity) line.OriginalQuantity = null;
+
+        _context.SaveChanges();
+        _audit.Log(User, "WithdrawBatch", batchId.ToString(), "ADMIN_EDIT_LINE", JsonSerializer.Serialize(before),
+            new { lineId, line.PartNo, line.Quantity });
+
+        TryAutoApprove(batch!);
+        _context.SaveChanges();
+        return Ok(new { message = "แก้ไขแล้ว", status = batch!.Status });
+    }
+
+    // DELETE /api/Ticket/{ticketId}/withdraw-batches/{batchId}/lines/{lineId}
+    [HttpDelete("{ticketId}/withdraw-batches/{batchId}/lines/{lineId}")]
+    public IActionResult RemoveWithdrawLine(int ticketId, int batchId, int lineId)
+    {
+        var (batch, error) = LoadEditableBatch(ticketId, batchId);
+        if (error != null) return error;
+
+        var lines = _context.TicketPartLines.Where(l => l.WithdrawBatchId == batchId && l.LineType == "Withdraw").ToList();
+        var line = lines.FirstOrDefault(l => l.TicketPartLineId == lineId);
+        if (line == null) return NotFound(new { message = "ไม่พบรายการอะไหล่" });
+        if (lines.Count <= 1)
+            return BadRequest(new { message = "ต้องเหลืออะไหล่อย่างน้อย 1 รายการ — ถ้าไม่ต้องการทั้งใบให้ใช้ปฏิเสธ/ยกเลิกใบเบิกแทน" });
+
+        _context.TicketPartLines.Remove(line);
+        _context.SaveChanges();
+        _audit.Log(User, "WithdrawBatch", batchId.ToString(), "ADMIN_REMOVE_LINE",
+            JsonSerializer.Serialize(new { lineId, line.PartNo, line.Quantity, line.AddedByAdmin }), null);
+
+        TryAutoApprove(batch!);
+        _context.SaveChanges();
+        return Ok(new { message = "ลบรายการแล้ว", status = batch!.Status });
+    }
+
     // Stock-check engine — runs right after a withdraw batch is submitted, and again after Admin
     // substitutes an equivalent part (or resubmits a rejected batch) while it sits at "รออะไหล่".
     // Despite the name, this no longer auto-approves anything — Admin still has to click "อนุมัติ"
@@ -703,6 +1128,7 @@ public class TicketController : ControllerBase
         batch.ApproverName = User?.Identity?.Name ?? "admin";
         batch.ApprovedAt = DateTime.Now;
         batch.Sla = string.IsNullOrWhiteSpace(dto?.Sla) ? "NBD17 (Cut-off 16:00)" : dto.Sla;
+        batch.PlannedSendAt = dto?.PlannedSendAt ?? DateTime.Now;
         batch.UpdatedAt = DateTime.Now;
 
         _context.SaveChanges();
@@ -809,6 +1235,7 @@ public class TicketController : ControllerBase
         }
 
         batch.Status = "เบิก";
+        batch.ReceivedAt = DateTime.Now;
         batch.UpdatedAt = DateTime.Now;
         _context.SaveChanges();
         return Ok(new { message = "Received.", batch });
@@ -1357,9 +1784,20 @@ public class RejectDto
     public string Reason { get; set; } = string.Empty;
 }
 
+public class EditWithdrawLineDto
+{
+    // Add: both required. Update: either or both — null means "leave unchanged".
+    public string? PartNo { get; set; }
+    public int? Quantity { get; set; }
+}
+
 public class ApproveBatchDto
 {
     // DHL delivery urgency tier — Admin's call at approve time, see ApproveBatch. Null/blank
     // defaults to NBD17 server-side too, so an old client that doesn't send this still works.
     public string? Sla { get; set; }
+
+    // When Admin plans to actually send the DHL email — see WithdrawBatch.PlannedSendAt. Null
+    // defaults to "now" server-side (the common case: approving and sending right away).
+    public DateTime? PlannedSendAt { get; set; }
 }

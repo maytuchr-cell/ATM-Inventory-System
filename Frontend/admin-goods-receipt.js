@@ -16,22 +16,82 @@ window.onload = async function () {
 async function loadParts() {
     allParts = await api.parts.getAll({ isActive: true });
 }
-async function loadVendors() {
-    allVendors = await api.vendors.getAll({ isActive: true });
+
+function escapeHtmlAttr(s) {
+    return String(s ?? '').replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
+}
+function partLabel(p) { return `${p.partName} (${p.partNo})`; }
+
+// Resolve whatever text currently sits in a .line-part input back to a real PartNo — used as a
+// fallback for someone who typed an exact PartNo/PartName without opening the dropdown (picking
+// a suggestion already stamps data-partno directly, see selectPartOption).
+function resolvePartNo(text) {
+    text = (text || '').trim();
+    if (!text) return null;
+    if (allParts.some(p => p.partNo === text)) return text;
+    const byLabel = allParts.find(p => partLabel(p) === text);
+    if (byLabel) return byLabel.partNo;
+    const byName = allParts.find(p => p.partName === text);
+    return byName ? byName.partNo : null;
 }
 
-function onCsvSourceChange() {
-    const source = document.getElementById('csv-source').value;
-    const group  = document.getElementById('csv-vendor-group');
-    const sel    = document.getElementById('csv-vendor');
-    if (source === 'GRG') {
-        group.style.display = 'none';
-    } else {
-        group.style.display = '';
-        sel.innerHTML = allVendors
-            .filter(v => v.vendorType === 'LOCAL')
-            .map(v => `<option value="${v.id}">${v.name}</option>`).join('');
+// ── Part search dropdown (event-delegated so it works for every .line-row, including ones
+// added after page load) — native <input list=datalist> looked right but Chrome shows the
+// *entire* list instead of filtering once the field already has a value, which is exactly the
+// unusable state an admin lands in after picking a part and re-opening the field. ──
+const PART_RESULT_LIMIT = 40;
+
+function renderPartDropdown(input) {
+    const dropdown = input.nextElementSibling;
+    const q = input.value.trim().toLowerCase();
+    const matches = (q
+        ? allParts.filter(p => p.partNo.toLowerCase().includes(q) || p.partName.toLowerCase().includes(q))
+        : allParts
+    ).slice(0, PART_RESULT_LIMIT);
+
+    dropdown.innerHTML = matches.length
+        ? matches.map(p => `
+            <div class="part-option" data-partno="${escapeHtmlAttr(p.partNo)}" data-label="${escapeHtmlAttr(partLabel(p))}">
+                ${p.partName} <span class="pn">(${p.partNo})</span>
+            </div>`).join('')
+        : `<div class="part-option-empty">ไม่พบอะไหล่ที่ตรงกับ "${input.value.trim()}"</div>`;
+    dropdown.hidden = false;
+}
+
+function selectPartOption(input, opt) {
+    input.value = opt.dataset.label;
+    input.dataset.partno = opt.dataset.partno;
+    input.nextElementSibling.hidden = true;
+}
+
+document.addEventListener('input', e => {
+    if (!e.target.matches('.line-part')) return;
+    e.target.dataset.partno = ''; // typing again invalidates any previously picked part
+    renderPartDropdown(e.target);
+});
+document.addEventListener('focusin', e => {
+    if (e.target.matches('.line-part')) renderPartDropdown(e.target);
+});
+document.addEventListener('mousedown', e => {
+    const opt = e.target.closest('.part-option');
+    if (opt) {
+        e.preventDefault(); // keep focus so the subsequent focusout on the input doesn't race the click
+        selectPartOption(opt.closest('.part-dropdown').previousElementSibling, opt);
     }
+});
+document.addEventListener('focusout', e => {
+    if (!e.target.matches('.line-part')) return;
+    const input = e.target;
+    setTimeout(() => { // let a mousedown-selected option register first
+        input.nextElementSibling.hidden = true;
+        if (!input.dataset.partno) {
+            const resolved = resolvePartNo(input.value);
+            if (resolved) { input.dataset.partno = resolved; input.value = partLabel(allParts.find(p => p.partNo === resolved)); }
+        }
+    }, 150);
+});
+async function loadVendors() {
+    allVendors = await api.vendors.getAll({ isActive: true });
 }
 async function loadLocations() {
     allLocations = await api.locations.getAll({ isActive: true });
@@ -58,6 +118,20 @@ function onSourceChange() {
     }
 }
 
+function onCsvSourceChange() {
+    const source = document.getElementById('csv-source').value;
+    const group  = document.getElementById('csv-vendor-group');
+    const sel    = document.getElementById('csv-vendor');
+    if (source === 'GRG') {
+        group.style.display = 'none';
+    } else {
+        group.style.display = '';
+        sel.innerHTML = allVendors
+            .filter(v => v.vendorType === 'LOCAL')
+            .map(v => `<option value="${v.id}">${v.name}</option>`).join('');
+    }
+}
+
 function addLine() {
     lineCount++;
     const wrap = document.getElementById('lines-wrap');
@@ -65,41 +139,62 @@ function addLine() {
     row.className = 'line-row';
     row.id = `line-${lineCount}`;
     row.innerHTML = `
-        <div class="form-group">
-            <label class="form-label" data-i18n="gr.lbl.part">Part</label>
-            <select class="form-select line-part">
-                ${allParts.map(p => `<option value="${p.partNo}">${p.partName} (${p.partNo})</option>`).join('')}
-            </select>
+        <div class="part-picker">
+            <input class="form-input line-part" autocomplete="off" placeholder="พิมพ์ค้นหารหัสหรือชื่ออะไหล่...">
+            <div class="part-dropdown" hidden></div>
         </div>
-        <div class="form-group">
-            <label class="form-label" data-i18n="gr.lbl.qty">Qty</label>
-            <input class="form-input line-qty" type="number" min="1" value="1">
-        </div>
-        <div class="form-group">
-            <label class="form-label" data-i18n="gr.lbl.condition">Condition</label>
-            <select class="form-select line-condition">
-                <option value="Good" data-i18n="gr.condition.good">Good</option>
-                <option value="Bad" data-i18n="gr.condition.bad">Bad</option>
-            </select>
-        </div>
-        <div class="form-group">
-            <label class="form-label" data-i18n="gr.lbl.sn">Serial No.</label>
-            <input class="form-input line-sn">
-        </div>
-        <div class="form-group">
-            <label class="form-label" data-i18n="gr.lbl.remarks">Remarks</label>
-            <input class="form-input line-remarks" data-i18n-ph="gr.lbl.remarks.ph">
-        </div>
-        <button type="button" class="btn-remove-line" onclick="removeLine(${lineCount})">✕</button>
+        <input class="form-input line-qty" type="number" min="1" value="1" aria-label="จำนวน">
+        <select class="form-select line-condition" aria-label="สภาพ">
+            <option value="Good">🟢 ของดี</option>
+            <option value="Bad">🔴 ของเสีย</option>
+        </select>
+        <input class="form-input line-sn" placeholder="ถ้ามี" aria-label="Serial No.">
+        <input class="form-input line-remarks" placeholder="ถ้ามี" aria-label="หมายเหตุ">
+        <button type="button" class="btn-remove-line" title="ลบรายการ" onclick="removeLine(${lineCount})">✕</button>
     `;
     wrap.appendChild(row);
-    applyLang();
+    updateLineSummary();
 }
 
 function removeLine(id) {
     const row = document.getElementById(`line-${id}`);
     if (row && document.querySelectorAll('.line-row').length > 1) row.remove();
     else showToast(t('gr.err.minline'), 'error');
+    updateLineSummary();
+}
+
+function updateLineSummary() {
+    const rows = document.querySelectorAll('.line-row');
+    const qty = [...rows].reduce((s, r) => s + (parseInt(r.querySelector('.line-qty').value, 10) || 0), 0);
+    document.getElementById('gr-line-summary').innerHTML = `รวม <b>${rows.length}</b> รายการ · <b>${qty}</b> ชิ้น`;
+}
+document.addEventListener('input', e => { if (e.target.matches('.line-qty')) updateLineSummary(); });
+
+function switchGrTab(tab) {
+    ['manual', 'import'].forEach(k => {
+        document.getElementById('gr-tab-' + k).classList.toggle('active', k === tab);
+        document.getElementById('gr-panel-' + k).style.display = k === tab ? '' : 'none';
+    });
+}
+
+function onGrDrop(e) {
+    e.preventDefault();
+    document.getElementById('gr-drop').classList.remove('drag');
+    const file = e.dataTransfer.files[0];
+    if (!file) return;
+    const input = document.getElementById('csv-file');
+    const dt = new DataTransfer();
+    dt.items.add(file);
+    input.files = dt.files;
+    onFileChange(input);
+}
+
+function setDropFileName(name) {
+    const drop = document.getElementById('gr-drop');
+    drop.classList.toggle('has-file', !!name);
+    document.getElementById('gr-drop-title').textContent = name
+        ? `✓ ${name} — คลิกเพื่อเปลี่ยนไฟล์`
+        : 'คลิกเพื่อเลือกไฟล์ หรือลากไฟล์มาวางที่นี่';
 }
 
 function renderLines() { /* re-apply translations on lang switch, lines keep their values */ }
@@ -107,17 +202,38 @@ function renderLines() { /* re-apply translations on lang switch, lines keep the
 async function submitReceipt(event) {
     event.preventDefault();
 
-    const lines = Array.from(document.querySelectorAll('.line-row')).map(row => ({
-        partNo:    row.querySelector('.line-part').value,
-        qty:       parseInt(row.querySelector('.line-qty').value, 10) || 0,
-        condition: row.querySelector('.line-condition').value,
-        serialNo:  row.querySelector('.line-sn').value || null,
-        isManualAdjust: false,
-        remarks:   row.querySelector('.line-remarks').value || null,
-    }));
+    const rows = Array.from(document.querySelectorAll('.line-row'));
+    const unresolved = [];
+    const lines = rows.map((row, i) => {
+        const partInput = row.querySelector('.line-part');
+        const partNo = partInput.dataset.partno || resolvePartNo(partInput.value);
+        if (!partNo && partInput.value.trim()) unresolved.push(i + 1);
+        return {
+            partNo,
+            qty:       parseInt(row.querySelector('.line-qty').value, 10) || 0,
+            condition: row.querySelector('.line-condition').value,
+            serialNo:  row.querySelector('.line-sn').value || null,
+            isManualAdjust: false,
+            remarks:   row.querySelector('.line-remarks').value || null,
+        };
+    });
 
+    if (lines.some(l => !l.partNo)) {
+        showToast(unresolved.length
+            ? `แถวที่ ${unresolved.join(', ')}: กรุณาเลือกอะไหล่จากรายการค้นหา ไม่ใช่พิมพ์เอง`
+            : 'กรุณาเลือกอะไหล่ทุกแถว', 'error');
+        return;
+    }
     if (lines.some(l => l.qty <= 0)) {
         showToast(t('gr.err.qty'), 'error');
+        return;
+    }
+
+    const receivedByInput = document.getElementById('f-receivedby');
+    const receivedBy = receivedByInput.value.trim();
+    if (!receivedBy) {
+        showToast('กรุณากรอกชื่อผู้รับเข้า', 'error');
+        receivedByInput.focus();
         return;
     }
 
@@ -127,8 +243,7 @@ async function submitReceipt(event) {
         vendorId: source === 'LocalVendor' ? parseInt(document.getElementById('f-vendor').value, 10) : null,
         refDocument: document.getElementById('f-refdoc').value || null,
         locationId: parseInt(document.getElementById('f-location').value, 10),
-        receivedBy: document.getElementById('f-receivedby').value || null,
-        handlingCost: parseFloat(document.getElementById('f-handlingcost').value) || 0,
+        receivedBy,
         lines
     };
 
@@ -168,6 +283,7 @@ function onFileChange(input) {
     if (!input.files.length) return;
 
     const file = input.files[0];
+    setDropFileName(file.name);
     const isCsv = file.name.toLowerCase().endsWith('.csv');
     const reader = new FileReader();
 
@@ -271,10 +387,10 @@ function showPreview(lines) {
             <td style="font-size:12px;color:var(--text-secondary)">${l.partName || '—'}</td>
             <td style="font-size:12px">${l.serialNo || '—'}</td>
             <td>${l.qty}</td>
-            <td><span class="badge ${l.condition === 'Good' ? 'badge-green' : 'badge-red'}">${l.condition}</span></td>
+            <td><span class="badge ${l.condition === 'Good' ? 'badge-green' : 'badge-red'}">${l.condition === 'Good' ? 'ของดี' : 'ของเสีย'}</span></td>
         </tr>`).join('');
 
-    document.getElementById('xl-preview-count').textContent = `พบ ${lines.length} รายการ — ตรวจสอบแล้วกด Import`;
+    document.getElementById('xl-preview-count').textContent = `ตรวจสอบรายการ — พบ ${lines.length} รายการ`;
     document.getElementById('xl-preview-wrap').style.display = '';
     document.getElementById('btn-import').disabled = lines.length === 0;
 }
@@ -285,6 +401,7 @@ function clearPreview() {
     document.getElementById('btn-import').disabled = true;
     document.getElementById('csv-file').value = '';
     document.getElementById('csv-result').innerHTML = '';
+    setDropFileName(null);
 }
 
 async function importFile() {
@@ -294,9 +411,14 @@ async function importFile() {
     const receivedBy = document.getElementById('csv-receivedby').value.trim();
     const resultDiv  = document.getElementById('csv-result');
 
-    if (!locationId) { showToast('กรุณาเลือก Target Location', 'error'); return; }
+    if (!locationId) { showToast('กรุณาเลือกคลังปลายทาง', 'error'); return; }
     const vendorId = source === 'LocalVendor' ? parseInt(document.getElementById('csv-vendor').value, 10) : null;
     if (source === 'LocalVendor' && !vendorId) { showToast('กรุณาเลือกผู้จำหน่าย', 'error'); return; }
+    if (!receivedBy) {
+        showToast('กรุณากรอกชื่อผู้รับเข้า', 'error');
+        document.getElementById('csv-receivedby').focus();
+        return;
+    }
 
     resultDiv.innerHTML = '<span style="color:var(--text-secondary)">กำลัง import…</span>';
     document.getElementById('btn-import').disabled = true;
@@ -304,10 +426,9 @@ async function importFile() {
     const dto = {
         source,
         locationId,
-        receivedBy: receivedBy || null,
+        receivedBy,
         vendorId,
         refDocument: null,
-        handlingCost: 0,
         lines: _parsedLines.map(l => ({
             partNo:         l.partNo,
             qty:            l.qty,
@@ -346,8 +467,11 @@ function renderHistory() {
         return;
     }
     const locale = getLang() === 'th' ? 'th-TH' : 'en-GB';
+    document.getElementById('gr-history-sub').textContent = `ทั้งหมด ${allReceipts.length} ใบ`;
     tbody.innerHTML = allReceipts.map(g => {
-        const sourceLabel = g.source === 'GRG' ? t('gr.source.grg') : (g.vendorName || t('gr.source.local'));
+        const sourceLabel = g.source === 'GRG'
+            ? '<span class="gr-src grg">GRG</span>'
+            : `<span class="gr-src local">${g.vendorName || 'ผู้จำหน่ายในประเทศ'}</span>`;
         // Group lines by partName+condition, sum qty
         const grouped = {};
         for (const l of g.lines) {
@@ -356,7 +480,7 @@ function renderHistory() {
             grouped[key].qty += l.qty;
         }
         const partsSummary = Object.values(grouped)
-            .map((x, i, arr) => `<div style="padding:4px 0;${i < arr.length-1 ? 'border-bottom:1px solid var(--border);' : ''}">${x.name} ×${x.qty}${x.bad ? ' <span style="color:var(--red)">⚠</span>' : ''}</div>`)
+            .map((x, i, arr) => `<div style="padding:4px 0;${i < arr.length-1 ? 'border-bottom:1px solid var(--border);' : ''}">${x.name} ×${x.qty}${x.bad ? ' <span class="badge badge-red" style="font-size:10.5px;">ของเสีย</span>' : ''}</div>`)
             .join('');
         return `
             <tr>
