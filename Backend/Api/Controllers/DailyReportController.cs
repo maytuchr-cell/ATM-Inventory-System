@@ -21,12 +21,14 @@ public class DailyReportController : ControllerBase
     private readonly AppDbContext _context;
     private readonly StockService _stock;
     private readonly AuditService _audit;
+    private readonly IConfiguration _config;
 
-    public DailyReportController(AppDbContext context, StockService stock, AuditService audit)
+    public DailyReportController(AppDbContext context, StockService stock, AuditService audit, IConfiguration config)
     {
         _context = context;
         _stock = stock;
         _audit = audit;
+        _config = config;
     }
 
     // POST /DailyReport/preview — parses + matches without writing to DB.
@@ -38,8 +40,86 @@ public class DailyReportController : ControllerBase
         if (error != null) return BadRequest(new { message = error });
 
         var dateGapWarning = CheckDateGap(file.FileName, parsed!);
+        var fileCheck = CheckReportDate(file.FileName);
         var (rowResults, summary) = Process(parsed!, reconciliation, commit: false, userName: CurrentUser());
-        return Ok(new { rows = rowResults, summary, reconciliation, dateGapWarning });
+
+        // By default the preview compares DHL's count with our stock BEFORE this file (fast, no
+        // locking); Admin can then ask for the after-import comparison (see ProjectAfterImport).
+        // "DailyReport:AutoProjectReconciliation": true makes the preview do it every time — fine on
+        // MySQL (row locks), but on SQLite the ~2-minute trial transaction blocks every other writer.
+        var reconciliationBasis = "beforeImport";
+        string? reconciliationNote = null;
+        if (reconciliation.Count > 0 && _config.GetValue<bool>("DailyReport:AutoProjectReconciliation"))
+        {
+            var projected = ProjectAfterImport(file);
+            if (projected.Error == null)
+            {
+                reconciliation = projected.Reconciliation!;
+                summary.ReconcileMatchCount = projected.MatchCount;
+                summary.ReconcileDiffCount = projected.DiffCount;
+                reconciliationBasis = "afterImport";
+            }
+            else reconciliationNote = projected.Error;
+        }
+
+        // Rows the engine had to skip because the part isn't registered — surfaced so Admin can add
+        // them to Parts Master before confirming instead of discovering it from a per-row note.
+        var knownPartNos = _context.Parts.Select(p => p.PartNo).ToList()
+            .Select(p => p.Trim()).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var unknownParts = rowResults
+            .Where(r => r.MatchType != "PriorToBaseline" && r.MatchType != "AlreadyImported"
+                        && !string.IsNullOrWhiteSpace(r.PartNo) && !knownPartNos.Contains(r.PartNo.Trim()))
+            .GroupBy(r => r.PartNo.Trim(), StringComparer.OrdinalIgnoreCase)
+            .Select(g => new { partNo = g.Key, partName = g.Select(r => r.PartName).FirstOrDefault(n => !string.IsNullOrWhiteSpace(n) && n != "N/A"), rows = g.Count(), qty = g.Sum(r => r.Qty) })
+            .OrderByDescending(x => x.rows)
+            .ToList();
+
+        return Ok(new { rows = rowResults, summary, reconciliation, reconciliationBasis, reconciliationNote, dateGapWarning, fileCheck, unknownParts });
+    }
+
+    // DHL's Minimum Stock sheet is an END-OF-DAY count that already includes this file's own
+    // movements, so comparing it to our stock BEFORE the import flags every one of today's
+    // movements as a difference (and the numbers then change after Confirm). To compare like with
+    // like, replay the real import inside a transaction that is always rolled back and take the
+    // reconciliation from that run — the exact same code path Confirm uses, so it can't drift from
+    // what Confirm will actually find. Costs about as long as a real import (≈2 min for a full
+    // daily file) and holds the write lock for that time.
+    private record Projection(List<ReconciliationItem>? Reconciliation, int MatchCount, int DiffCount, string? Error);
+
+    private Projection ProjectAfterImport(IFormFile file)
+    {
+        if (_context.Database.ProviderName == "Microsoft.EntityFrameworkCore.InMemory")
+            return new Projection(null, 0, 0, "ฐานข้อมูลแบบทดสอบไม่รองรับการคำนวณยอดหลังนำเข้า");
+        var parsed = ParseFile(file, out var error, out var reconciliation);
+        if (error != null) return new Projection(null, 0, 0, error);
+        if (reconciliation.Count == 0) return new Projection(null, 0, 0, "ไฟล์นี้ไม่มีชีต Minimum Stock");
+
+        using var tx = _context.Database.BeginTransaction();
+        try
+        {
+            var (_, dry) = Process(parsed!, reconciliation, commit: true, userName: CurrentUser(), syncReconcile: false);
+            return new Projection(reconciliation, dry.ReconcileMatchCount, dry.ReconcileDiffCount, null);
+        }
+        catch (Exception ex)
+        {
+            return new Projection(null, 0, 0, $"คำนวณยอดหลังนำเข้าไม่สำเร็จ ({ex.Message})");
+        }
+        finally
+        {
+            tx.Rollback();
+            _context.ChangeTracker.Clear();
+        }
+    }
+
+    // POST /DailyReport/preview/after-import — the "คำนวณยอดหลังนำเข้า" button. Read-only (rolled back).
+    [HttpPost("preview/after-import")]
+    [RequestSizeLimit(50_000_000)]
+    public IActionResult PreviewAfterImport(IFormFile file)
+    {
+        if (file == null || file.Length == 0) return BadRequest(new { message = "กรุณาแนบไฟล์" });
+        var p = ProjectAfterImport(file);
+        if (p.Error != null) return BadRequest(new { message = p.Error });
+        return Ok(new { reconciliation = p.Reconciliation, reconcileMatchCount = p.MatchCount, reconcileDiffCount = p.DiffCount, reconciliationBasis = "afterImport" });
     }
 
     // POST /DailyReport/confirm — parses and commits all sheets into DB and records a batch.
@@ -52,6 +132,12 @@ public class DailyReportController : ControllerBase
         if (error != null) return BadRequest(new { message = error });
 
         var dateGapWarning = CheckDateGap(file.FileName, parsed!);
+
+        var fileCheck = CheckReportDate(file.FileName);
+        if (fileCheck.DuplicateOf != null)
+            return Conflict(new { message = $"รายงานวันที่ {fileCheck.ReportDate?.ToString("dd MMM yyyy", System.Globalization.CultureInfo.InvariantCulture)} นำเข้าไปแล้วใน Batch #{fileCheck.DuplicateOf.Id} — นำเข้าวันเดียวกันซ้ำไม่ได้", fileCheck });
+        if (fileCheck.NewerBatch != null)
+            return Conflict(new { message = $"ไฟล์นี้เก่ากว่ารายงานล่าสุดที่นำเข้า (Batch #{fileCheck.NewerBatch.Id}) — ต้องนำเข้าเรียงตามวันที่", fileCheck });
 
         bool syncReconcileFlag = (syncReconcile == true) || (syncReconcileForm == true)
             || (Request != null && Request.Query.TryGetValue("syncReconcile", out var qs) && bool.TryParse(qs, out var qsb) && qsb)
@@ -198,6 +284,44 @@ public class DailyReportController : ControllerBase
         }
 
         return null;
+    }
+
+    public record BatchRef(int Id, string FileName, DateTime ImportedAt, string ImportedBy, DateTime? ReportDate);
+    public record ReportDateCheck(DateTime? ReportDate, DateTime? LastReportDate, BatchRef? DuplicateOf, BatchRef? NewerBatch, List<DateTime> MissingDates);
+
+    // DHL names every file "Dataone Daily Report DD Mon YYYY_.xlsx" — the report date lives only in
+    // the file name, so that's what duplicate/backdated checks key on (not the whole name, which a
+    // rename would slip past).
+    private static readonly System.Text.RegularExpressions.Regex ReportDateRx =
+        new(@"(\d{1,2})\s+([A-Za-z]{3})[A-Za-z]*\s+(\d{4})", System.Text.RegularExpressions.RegexOptions.Compiled);
+
+    public static DateTime? ParseReportDate(string? fileName)
+    {
+        if (string.IsNullOrWhiteSpace(fileName)) return null;
+        var m = ReportDateRx.Match(fileName);
+        if (!m.Success) return null;
+        return DateTime.TryParseExact($"{m.Groups[1].Value.PadLeft(2, '0')} {m.Groups[2].Value} {m.Groups[3].Value}", "dd MMM yyyy",
+            System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.None, out var d) ? d.Date : null;
+    }
+
+    // Skipping days is fine (DHL doesn't send a report every day); importing the same report date
+    // twice, or an older date after a newer one, is refused — imports must replay in date order.
+    private ReportDateCheck CheckReportDate(string fileName)
+    {
+        var reportDate = ParseReportDate(fileName);
+        var batches = _context.DailyReportImportBatches.ToList()
+            .Select(b => new BatchRef(b.Id, b.FileName, b.ImportedAt, b.ImportedBy, ParseReportDate(b.FileName)))
+            .Where(b => b.ReportDate != null)
+            .ToList();
+        var last = batches.Count > 0 ? batches.Max(b => b.ReportDate) : null;
+        if (reportDate == null) return new ReportDateCheck(null, last, null, null, new());
+
+        var dup = batches.Where(b => b.ReportDate == reportDate).OrderByDescending(b => b.Id).FirstOrDefault();
+        var newer = batches.Where(b => b.ReportDate > reportDate).OrderByDescending(b => b.ReportDate).FirstOrDefault();
+        var missing = new List<DateTime>();
+        if (last != null && reportDate > last)
+            for (var d = last.Value.AddDays(1); d < reportDate; d = d.AddDays(1)) missing.Add(d);
+        return new ReportDateCheck(reportDate, last, dup, newer, missing);
     }
 
     // GET /DailyReport/history
@@ -1760,7 +1884,11 @@ public class DailyReportController : ControllerBase
             foreach (var item in reconciliation)
             {
                 var part = partsByNo.GetValueOrDefault(item.PartNo);
-                var stock = part != null && stocksByPartId.TryGetValue(part.Id, out var s) ? s : null;
+                // Also look at stock rows created during this same run (a part with no DHL-BKK row
+                // before the import gets one from AdjustStock) — the upfront dictionary misses those.
+                var stock = part == null ? null
+                    : stocksByPartId.TryGetValue(part.Id, out var s) ? s
+                    : _context.PartStocks.Local.FirstOrDefault(x => x.PartId == part.Id && x.LocationId == mainWh?.Id);
                 item.SystemGoodQty = stock?.GoodQty ?? 0;
                 item.SystemRepairQty = stock?.RepairQty ?? 0;
 

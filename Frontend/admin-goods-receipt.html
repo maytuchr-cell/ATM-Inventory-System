@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Goods Receipt — ATM Inventory</title>
-  <link rel="stylesheet" href="shared/styles.css?v=107">
+  <link rel="stylesheet" href="shared/styles.css?v=109">
   <style>
     /* ── Mode tabs ── */
     .gr-tabs { display:inline-flex; gap:4px; padding:4px; background:var(--bg-subtle); border:1px solid var(--border); border-radius:12px; margin-bottom:18px; }
@@ -77,6 +77,24 @@
 
     .gr-preview-head { display:flex; align-items:center; justify-content:space-between; gap:10px; margin:18px 0 8px; flex-wrap:wrap; }
     .gr-preview-scroll { max-height:300px; overflow-y:auto; border:1px solid var(--border); border-radius:10px; }
+
+    /* ── Opening balance ── */
+    .ob-toggle { display:flex; gap:12px; align-items:flex-start; padding:14px 16px; margin-bottom:20px; border:1.5px dashed var(--border); border-radius:12px; cursor:pointer; font-size:13.5px; color:var(--text-primary); background:var(--bg-subtle); }
+    .ob-toggle input { width:18px; height:18px; margin-top:2px; accent-color:var(--red); flex:0 0 auto; }
+    .ob-toggle .ob-sub { display:block; font-size:12px; color:var(--text-muted); margin-top:3px; }
+    .ob-toggle.on { border-style:solid; border-color:var(--red); background:var(--red-light); }
+    .ob-cards { display:grid; grid-template-columns:repeat(auto-fit,minmax(170px,1fr)); gap:10px; margin:16px 0 12px; }
+    .ob-card { border:1px solid var(--border); border-radius:12px; padding:12px 14px; background:var(--bg-card); }
+    .ob-card .k { font-size:11.5px; color:var(--text-muted); font-weight:600; }
+    .ob-card .v { font-size:20px; font-weight:800; margin-top:4px; font-variant-numeric:tabular-nums; }
+    .ob-card .s { font-size:11.5px; color:var(--text-secondary); margin-top:2px; }
+    .ob-sec { margin-top:14px; }
+    .gr-preview-scroll th.r, .gr-preview-scroll td.r { text-align:right; }
+    .ob-sec-t { font-size:12.5px; font-weight:700; color:var(--text-primary); margin-bottom:6px; }
+    .ob-up { color:#15803d; font-weight:700; } .ob-down { color:var(--red); font-weight:700; }
+    .ob-warn { background:#fef3c7; color:#854d0e; border-radius:10px; padding:10px 12px; font-size:12.5px; line-height:1.6; margin-top:10px; }
+    .ob-err { background:var(--red-light); color:var(--red); border-radius:10px; padding:10px 12px; font-size:12.5px; line-height:1.6; margin-top:10px; max-height:220px; overflow-y:auto; }
+    details.ob-more summary { cursor:pointer; font-size:12.5px; color:var(--orange); font-weight:600; margin-top:6px; }
 
     /* ── History ── */
     .gr-src { display:inline-block; padding:3px 9px; border-radius:20px; font-size:11.5px; font-weight:700; white-space:nowrap; }
@@ -189,9 +207,17 @@
             </div>
 
             <div class="gr-card-body">
+              <label class="ob-toggle" id="ob-toggle">
+                <input type="checkbox" id="ob-mode" onchange="onObModeChange()">
+                <span>
+                  <b>นำเข้าเป็นยอดตั้งต้น</b> — ตั้งยอดคงเหลือทั้งคลังให้เท่ากับไฟล์ตรวจนับ (Inventory Audit)
+                  <span class="ob-sub">ใช้ครั้งเดียวตอนเริ่มระบบ ยอดเดิมของคลังที่เลือกจะถูกแทนที่ทั้งหมด ไม่ใช่บวกเพิ่ม · เฉพาะ System Admin</span>
+                </span>
+              </label>
+
               <div class="gr-step"><span class="n">1</span>ข้อมูลการรับเข้า</div>
               <div class="gr-fields">
-                <div class="form-group">
+                <div class="form-group" id="csv-source-group">
                   <label class="form-label">แหล่งที่มา<span class="req">*</span></label>
                   <select class="form-select" id="csv-source" onchange="onCsvSourceChange()">
                     <option value="GRG">GRG Procurement</option>
@@ -204,7 +230,7 @@
                 </div>
                 <div class="form-group">
                   <label class="form-label">คลังปลายทาง<span class="req">*</span></label>
-                  <select class="form-select" id="csv-location"></select>
+                  <select class="form-select" id="csv-location" onchange="if (isObMode()) clearPreview()"></select>
                 </div>
                 <div class="form-group">
                   <label class="form-label">ผู้รับเข้า<span class="req">*</span></label>
@@ -222,7 +248,11 @@
                 <span class="s">.xlsx · .xls · .csv</span>
               </label>
               <input type="file" id="csv-file" accept=".xlsx,.xls,.csv" style="display:none" onchange="onFileChange(this)">
-              <div class="gr-hint">
+              <div class="gr-hint" id="ob-hint" style="display:none;">
+                ใช้ไฟล์ Inventory Audit ของ DHL ได้เลย ระบบอ่านชีต <code>4 Inven-All …</code> (คอลัมน์ <code>ITEM</code> <code>ON_HAND_QTY</code> <code>INVENTORY_STS</code> <code>SERIAL_NUMBER</code> <code>RECEIVED_DATE</code>)
+                และเติมโครงการจากชีต <code>6.Part Project</code> · GOOD = ของดี, BAD = รอซ่อม
+              </div>
+              <div class="gr-hint" id="gr-hint-normal">
                 Excel: คอลัมน์ <code>No.</code> <code>Part Number</code> <code>D1 Part Description</code> <code>Serial Number</code> <code>Quantity</code> <code>Status</code> (เรียงตามนี้)<br>
                 CSV: คอลัมน์ <code>PartNo</code> <code>SerialNo</code> <code>Qty</code> <code>Condition</code> — แถวแรกเป็นหัวตาราง ระบบข้ามให้อัตโนมัติ
               </div>
@@ -249,10 +279,15 @@
                   </table>
                 </div>
               </div>
+              <div id="ob-preview" style="display:none;"></div>
               <div id="csv-result" style="margin-top:12px;font-size:13px;"></div>
             </div>
 
             <div class="gr-submit-bar">
+              <div id="ob-confirm-wrap" style="display:none;align-items:center;gap:8px;margin-right:auto;flex-wrap:wrap;">
+                <span style="font-size:13px;color:var(--text-secondary);">พิมพ์ <b style="color:var(--red);">ยืนยัน</b> เพื่อตั้งยอด:</span>
+                <input class="form-input" id="ob-confirm-text" style="width:130px;padding:8px 10px;" oninput="updateImportButton()" autocomplete="off">
+              </div>
               <button class="btn btn-primary" onclick="importFile()" id="btn-import" disabled>↑ นำเข้าข้อมูล</button>
             </div>
           </div>
@@ -289,11 +324,11 @@
   </div>
 
   <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
-  <script src="shared/translations.js?v=107"></script>
-  <script src="shared/toast.js?v=107"></script>
-  <script src="shared/api.js?v=107"></script>
-  <script src="shared/import-templates.js?v=107"></script>
-  <script src="shared/layout.js?v=107"></script>
-  <script src="admin-goods-receipt.js?v=107"></script>
+  <script src="shared/translations.js?v=109"></script>
+  <script src="shared/toast.js?v=109"></script>
+  <script src="shared/api.js?v=109"></script>
+  <script src="shared/import-templates.js?v=109"></script>
+  <script src="shared/layout.js?v=109"></script>
+  <script src="admin-goods-receipt.js?v=109"></script>
 </body>
 </html>

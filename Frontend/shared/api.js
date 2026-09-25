@@ -60,6 +60,36 @@ async function apiFetch(path, options = {}) {
 
 // Same auth/error handling as apiFetch, but for multipart/form-data uploads — must NOT set
 // Content-Type manually, or the browser can't attach its own multipart boundary.
+// Same contract as apiUpload, but uses XHR so the caller can see real upload progress
+// (fetch has no upload-progress event). onUploadProgress(fraction 0..1) fires while the file is
+// being sent; once it reaches 1 the server is processing and only the final response follows.
+function apiUploadWithProgress(path, formData, onUploadProgress) {
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open('POST', API_BASE + path);
+    const token = localStorage.getItem('authToken');
+    if (token) xhr.setRequestHeader('Authorization', 'Bearer ' + token);
+    if (onUploadProgress) {
+      xhr.upload.onprogress = e => { if (e.lengthComputable) onUploadProgress(e.loaded / e.total); };
+      xhr.upload.onload = () => onUploadProgress(1);
+    }
+    xhr.onload = () => {
+      let body = {};
+      try { body = xhr.responseText ? JSON.parse(xhr.responseText) : {}; } catch { body = {}; }
+      if (xhr.status === 401) {
+        redirectToLogin();
+        const err = new Error('เซสชันหมดอายุ กรุณาเข้าสู่ระบบใหม่'); err.status = 401; return reject(err);
+      }
+      if (xhr.status < 200 || xhr.status >= 300) {
+        const err = new Error(body.message || `HTTP ${xhr.status}`); err.status = xhr.status; err.body = body; return reject(err);
+      }
+      resolve(xhr.status === 204 ? null : body);
+    };
+    xhr.onerror = () => reject(new Error('เชื่อมต่อเซิร์ฟเวอร์ไม่สำเร็จ'));
+    xhr.send(formData);
+  });
+}
+
 async function apiUpload(path, formData) {
   const url = API_BASE + path;
   const token = localStorage.getItem('authToken');
@@ -237,6 +267,9 @@ const api = {
   goodsReceipt: {
     getAll:  (params = {}) => apiFetch('/GoodsReceipt?' + new URLSearchParams(params)),
     create:  (data)        => apiFetch('/GoodsReceipt', { method: 'POST', body: JSON.stringify(data) }),
+    // Opening balance ("ยอดตั้งต้น") — sets a warehouse's stock to the audit file. SystemAdmin only.
+    openingPreview: (file, locationId) => { const fd = new FormData(); fd.append('file', file); fd.append('locationId', locationId); return apiUpload('/GoodsReceipt/opening-balance/preview', fd); },
+    openingConfirm: (file, locationId, receivedBy) => { const fd = new FormData(); fd.append('file', file); fd.append('locationId', locationId); fd.append('receivedBy', receivedBy); return apiUpload('/GoodsReceipt/opening-balance/confirm', fd); },
   },
   returns: {
     getAll:   ()     => apiFetch('/Return'),
@@ -290,13 +323,14 @@ const api = {
     forTechnician: (empId) => apiFetch(`/JobTicket/technician?empId=${encodeURIComponent(empId)}`),
   },
   dailyReport: {
-    preview: (file) => { const fd = new FormData(); fd.append('file', file); return apiUpload('/DailyReport/preview', fd); },
-    confirm: (file, syncReconcile = false) => {
+    preview: (file, onUploadProgress) => { const fd = new FormData(); fd.append('file', file); return apiUploadWithProgress('/DailyReport/preview', fd, onUploadProgress); },
+    previewAfterImport: (file, onUploadProgress) => { const fd = new FormData(); fd.append('file', file); return apiUploadWithProgress('/DailyReport/preview/after-import', fd, onUploadProgress); },
+    confirm: (file, syncReconcile = false, onUploadProgress) => {
       const isSync = (syncReconcile === true || syncReconcile === 'true');
       const fd = new FormData();
       fd.append('file', file);
       fd.append('syncReconcile', isSync ? 'true' : 'false');
-      return apiUpload('/DailyReport/confirm?syncReconcile=' + (isSync ? 'true' : 'false'), fd);
+      return apiUploadWithProgress('/DailyReport/confirm?syncReconcile=' + (isSync ? 'true' : 'false'), fd, onUploadProgress);
     },
     history: () => apiFetch('/DailyReport/history'),
     batch:   (id) => apiFetch(`/DailyReport/batches/${id}`),

@@ -289,6 +289,7 @@ function onFileChange(input) {
 
     const file = input.files[0];
     setDropFileName(file.name);
+    if (isObMode()) { previewOpeningBalance(file); return; }
     const isCsv = file.name.toLowerCase().endsWith('.csv');
     const reader = new FileReader();
 
@@ -442,9 +443,15 @@ function clearPreview() {
     document.getElementById('csv-file').value = '';
     document.getElementById('csv-result').innerHTML = '';
     setDropFileName(null);
+    _obFile = null; _obPreview = null;
+    document.getElementById('ob-preview').style.display = 'none';
+    document.getElementById('ob-preview').innerHTML = '';
+    document.getElementById('ob-confirm-text').value = '';
+    updateImportButton();
 }
 
 async function importFile() {
+    if (isObMode()) return confirmOpeningBalance();
     if (!_parsedLines.length) { showToast('ไม่มีข้อมูล กรุณาเลือกไฟล์ก่อน', 'error'); return; }
     if (Object.keys(serialIssues(_parsedLines)).length) { showToast('มีแถวที่ S/N ไม่ถูกต้อง — แก้ไฟล์ก่อนนำเข้า', 'error'); return; }
     const locationId = parseInt(document.getElementById('csv-location').value, 10);
@@ -511,7 +518,9 @@ function renderHistory() {
     const locale = getLang() === 'th' ? 'th-TH' : 'en-GB';
     document.getElementById('gr-history-sub').textContent = `ทั้งหมด ${allReceipts.length} ใบ`;
     tbody.innerHTML = allReceipts.map(g => {
-        const sourceLabel = g.source === 'GRG'
+        const sourceLabel = g.source === 'OpeningBalance'
+            ? '<span class="gr-src" style="background:#fee2e2;color:#b91c1c;">ยอดตั้งต้น</span>'
+            : g.source === 'GRG'
             ? '<span class="gr-src grg">GRG</span>'
             : `<span class="gr-src local">${g.vendorName || 'ผู้จำหน่ายในประเทศ'}</span>`;
         // Group lines by partName+condition, sum qty
@@ -534,4 +543,116 @@ function renderHistory() {
                 <td>${g.receivedBy || '—'}</td>
             </tr>`;
     }).join('');
+}
+
+// ── Opening balance ("ยอดตั้งต้น") ─────────────────────────────────────────────
+// Replaces the chosen warehouse's stock with the audit file's numbers. The server parses the file
+// and returns exactly what Confirm will write (same planning code), so the preview is the truth.
+let _obFile = null, _obPreview = null;
+const isObMode = () => document.getElementById('ob-mode').checked;
+
+function onObModeChange() {
+    const on = isObMode();
+    document.getElementById('ob-toggle').classList.toggle('on', on);
+    document.getElementById('csv-source-group').style.display = on ? 'none' : '';
+    document.getElementById('csv-vendor-group').style.display = on ? 'none' : (document.getElementById('csv-source').value === 'LocalVendor' ? '' : 'none');
+    document.getElementById('ob-hint').style.display = on ? '' : 'none';
+    document.getElementById('gr-hint-normal').style.display = on ? 'none' : '';
+    document.getElementById('ob-confirm-wrap').style.display = on ? 'flex' : 'none';
+    document.getElementById('csv-file').accept = on ? '.xlsx' : '.xlsx,.xls,.csv';
+    document.getElementById('btn-import').textContent = on ? '⚠️ ตั้งยอดตั้งต้น' : '↑ นำเข้าข้อมูล';
+    clearPreview();
+}
+
+function updateImportButton() {
+    const btn = document.getElementById('btn-import');
+    if (!isObMode()) return;
+    const typed = document.getElementById('ob-confirm-text').value.trim() === 'ยืนยัน';
+    btn.disabled = !(_obPreview && _obPreview.errorCount === 0 && typed);
+}
+
+async function previewOpeningBalance(file) {
+    const box = document.getElementById('ob-preview');
+    const locationId = parseInt(document.getElementById('csv-location').value, 10);
+    _obFile = file; _obPreview = null;
+    box.style.display = '';
+    box.innerHTML = '<div class="gr-hint">กำลังวิเคราะห์ไฟล์… (ไฟล์ใหญ่อาจใช้เวลาครึ่งนาที)</div>';
+    updateImportButton();
+    try {
+        _obPreview = await api.goodsReceipt.openingPreview(file, locationId);
+        renderObPreview(_obPreview);
+    } catch (e) {
+        box.innerHTML = `<div class="ob-err">❌ ${escapeHtmlAttr(e.status === 403 ? 'เฉพาะ System Admin เท่านั้นที่ตั้งยอดตั้งต้นได้' : e.message)}</div>`;
+    }
+    updateImportButton();
+}
+
+function renderObPreview(p) {
+    const n = v => Number(v || 0).toLocaleString();
+    const loc = document.getElementById('csv-location');
+    const locName = loc.options[loc.selectedIndex]?.text || '';
+    const d = (a, b) => b === a ? '<span class="text-muted">0</span>'
+        : `<span class="${b > a ? 'ob-up' : 'ob-down'}">${b > a ? '+' : ''}${n(b - a)}</span>`;
+    const changed = p.parts.filter(x => x.curGood !== x.newGood || x.curRepair !== x.newRepair);
+    const partRow = x => `<tr><td><code>${escapeHtmlAttr(x.partNo)}</code><div style="font-size:11.5px;color:var(--text-muted);">${escapeHtmlAttr(x.partName || '')}</div></td>
+        <td class="r">${n(x.curGood)}</td><td class="r"><b>${n(x.newGood)}</b></td><td class="r">${d(x.curGood, x.newGood)}</td>
+        <td class="r">${n(x.curRepair)}</td><td class="r"><b>${n(x.newRepair)}</b></td><td class="r">${d(x.curRepair, x.newRepair)}</td></tr>`;
+    const sn = p.serials;
+    const snList = (arr, f) => arr.slice(0, 200).map(f).join('');
+
+    document.getElementById('ob-preview').innerHTML = `
+        ${p.errorCount ? `<div class="ob-err"><b>ไฟล์มีข้อผิดพลาด ${n(p.errorCount)} จุด — ต้องแก้ก่อนตั้งยอด</b><br>${p.errors.map(escapeHtmlAttr).join('<br>')}</div>` : ''}
+        <div class="gr-step" style="margin:18px 0 0;"><span class="n">3</span>ตรวจสอบก่อนตั้งยอด — ชีต "${escapeHtmlAttr(p.sheet)}" (${n(p.fileRows)} แถว)</div>
+        <div class="ob-cards">
+            <div class="ob-card"><div class="k">🟢 ของดี · ${escapeHtmlAttr(locName)}</div><div class="v">${n(p.currentGoodQty)} → ${n(p.fileGoodQty)}</div><div class="s">ชิ้น (ยอดเดิม → ยอดใหม่)</div></div>
+            <div class="ob-card"><div class="k">🔴 รอซ่อม</div><div class="v">${n(p.currentRepairQty)} → ${n(p.fileRepairQty)}</div><div class="s">ชิ้น (BAD ในไฟล์)</div></div>
+            <div class="ob-card"><div class="k">รหัสอะไหล่ที่ยอดเปลี่ยน</div><div class="v">${n(p.partsChanged)}</div><div class="s">ในนี้ ${n(p.partsZeroed)} รหัสไม่มีในไฟล์ → ตั้งเป็น 0</div></div>
+            <div class="ob-card"><div class="k">Serial Number</div><div class="v">${n(sn.total)}</div><div class="s">ใหม่ ${n(sn.newCount)} · ย้ายกลับคลัง ${n(sn.fromTech.length + sn.fromOther.length)}</div></div>
+        </div>
+
+        <div class="ob-sec">
+            <div class="ob-sec-t">ยอดที่จะเปลี่ยน (${n(changed.length)} รหัส — เรียงจากเปลี่ยนมากสุด)</div>
+            <div class="gr-preview-scroll"><table>
+                <thead><tr><th rowspan="2">อะไหล่</th><th colspan="3" style="text-align:center;background:#dcfce7;">🟢 ของดี</th><th colspan="3" style="text-align:center;background:#fee2e2;">🔴 รอซ่อม</th></tr>
+                       <tr><th class="r">ยอดเดิม</th><th class="r">ยอดใหม่</th><th class="r">ต่าง</th><th class="r">ยอดเดิม</th><th class="r">ยอดใหม่</th><th class="r">ต่าง</th></tr></thead>
+                <tbody>${changed.map(partRow).join('') || '<tr><td colspan="7" class="empty-state">ยอดตรงกับไฟล์อยู่แล้ว ไม่มีอะไรเปลี่ยน</td></tr>'}</tbody>
+            </table></div>
+        </div>
+
+        ${sn.fromTech.length ? `<div class="ob-warn">🔄 <b>${n(sn.fromTech.length)} S/N ระบบบอกว่าอยู่กับช่าง แต่ไฟล์บอกว่าอยู่ในคลัง</b> — จะย้ายกลับเข้าคลังและลดยอดของช่างตาม
+            <details class="ob-more"><summary>ดูรายการ</summary>${snList(sn.fromTech, x => `<div>${escapeHtmlAttr(x.serial)} · ${escapeHtmlAttr(x.partNo)}</div>`)}</details></div>` : ''}
+        ${sn.fromOther.length ? `<div class="ob-warn">🔄 <b>${n(sn.fromOther.length)} S/N อยู่คลังอื่นในระบบ</b> (เช่นศูนย์ซ่อม) — จะย้ายเข้าคลังนี้ตามไฟล์
+            <details class="ob-more"><summary>ดูรายการ</summary>${snList(sn.fromOther, x => `<div>${escapeHtmlAttr(x.serial)} · ${escapeHtmlAttr(x.partNo)} · จาก ${escapeHtmlAttr(x.from || '-')}</div>`)}</details></div>` : ''}
+        ${sn.notInFile.length ? `<div class="ob-warn">ℹ️ <b>${n(sn.notInFile.length)} S/N ในระบบอยู่ที่คลังนี้ แต่ไม่มีในไฟล์</b> — ระบบจะไม่เปลี่ยน ให้ตรวจสอบเองภายหลัง
+            <details class="ob-more"><summary>ดูรายการ</summary>${snList(sn.notInFile, x => `<div>${escapeHtmlAttr(x.serial)} · ${escapeHtmlAttr(x.partNo || '-')} · ${escapeHtmlAttr(x.status)}</div>`)}</details></div>` : ''}
+        ${p.projects.length ? `<div class="ob-warn" style="background:var(--bg-subtle);color:var(--text-secondary);">🏷️ จะเติม/แก้โครงการในทะเบียนอะไหล่ <b>${n(p.projects.length)}</b> รหัส จากชีต 6.Part Project</div>` : ''}
+        ${p.errorCount ? '' : `<div class="ob-err" style="margin-top:14px;">⚠️ เมื่อกดตั้งยอด ยอดของดีและรอซ่อมของ <b>${escapeHtmlAttr(locName)}</b> จะถูกแทนที่ด้วยตัวเลขในไฟล์ทั้งหมด — พิมพ์คำว่า <b>ยืนยัน</b> ด้านล่างเพื่อเปิดปุ่ม</div>`}`;
+}
+
+async function confirmOpeningBalance() {
+    const receivedByInput = document.getElementById('csv-receivedby');
+    const receivedBy = receivedByInput.value.trim();
+    if (!receivedBy) { showToast('กรุณากรอกชื่อผู้รับเข้า', 'error'); receivedByInput.focus(); return; }
+    if (!_obFile || !_obPreview || _obPreview.errorCount) { showToast('กรุณาเลือกไฟล์ที่ไม่มีข้อผิดพลาดก่อน', 'error'); return; }
+    if (document.getElementById('ob-confirm-text').value.trim() !== 'ยืนยัน') { showToast('พิมพ์คำว่า ยืนยัน ก่อน', 'error'); return; }
+    const btn = document.getElementById('btn-import');
+    btn.disabled = true; btn.textContent = 'กำลังตั้งยอด…';
+    const resultDiv = document.getElementById('csv-result');
+    try {
+        const locationId = parseInt(document.getElementById('csv-location').value, 10);
+        const r = await api.goodsReceipt.openingConfirm(_obFile, locationId, receivedBy);
+        showToast('ตั้งยอดตั้งต้นเรียบร้อย', 'success');
+        clearPreview();
+        resultDiv.innerHTML = `<div style="color:var(--green);background:var(--green-light);border-radius:8px;padding:10px 12px;line-height:1.6;">
+            ✅ ตั้งยอดตั้งต้นเรียบร้อย — เลขที่ ${escapeHtmlAttr(r.receiptNo)}<br>
+            ของดี ${Number(r.goodQty).toLocaleString()} ชิ้น · รอซ่อม ${Number(r.repairQty).toLocaleString()} ชิ้น ·
+            เปลี่ยนยอด ${r.partsChanged} รหัส · S/N ${Number(r.serials).toLocaleString()} ตัว · อัปเดตโครงการ ${r.projects} รหัส</div>`;
+        await loadParts();
+        fetchHistory();
+    } catch (e) {
+        resultDiv.innerHTML = `<div class="ob-err">❌ ${escapeHtmlAttr(e.message)}</div>`;
+    } finally {
+        btn.textContent = '⚠️ ตั้งยอดตั้งต้น';
+        updateImportButton();
+    }
 }
