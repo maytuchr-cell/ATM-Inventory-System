@@ -228,6 +228,11 @@ async function submitReceipt(event) {
         showToast(t('gr.err.qty'), 'error');
         return;
     }
+    const snIssues = serialIssues(lines);
+    if (Object.keys(snIssues).length) {
+        showToast('อะไหล่ที่มี S/N ต้องมีจำนวน 1 ชิ้น และ S/N ห้ามซ้ำ\n' + issueSummary(lines, snIssues).join('\n'), 'error');
+        return;
+    }
 
     const receivedByInput = document.getElementById('f-receivedby');
     const receivedBy = receivedByInput.value.trim();
@@ -378,21 +383,56 @@ function normalizeCondition(val) {
     return 'Good';
 }
 
+// A serial number is one physical piece: a line with a S/N must be qty 1, and the same S/N
+// can't appear twice. (Whether the S/N already exists in the system is checked by the server.)
+// Returns { [lineIndex]: [messages] }.
+function serialIssues(lines) {
+    const issues = {};
+    const firstSeen = {};
+    const add = (i, msg) => (issues[i] ??= []).push(msg);
+    lines.forEach((l, i) => {
+        const sn = (l.serialNo || '').trim();
+        if (!sn) return;
+        if (l.qty !== 1) add(i, `มี S/N ต้องมีจำนวน 1 ชิ้น (ใส่มา ${l.qty})`);
+        const key = sn.toLowerCase();
+        if (key in firstSeen) add(i, `S/N ซ้ำกับแถวที่ ${firstSeen[key] + 1}`);
+        else firstSeen[key] = i;
+    });
+    return issues;
+}
+
+function issueSummary(lines, issues) {
+    return Object.entries(issues).map(([i, msgs]) =>
+        `แถวที่ ${+i + 1} (${lines[i].partNo}, S/N ${lines[i].serialNo}): ${msgs.join(', ')}`);
+}
+
 function showPreview(lines) {
+    const issues = serialIssues(lines);
+    const badCount = Object.keys(issues).length;
     const tbody = document.getElementById('xl-preview-tbody');
     tbody.innerHTML = lines.map((l, i) => `
-        <tr>
+        <tr style="${issues[i] ? 'background:var(--red-light);' : ''}">
             <td style="color:var(--text-muted)">${i + 1}</td>
             <td><code>${l.partNo}</code></td>
             <td style="font-size:12px;color:var(--text-secondary)">${l.partName || '—'}</td>
             <td style="font-size:12px">${l.serialNo || '—'}</td>
-            <td>${l.qty}</td>
+            <td style="${issues[i] && l.qty !== 1 ? 'color:var(--red);font-weight:800;' : ''}">${l.qty}</td>
             <td><span class="badge ${l.condition === 'Good' ? 'badge-green' : 'badge-red'}">${l.condition === 'Good' ? 'ของดี' : 'ของเสีย'}</span></td>
+            <td style="font-size:12px;">${issues[i]
+                ? `<span style="color:var(--red);font-weight:700;">✕ ${issues[i].join('<br>✕ ')}</span>`
+                : '<span style="color:var(--green);">✓</span>'}</td>
         </tr>`).join('');
 
-    document.getElementById('xl-preview-count').textContent = `ตรวจสอบรายการ — พบ ${lines.length} รายการ`;
+    document.getElementById('xl-preview-count').innerHTML = badCount
+        ? `ตรวจสอบรายการ — พบ ${lines.length} รายการ · <span style="color:var(--red);">ผิด ${badCount} แถว ต้องแก้ไฟล์ก่อนนำเข้า</span>`
+        : `ตรวจสอบรายการ — พบ ${lines.length} รายการ`;
+    document.getElementById('csv-result').innerHTML = badCount
+        ? `<div style="color:var(--red);background:var(--red-light);border-radius:8px;padding:10px 12px;line-height:1.6;">
+             <b>นำเข้าไม่ได้:</b> อะไหล่ที่มี Serial Number หนึ่งตัว = อะไหล่ 1 ชิ้น
+             ให้แยกเป็นคนละแถว แถวละ 1 ชิ้น และ S/N ห้ามซ้ำกัน</div>`
+        : '';
     document.getElementById('xl-preview-wrap').style.display = '';
-    document.getElementById('btn-import').disabled = lines.length === 0;
+    document.getElementById('btn-import').disabled = lines.length === 0 || badCount > 0;
 }
 
 function clearPreview() {
@@ -406,6 +446,7 @@ function clearPreview() {
 
 async function importFile() {
     if (!_parsedLines.length) { showToast('ไม่มีข้อมูล กรุณาเลือกไฟล์ก่อน', 'error'); return; }
+    if (Object.keys(serialIssues(_parsedLines)).length) { showToast('มีแถวที่ S/N ไม่ถูกต้อง — แก้ไฟล์ก่อนนำเข้า', 'error'); return; }
     const locationId = parseInt(document.getElementById('csv-location').value, 10);
     const source     = document.getElementById('csv-source').value;
     const receivedBy = document.getElementById('csv-receivedby').value.trim();
@@ -451,7 +492,8 @@ async function importFile() {
         await loadParts();
         fetchHistory();
     } catch (e) {
-        resultDiv.innerHTML = `<span style="color:var(--red)">❌ ${e.message}</span>`;
+        // Server-side S/N errors come back one per line, joined with newlines.
+        resultDiv.innerHTML = `<div style="color:var(--red);background:var(--red-light);border-radius:8px;padding:10px 12px;white-space:pre-line;line-height:1.6;">❌ ${escapeHtmlAttr(e.message)}</div>`;
         showToast(e.message, 'error');
         document.getElementById('btn-import').disabled = false;
     }

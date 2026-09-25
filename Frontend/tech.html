@@ -47,6 +47,13 @@
         .overdue-item:first-of-type { border-top:none; }
         .overdue-item .btn-receive-now { background:var(--red); color:#fff; border:none; padding:5px 12px; border-radius:7px; font-family:inherit; font-size:12px; font-weight:600; cursor:pointer; white-space:nowrap; }
         .overdue-item .btn-receive-now:hover { background:#991b1b; }
+        .overdue-age { display:inline-block; margin-left:6px; background:var(--red); color:#fff; border-radius:10px; padding:1px 8px; font-size:11px; font-weight:700; }
+        .overdue-popup { display:none; position:fixed; inset:0; background:rgba(15,23,42,.5); z-index:1000; align-items:center; justify-content:center; padding:20px; }
+        .overdue-popup.open { display:flex; }
+        .overdue-popup-box { background:var(--bg-card); border-radius:16px; width:100%; max-width:480px; max-height:85vh; overflow-y:auto; padding:22px; box-shadow:0 24px 60px rgba(0,0,0,.25); border-top:5px solid var(--red); }
+        .overdue-popup-box h3 { margin:0 0 6px; font-size:18px; color:#991b1b; }
+        .overdue-popup-box p { margin:0 0 12px; font-size:13px; color:var(--text-secondary); }
+        .overdue-popup-list .overdue-item { color:var(--text-primary); }
 
         /* ── Ticket form modal (withdraw / return) ── */
         .tk-overlay { display:none; position:fixed; inset:0; background:rgba(0,0,0,.45); z-index:900; align-items:center; justify-content:center; padding:16px; }
@@ -187,6 +194,16 @@
 
         <div class="page-body">
             <div id="overdue-receive-banner" style="display:none;"></div>
+            <div class="overdue-popup" id="overdue-popup" onclick="if(event.target===this)closeOverduePopup()">
+                <div class="overdue-popup-box">
+                    <h3>🔔 ยังไม่ได้กดรับอะไหล่ <span class="overdue-popup-count"></span> ใบเบิก</h3>
+                    <p>อะไหล่ส่งถึงคุณเกิน 1 วันแล้ว ถ้าได้รับของแล้วกรุณากด "ได้รับของแล้ว" · ถ้ายังไม่ได้รับ กรุณาแจ้ง Admin</p>
+                    <div class="overdue-popup-list"></div>
+                    <div style="display:flex;justify-content:flex-end;margin-top:14px;">
+                        <button class="btn btn-secondary" onclick="closeOverduePopup()">ไว้ทีหลัง</button>
+                    </div>
+                </div>
+            </div>
             <div class="card">
                 <div class="card-body">
                     <div class="section-head">
@@ -1290,35 +1307,77 @@
     // been "เดินทาง" (Admin emailed DHL) for more than 1 day without the tech confirming receipt.
     // Recomputed on every fetch, so it clears itself the moment the tech confirms or the ticket
     // moves on — no separate dismiss/snooze state to track.
+    // "Shipped" = when the DHL email went out; batches that never got an EmailSentAt (e.g. ones
+    // created by the DHL Daily Report import) fall back to the next-best timestamp so they still
+    // get flagged instead of silently never alerting.
+    function shippedAt(batch) {
+        const t = batch.emailSentAt || batch.plannedSendAt || batch.approvedAt || batch.createdAt;
+        return t ? new Date(t) : null;
+    }
+    function overdueReceiveList() {
+        const oneDayMs = 24 * 60 * 60 * 1000;
+        const out = [];
+        cachedTickets.forEach(tk => (tk.withdrawBatches || []).forEach(batch => {
+            if (batch.status !== 'เดินทาง') return;
+            const sent = shippedAt(batch);
+            if (sent && Date.now() - sent.getTime() > oneDayMs) out.push({ tk, batch, hours: (Date.now() - sent.getTime()) / 36e5 });
+        }));
+        return out.sort((a, b) => b.hours - a.hours);
+    }
+    const waitLabel = h => h < 48 ? `${Math.floor(h)} ชม.` : `${Math.floor(h / 24)} วัน`;
+    const plainParts = lines => (lines || []).map(l => `${l.partName} ×${l.quantity}`).join(', ');
+
+    function overdueItemsHtml(list) {
+        return list.map(({ tk, batch, hours }) => `
+            <div class="overdue-item">
+                <span>
+                    <b>${batch.withdrawSlipNo || tk.externalTicketNo}</b>
+                    <span class="overdue-age">ส่งออกมาแล้ว ${waitLabel(hours)}</span><br>
+                    <span style="font-size:12px;">${plainParts(batch.lines)}</span>
+                </span>
+                <button class="btn-receive-now" onclick="confirmReceiveBatch(${tk.ticketId}, ${batch.withdrawBatchId}, this)">✅ ได้รับของแล้ว</button>
+            </div>`).join('');
+    }
+
     function renderOverdueReceiveBanner() {
         const banner = document.getElementById('overdue-receive-banner');
-        const oneDayMs = 24 * 60 * 60 * 1000;
-        const overdue = [];
-        cachedTickets.forEach(tk => {
-            (tk.withdrawBatches || []).forEach(batch => {
-                if (batch.status === 'เดินทาง' && batch.emailSentAt && (Date.now() - new Date(batch.emailSentAt).getTime()) > oneDayMs) {
-                    overdue.push({ tk, batch });
-                }
-            });
-        });
-        if (!overdue.length) { banner.style.display = 'none'; banner.innerHTML = ''; return; }
+        const overdue = overdueReceiveList();
+        if (!overdue.length) { banner.style.display = 'none'; banner.innerHTML = ''; closeOverduePopup(); return; }
 
         banner.innerHTML = `
             <div class="overdue-banner">
-                <div class="overdue-banner-title">🔔 มีอะไหล่ที่คาดว่าถึงแล้ว — กรุณายืนยันรับของ (${overdue.length} รายการ)</div>
-                ${overdue.map(({ tk, batch }) => `
-                    <div class="overdue-item">
-                        <span><span class="id-chip ticket-id">${tk.externalTicketNo}</span> — ${linesSummaryHtml(batch.lines).replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim()}</span>
-                        <button class="btn-receive-now" onclick="confirmReceiveBatch(${tk.ticketId}, ${batch.withdrawBatchId})">✅ ยืนยันรับของ</button>
-                    </div>`).join('')}
+                <div class="overdue-banner-title">🔔 มีอะไหล่ที่ส่งถึงคุณเกิน 1 วันแล้ว แต่ยังไม่ได้กดรับ (${overdue.length} ใบเบิก)</div>
+                <div style="font-size:12.5px;color:#7a1616;margin-bottom:6px;">ถ้าได้รับของแล้ว กด "ได้รับของแล้ว" · ถ้ายังไม่ได้รับ กรุณาแจ้ง Admin</div>
+                ${overdueItemsHtml(overdue)}
             </div>`;
         banner.style.display = 'block';
+        maybeShowOverduePopup(overdue);
     }
 
-    async function confirmReceiveBatch(ticketId, batchId) {
-        if (!confirm('ยืนยันว่าได้รับอะไหล่แล้ว?')) return;
+    // Popup once per login session per set of overdue batches — a new overdue batch re-triggers
+    // it, but refreshes/polls on the same set don't keep nagging (the banner stays either way).
+    function maybeShowOverduePopup(overdue) {
+        const key = 'overduePopupSeen:' + overdue.map(o => o.batch.withdrawBatchId).sort().join(',');
+        try { if (sessionStorage.getItem(key)) return; sessionStorage.setItem(key, '1'); } catch {}
+        const el = document.getElementById('overdue-popup');
+        el.querySelector('.overdue-popup-count').textContent = overdue.length;
+        el.querySelector('.overdue-popup-list').innerHTML = overdueItemsHtml(overdue);
+        el.classList.add('open');
+    }
+    function closeOverduePopup() { document.getElementById('overdue-popup')?.classList.remove('open'); }
+
+    // Two-click confirm instead of confirm() — Chrome can silently suppress repeated native
+    // dialogs on a page, which would make this button look dead.
+    async function confirmReceiveBatch(ticketId, batchId, btn) {
+        if (btn && !btn.dataset.armed) {
+            btn.dataset.armed = '1';
+            btn.textContent = 'กดอีกครั้งเพื่อยืนยัน';
+            setTimeout(() => { if (btn.isConnected) { delete btn.dataset.armed; btn.textContent = '✅ ได้รับของแล้ว'; } }, 3000);
+            return;
+        }
         try {
             await api.tickets.receiveBatch(ticketId, batchId);
+            showToast?.('บันทึกรับของแล้ว', 'success');
             await fetchTickets();
         } catch (e) { showToast?.(e.message || t('toast.error'), 'error'); }
     }

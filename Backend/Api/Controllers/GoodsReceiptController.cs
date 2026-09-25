@@ -53,6 +53,38 @@ public class GoodsReceiptController : ControllerBase
         return Ok(result);
     }
 
+    // Serial-tracked receipt rules: a line with a SerialNo must be exactly 1 piece, the same
+    // SerialNo can't appear twice in one receipt, and it can't already be registered in the
+    // system (receiving it again would add a second piece of stock for one physical unit).
+    // Returns one Thai message per problem, numbered by line (1-based, matching the upload order).
+    private List<string> ValidateSerials(List<GoodsReceiptLineDto> lines)
+    {
+        var errors = new List<string>();
+        var seen = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+        var serials = lines.Select(l => l.SerialNo?.Trim()).Where(s => !string.IsNullOrEmpty(s)).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+        var existing = _context.PartUnits
+            .Where(u => serials.Contains(u.SerialNo))
+            .Select(u => new { u.SerialNo, u.Status, PartNo = u.Part != null ? u.Part.PartNo : null })
+            .ToList()
+            .ToDictionary(u => u.SerialNo, StringComparer.OrdinalIgnoreCase);
+
+        for (int i = 0; i < lines.Count; i++)
+        {
+            var sn = lines[i].SerialNo?.Trim();
+            if (string.IsNullOrEmpty(sn)) continue;
+            var row = i + 1;
+            if (lines[i].Qty != 1)
+                errors.Add($"แถวที่ {row} ({lines[i].PartNo}): S/N {sn} มีจำนวน {lines[i].Qty} ชิ้น — อะไหล่ที่มี S/N ต้องมีจำนวน 1 ชิ้นเท่านั้น");
+            if (seen.TryGetValue(sn, out var firstRow))
+                errors.Add($"แถวที่ {row} ({lines[i].PartNo}): S/N {sn} ซ้ำกับแถวที่ {firstRow}");
+            else
+                seen[sn] = row;
+            if (existing.TryGetValue(sn, out var unit))
+                errors.Add($"แถวที่ {row} ({lines[i].PartNo}): S/N {sn} มีอยู่ในระบบแล้ว (อะไหล่ {unit.PartNo ?? "-"}, สถานะ {unit.Status})");
+        }
+        return errors;
+    }
+
     // POST /api/GoodsReceipt
     [HttpPost]
     public IActionResult Create([FromBody] GoodsReceiptCreateDto dto)
@@ -68,6 +100,13 @@ public class GoodsReceiptController : ControllerBase
 
         if (string.IsNullOrWhiteSpace(dto.ReceivedBy))
             return BadRequest(new { message = "กรุณากรอกชื่อผู้รับเข้า" });
+
+        // A serial number identifies exactly one physical piece. Validated for every line up front,
+        // before anything is written — the loop below auto-creates Parts as it goes, so a bad line
+        // found halfway through would otherwise leave half a receipt's side effects behind.
+        var serialErrors = ValidateSerials(dto.Lines);
+        if (serialErrors.Count > 0)
+            return BadRequest(new { message = string.Join("\n", serialErrors), errors = serialErrors });
 
         var receipt = new GoodsReceipt
         {
@@ -231,6 +270,12 @@ public class GoodsReceiptController : ControllerBase
 
         if (errors.Any() && !lines.Any())
             return BadRequest(new { message = "CSV parsing failed.", errors });
+
+        var serialErrors = ValidateSerials(lines
+            .Select(l => new GoodsReceiptLineDto { PartNo = l.PartNo, SerialNo = l.SerialNo, Qty = l.Qty })
+            .ToList());
+        if (serialErrors.Count > 0)
+            return BadRequest(new { message = string.Join("\n", serialErrors), errors = serialErrors });
 
         var receipt = new GoodsReceipt
         {
